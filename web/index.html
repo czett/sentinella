@@ -3,96 +3,101 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="color-scheme" content="dark">
-    <meta name="theme-color" content="#09090b">
+    <meta name="color-scheme" content="light">
+    <meta name="theme-color" content="#f8f8f9">
     <meta name="description" content="Battery state of charge from an SMA inverter, published by the homematic-sma-battery-monitor add-on for the Homematic CCU3.">
-    <title>Battery monitor · SMA / CCU3</title>
+    <title>SMA / CCU3 — Battery Monitor</title>
     <link rel="stylesheet" href="./style.css">
 </head>
-<body>
+<body data-state="loading">
 <a class="skip-link" href="#main">Skip to content</a>
 
 <div class="app">
     <header class="bar">
         <div class="brand">
-            <span class="brand-mark" aria-hidden="true">
-                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square">
-                    <rect x="1.75" y="5.75" width="13.5" height="8.5"></rect>
-                    <path d="M17.25 8.5v3M5 8.75v2.5M8 8.75v2.5M11 8.75v2.5"></path>
-                </svg>
-            </span>
-            <span class="brand-name">SMA<span class="brand-slash">/</span>CCU3</span>
-            <span class="brand-sub">Battery monitor</span>
+            <span class="brand-mark" aria-hidden="true"></span>
+            <div class="brand-titles">
+                <span class="brand-name">SMA / CCU3</span>
+                <span class="brand-sub">Battery State Monitor</span>
+            </div>
         </div>
 
         <div class="bar-right">
-            <div class="live" id="connection" data-state="loading">
-                <span class="live-dot" aria-hidden="true"></span>
-                <span id="connection-text" role="status">Connecting</span>
-                <span class="live-sep" aria-hidden="true">•</span>
-                <time id="last-update" datetime="">not yet</time>
-            </div>
-            <button class="icon-button" id="settings-open" type="button"
+            <button class="settings-trigger" id="settings-open" type="button"
                     aria-label="Open settings" aria-haspopup="dialog"
                     aria-expanded="false" aria-controls="settings-drawer">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"
-                     stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true">
-                    <circle cx="12" cy="12" r="3.1"></circle>
-                    <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9v.09A1.7 1.7 0 0 0 20.96 10H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15z"></path>
-                </svg>
+                <span class="settings-trigger-text">Settings</span>
+                <span class="settings-trigger-mark" aria-hidden="true">+</span>
             </button>
         </div>
     </header>
 
     <main id="main" class="main" tabindex="-1">
         <div class="pull-indicator" id="pull" aria-hidden="true">
-            <span class="pull-bar"></span>
+            <span class="pull-square"></span>
             <span id="pull-label">Pull to refresh</span>
         </div>
 
         <div class="main-content" id="main-content">
             <div class="notice" id="notice" role="status" hidden>
+                <div class="notice-mark" aria-hidden="true"></div>
                 <div class="notice-copy">
                     <strong id="notice-title"></strong>
                     <p id="notice-text"></p>
                 </div>
-                <button class="button" id="retry" type="button" hidden>Retry now</button>
+                <button class="button button-ink" id="retry" type="button" hidden>Retry now</button>
             </div>
 
-            <section class="hero" aria-labelledby="instrument-title">
-                <div class="hero-lead">
-                    <div class="hero-meta">
-                        <h1 class="eyebrow" id="instrument-title">State of charge</h1>
-                        <span class="index" aria-hidden="true">01 — 03</span>
+            <section class="poster-grid" aria-labelledby="instrument-title">
+                <div class="poster-blue" id="hero-block" data-charge="unknown">
+                    <div class="poster-meta">
+                        <span class="poster-index">01</span>
+                        <h1 class="poster-eyebrow" id="instrument-title">State of charge</h1>
+                        <span class="state-tag" id="soc-state" data-charge="unknown">UNKNOWN</span>
                     </div>
 
                     <div class="soc" id="gauge" role="img" aria-label="Battery state of charge unknown">
-                        <span class="soc-value" id="soc-value">--</span>
-                        <span class="soc-unit" aria-hidden="true">%</span>
+                        <span class="soc-value" id="soc-value">--</span><span class="soc-unit" aria-hidden="true">%</span>
                     </div>
 
-                    <div class="hero-foot">
-                        <span class="state-tag" id="soc-state" data-charge="unknown">Unknown</span>
-                        <p id="soc-caption">Waiting for the first measurement.</p>
+                    <div class="poster-foot">
+                        <p class="poster-caption" id="soc-caption">Waiting for the first measurement.</p>
                     </div>
                 </div>
 
-                <div class="hero-side">
-                    <div class="signal-head">
-                        <div>
-                            <span class="eyebrow">Hysteresis signal</span>
+                <div class="poster-paper">
+                    <div class="signal-panel">
+                        <div class="panel-header">
+                            <span class="panel-index">02</span>
+                            <span class="panel-eyebrow">Hysteresis signal</span>
+                        </div>
+
+                        <div class="signal-display">
+                            <span class="signal-square" id="signal-square" aria-hidden="true"></span>
                             <p class="signal-value" id="signal-chip" data-tone="unknown">Unknown</p>
                         </div>
+
                         <p class="signal-copy" id="signal-copy">The signal is written to the CCU3 system variable on every run. Between the thresholds the previous state is held.</p>
                     </div>
 
-                    <div class="rail-group">
+                    <div class="rail-panel">
+                        <div class="rail-header">
+                            <span class="rail-title">Threshold corridor (0—100 %)</span>
+                            <span class="rail-readout">
+                                Reset <strong id="rail-reset-value">90</strong>% / Trigger <strong id="rail-trigger-value">95</strong>%
+                            </span>
+                        </div>
+
                         <div class="rail" id="rail" role="img" aria-label="State of charge, reset and trigger thresholds">
                             <div class="rail-axis">
                                 <div class="rail-track"></div>
                                 <div class="rail-band"></div>
-                                <div class="rail-threshold rail-threshold-reset" id="rail-reset"></div>
-                                <div class="rail-threshold rail-threshold-trigger" id="rail-trigger"></div>
+                                <div class="rail-threshold rail-threshold-reset" id="rail-reset">
+                                    <span class="rail-threshold-tag" id="rail-reset-tag">90%</span>
+                                </div>
+                                <div class="rail-threshold rail-threshold-trigger" id="rail-trigger">
+                                    <span class="rail-threshold-tag" id="rail-trigger-tag">95%</span>
+                                </div>
                                 <div class="rail-marker" id="rail-marker">
                                     <span class="rail-marker-label" id="rail-marker-label">--</span>
                                 </div>
@@ -105,93 +110,87 @@
                                 <span class="rail-tick rail-tick-100">100</span>
                             </div>
                         </div>
-
-                        <div class="rail-legend">
-                            <span><span class="rail-key rail-key-reset" aria-hidden="true"></span>Reset <b id="rail-reset-value">--</b></span>
-                            <span><span class="rail-key rail-key-trigger" aria-hidden="true"></span>Trigger <b id="rail-trigger-value">--</b></span>
-                            <span class="rail-legend-note">% SoC</span>
-                        </div>
                     </div>
-                </div>
-            </section>
 
-            <section class="metrics" aria-label="Current telemetry">
-                <div class="metric">
-                    <span class="metric-label">Charging state</span>
-                    <span class="metric-value" id="charge-state">—</span>
-                </div>
-                <div class="metric">
-                    <span class="metric-label">Battery power</span>
-                    <span class="metric-value" id="power-state">—</span>
-                </div>
-                <div class="metric">
-                    <span class="metric-label">CCU write</span>
-                    <span class="metric-value" id="ccu-state">—</span>
-                </div>
-                <div class="metric">
-                    <span class="metric-label">Last sample</span>
-                    <span class="metric-value" id="metric-last">—</span>
-                </div>
-            </section>
-
-            <div class="lower">
-                <section class="history" aria-labelledby="history-title">
-                    <div class="section-head">
-                        <div>
-                            <div class="section-title-row">
-                                <h2 id="history-title">History</h2>
-                                <span class="index" aria-hidden="true">02</span>
-                            </div>
-                            <p>One sample per monitor run. Dashed rules mark the hysteresis thresholds.</p>
+                    <section class="metrics" aria-label="Current telemetry">
+                        <div class="metric">
+                            <span class="metric-label">Charging state</span>
+                            <span class="metric-value" id="charge-state">—</span>
                         </div>
-                        <span class="chip" id="history-count" data-tone="unknown">no samples</span>
+                        <div class="metric">
+                            <span class="metric-label">Battery power</span>
+                            <span class="metric-value" id="power-state">—</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">CCU write</span>
+                            <span class="metric-value" id="ccu-state">—</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Last sample</span>
+                            <span class="metric-value" id="metric-last">—</span>
+                        </div>
+                    </section>
+                </div>
+            </section>
+
+            <div class="lower-grid">
+                <section class="history-panel" aria-labelledby="history-title">
+                    <div class="section-head">
+                        <div class="section-head-left">
+                            <span class="panel-index">03</span>
+                            <div>
+                                <h2 id="history-title">State of charge history</h2>
+                                <p>One sample per monitor run. Dashed rules mark reset and trigger thresholds.</p>
+                            </div>
+                        </div>
+                        <span class="sample-count" id="history-count">No samples</span>
                     </div>
 
                     <div class="chart-wrap">
                         <svg id="chart" class="chart" viewBox="0 0 760 220" role="img" aria-label="No state of charge history yet">
                             <g id="chart-layer"></g>
                         </svg>
-                        <p class="chart-empty" id="chart-empty">No history yet.</p>
+                        <p class="chart-empty" id="chart-empty">No history recorded yet.</p>
                     </div>
 
                     <div class="chart-legend">
-                        <span class="legend-item"><span class="legend-swatch legend-swatch-soc" aria-hidden="true"></span>State of charge</span>
-                        <span class="legend-item"><span class="legend-swatch legend-swatch-threshold" aria-hidden="true"></span>Thresholds</span>
-                        <span class="chart-range" id="chart-range">no data</span>
+                        <span class="legend-item"><span class="legend-swatch legend-swatch-soc" aria-hidden="true"></span>SoC trajectory</span>
+                        <span class="legend-item"><span class="legend-swatch legend-swatch-threshold" aria-hidden="true"></span>Hysteresis bounds</span>
+                        <span class="chart-range" id="chart-range">No data</span>
                     </div>
                 </section>
 
-                <section class="meta" aria-labelledby="meta-title">
+                <section class="meta-panel" aria-labelledby="meta-title">
                     <div class="section-head">
-                        <div>
-                            <div class="section-title-row">
-                                <h2 id="meta-title">Connection</h2>
-                                <span class="index" aria-hidden="true">03</span>
+                        <div class="section-head-left">
+                            <span class="panel-index">04</span>
+                            <div>
+                                <h2 id="meta-title">System register</h2>
+                                <p>Parameters reported by the latest completed run.</p>
                             </div>
-                            <p>Values reported by the last completed run.</p>
                         </div>
                     </div>
 
                     <dl class="meta-list">
-                        <div class="meta-row"><dt>Inverter</dt><dd id="meta-host">—</dd></div>
+                        <div class="meta-row"><dt>Inverter host</dt><dd id="meta-host">—</dd></div>
                         <div class="meta-row"><dt>SoC variable</dt><dd id="meta-soc-var">—</dd></div>
                         <div class="meta-row"><dt>Signal variable</dt><dd id="meta-signal-var">—</dd></div>
-                        <div class="meta-row"><dt>Notifications</dt><dd id="meta-notify">—</dd></div>
-                        <div class="meta-row"><dt>Last run</dt><dd id="meta-last">—</dd></div>
+                        <div class="meta-row"><dt>Signal gateway</dt><dd id="meta-notify">—</dd></div>
+                        <div class="meta-row"><dt>Timestamp</dt><dd id="meta-last">—</dd></div>
                     </dl>
                 </section>
             </div>
 
             <footer class="footer">
-                <span>homematic-sma-battery-monitor</span>
-                <span>MIT · local</span>
+                <span>HOMEMATIC-SMA-BATTERY-MONITOR</span>
+                <span>SWISS INTERNATIONAL EDITION · CCU3 LOCAL</span>
             </footer>
         </div>
     </main>
 </div>
 
 <noscript>
-    <div class="noscript">This dashboard needs JavaScript to read <code>status.json</code> and draw the history.</div>
+    <div class="noscript">This dashboard requires JavaScript to read <code>status.json</code> and render the telemetry grid.</div>
 </noscript>
 
 <div class="drawer-layer" id="settings-layer" hidden>
@@ -201,14 +200,11 @@
            aria-labelledby="settings-title" tabindex="-1">
         <header class="drawer-head">
             <div>
-                <p class="drawer-kicker">Configuration</p>
+                <p class="drawer-kicker">System configuration</p>
                 <h2 id="settings-title">Settings</h2>
             </div>
-            <button class="icon-button" id="settings-close" type="button" aria-label="Close settings">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"
-                     stroke-linecap="square" aria-hidden="true">
-                    <path d="M6 6l12 12M18 6L6 18"></path>
-                </svg>
+            <button class="drawer-close" id="settings-close" type="button" aria-label="Close settings">
+                <span aria-hidden="true">Close ×</span>
             </button>
         </header>
 
@@ -303,7 +299,7 @@
             </fieldset>
 
             <div class="drawer-actions">
-                <button class="button button-test" id="settings-test" type="button">Test notification</button>
+                <button class="button button-outline" id="settings-test" type="button">Test notification</button>
                 <button class="button button-primary" id="settings-save" type="submit">Save settings</button>
             </div>
 

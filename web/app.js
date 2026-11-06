@@ -13,8 +13,6 @@
     var TEST_URL = new URL("./api/test_signal.cgi", window.location.href);
 
     var POLL_MS = 30000;
-    var RELATIVE_MS = 10000;
-    var STALE_AFTER_SECONDS = 600;
     var TEST_POLL_MS = 1000;
     var TEST_POLL_LIMIT = 30;
 
@@ -24,7 +22,6 @@
 
     var current = null;
     var pollTimer = null;
-    var relativeTimer = null;
     var loading = false;
 
     var settingsOpen = false;
@@ -45,15 +42,12 @@
         pull: $("pull"),
         pullLabel: $("pull-label"),
 
-        connection: $("connection"),
-        connectionText: $("connection-text"),
-        lastUpdate: $("last-update"),
-
         notice: $("notice"),
         noticeTitle: $("notice-title"),
         noticeText: $("notice-text"),
         retry: $("retry"),
 
+        heroBlock: $("hero-block"),
         gauge: $("gauge"),
         socValue: $("soc-value"),
         socState: $("soc-state"),
@@ -66,6 +60,8 @@
         railMarkerLabel: $("rail-marker-label"),
         railResetValue: $("rail-reset-value"),
         railTriggerValue: $("rail-trigger-value"),
+        railResetTag: $("rail-reset-tag"),
+        railTriggerTag: $("rail-trigger-tag"),
 
         chargeState: $("charge-state"),
         powerState: $("power-state"),
@@ -120,32 +116,6 @@
 
     function toNumber(value) {
         return typeof value === "number" && Number.isFinite(value) ? value : null;
-    }
-
-    function setText(node, value) {
-        if (node) {
-            node.textContent = value;
-        }
-    }
-
-    function formatRelative(iso) {
-        var date = new Date(iso);
-        if (Number.isNaN(date.getTime())) {
-            return "not yet";
-        }
-        var seconds = Math.max(0, Math.round((Date.now() - date.getTime()) / 1000));
-        if (seconds < 60) {
-            return seconds + "s ago";
-        }
-        var minutes = Math.round(seconds / 60);
-        if (minutes < 60) {
-            return minutes + "m ago";
-        }
-        var hours = Math.round(minutes / 60);
-        if (hours < 24) {
-            return hours + "h ago";
-        }
-        return Math.round(hours / 24) + "d ago";
     }
 
     function formatTime(iso) {
@@ -225,11 +195,6 @@
         return { trigger: trigger, reset: reset };
     }
 
-    function setConnection(state, label) {
-        el.connection.dataset.state = state;
-        el.connectionText.textContent = label;
-    }
-
     function showNotice(tone, title, text, offerRetry) {
         el.notice.hidden = false;
         el.notice.dataset.tone = tone;
@@ -274,18 +239,6 @@
         }
     }
 
-    function updateLastUpdate(iso) {
-        el.lastUpdate.dateTime = iso || "";
-        el.lastUpdate.textContent = formatRelative(iso);
-        el.lastUpdate.title = formatTime(iso);
-    }
-
-    function updateRelativeTime() {
-        if (current && current.generated_at) {
-            el.lastUpdate.textContent = formatRelative(current.generated_at);
-        }
-    }
-
     /* ----------------------------------------------------------------------
        Rendering
        ---------------------------------------------------------------------- */
@@ -296,9 +249,14 @@
         var history = Array.isArray(data.history) ? data.history : [];
         var charge = data.charging || "unknown";
         var last = formatTime(data.generated_at);
+        var tone = signalTone(data);
 
         current = data;
         document.body.dataset.state = "ready";
+
+        if (el.heroBlock) {
+            el.heroBlock.dataset.charge = charge;
+        }
 
         el.socValue.textContent = String(soc);
         el.socState.textContent = chargeTag(charge);
@@ -310,7 +268,10 @@
         el.socCaption.textContent = captionFor(data, thresholds);
 
         el.signalChip.textContent = signalLabel(data);
-        el.signalChip.dataset.tone = signalTone(data);
+        el.signalChip.dataset.tone = tone;
+        if (el.signalChip.parentElement && el.signalChip.parentElement.parentElement) {
+            el.signalChip.parentElement.parentElement.dataset.tone = tone;
+        }
         el.signalCopy.textContent = signalCopyFor(data, thresholds);
 
         el.rail.style.setProperty("--soc", String(soc));
@@ -322,9 +283,15 @@
             "State of charge " + soc + " percent. Reset at " +
             thresholds.reset + " percent, trigger at " + thresholds.trigger + " percent."
         );
-        el.railMarkerLabel.textContent = soc + " %";
+        el.railMarkerLabel.textContent = soc + "%";
         el.railResetValue.textContent = String(thresholds.reset);
         el.railTriggerValue.textContent = String(thresholds.trigger);
+        if (el.railResetTag) {
+            el.railResetTag.textContent = thresholds.reset + "%";
+        }
+        if (el.railTriggerTag) {
+            el.railTriggerTag.textContent = thresholds.trigger + "%";
+        }
 
         el.chargeState.textContent = chargeLabel(charge);
         el.chargeState.dataset.charge = charge;
@@ -345,50 +312,48 @@
         el.historyCount.textContent = history.length
             ? history.length + (history.length === 1 ? " sample" : " samples")
             : "No samples";
-        el.historyCount.dataset.tone = "unknown";
 
         renderChart(history, thresholds);
-        updateLastUpdate(data.generated_at);
     }
 
     function captionFor(data, thresholds) {
         if (data.signal === true) {
-            return "At " + data.soc + " % the signal is active. It resets at " +
-                thresholds.reset + " % or below.";
+            return "At " + data.soc + "% the overflow signal is active. Resets at " +
+                thresholds.reset + "% or below.";
         }
         if (data.signal === false) {
-            return "At " + data.soc + " % the signal is inactive. It triggers at " +
-                thresholds.trigger + " % or above.";
+            return "At " + data.soc + "% the overflow signal is inactive. Triggers at " +
+                thresholds.trigger + "% or above.";
         }
         return "No definitive signal state yet. Between " + thresholds.reset +
-            " % and " + thresholds.trigger + " % the previous state is held.";
+            "% and " + thresholds.trigger + "% the previous state is held.";
     }
 
     function signalCopyFor(data, thresholds) {
         if (data.signal === true) {
             if (data.signal_state === "triggered") {
-                return "Triggered at " + data.soc + " %. Active until the state of charge falls to " +
-                    thresholds.reset + " % or below.";
+                return "Triggered at " + data.soc + "%. Active until state of charge falls to " +
+                    thresholds.reset + "% or below.";
             }
             if (data.signal_state === "held") {
                 return "Held active inside the hysteresis band. Resets at " +
-                    thresholds.reset + " % or below.";
+                    thresholds.reset + "% or below.";
             }
-            return "Active. Resets at " + thresholds.reset + " % or below.";
+            return "Active. Resets at " + thresholds.reset + "% or below.";
         }
         if (data.signal === false) {
             if (data.signal_state === "reset") {
-                return "Reset at " + data.soc + " %. Triggers again at " +
-                    thresholds.trigger + " % or above.";
+                return "Reset at " + data.soc + "%. Triggers again at " +
+                    thresholds.trigger + "% or above.";
             }
-            return "Inactive. Triggers at " + thresholds.trigger + " % or above.";
+            return "Inactive. Triggers at " + thresholds.trigger + "% or above.";
         }
         return "The boolean is held between " + thresholds.reset +
-            " % and " + thresholds.trigger + " % when no previous state is known.";
+            "% and " + thresholds.trigger + "% when no previous state is known.";
     }
 
     /* ----------------------------------------------------------------------
-       History chart
+       History chart (Stark Two-Tone Swiss Sparkline)
        ---------------------------------------------------------------------- */
 
     function svgNode(tag, attributes, text) {
@@ -405,7 +370,7 @@
     function renderChart(history, thresholds) {
         var width = 760;
         var height = 220;
-        var pad = { top: 14, right: 10, bottom: 28, left: 30 };
+        var pad = { top: 14, right: 12, bottom: 28, left: 32 };
         var plotWidth = width - pad.left - pad.right;
         var plotHeight = height - pad.top - pad.bottom;
         var points = [];
@@ -459,7 +424,7 @@
             }));
             el.chartLayer.appendChild(svgNode("text", {
                 x: pad.left - 8,
-                y: lineY + 3,
+                y: lineY + 3.5,
                 "class": "chart-label",
                 "text-anchor": "end"
             }, String(value)));
@@ -480,19 +445,12 @@
             return (index ? "L" : "M") + x(point.t).toFixed(1) + "," + y(point.soc).toFixed(1);
         }).join(" ");
 
-        var baseY = y(0);
-        var areaPath = "M" + x(first.t).toFixed(1) + "," + baseY.toFixed(1) + " " +
-            points.map(function (point) {
-                return "L" + x(point.t).toFixed(1) + "," + y(point.soc).toFixed(1);
-            }).join(" ") +
-            " L" + x(last.t).toFixed(1) + "," + baseY.toFixed(1) + " Z";
-
-        el.chartLayer.appendChild(svgNode("path", { d: areaPath, "class": "chart-area" }));
         el.chartLayer.appendChild(svgNode("path", { d: linePath, "class": "chart-line" }));
-        el.chartLayer.appendChild(svgNode("circle", {
-            cx: x(last.t),
-            cy: y(last.soc),
-            r: 3.5,
+        el.chartLayer.appendChild(svgNode("rect", {
+            x: (x(last.t) - 4.5).toFixed(1),
+            y: (y(last.soc) - 4.5).toFixed(1),
+            width: "9",
+            height: "9",
             "class": "chart-dot"
         }));
 
@@ -511,7 +469,7 @@
         }, formatTimeShort(last.t, spanSeconds)));
 
         el.chartRange.textContent =
-            formatTimeShort(first.t, spanSeconds) + " – " +
+            formatTimeShort(first.t, spanSeconds) + " — " +
             formatTimeShort(last.t, spanSeconds);
         el.chart.setAttribute(
             "aria-label",
@@ -521,7 +479,7 @@
     }
 
     /* ----------------------------------------------------------------------
-       Loading and connection states
+       Loading and polling
        ---------------------------------------------------------------------- */
 
     function validatePayload(data) {
@@ -547,7 +505,6 @@
 
         if (!current) {
             document.body.dataset.state = "loading";
-            setConnection("loading", "Connecting");
         }
 
         var url = new URL(STATUS_URL.href);
@@ -566,13 +523,6 @@
                 validatePayload(data);
                 render(data);
                 hideNotice();
-
-                var age = (Date.now() - new Date(data.generated_at).getTime()) / 1000;
-                if (Number.isFinite(age) && age > STALE_AFTER_SECONDS) {
-                    setConnection("stale", "Stale");
-                } else {
-                    setConnection("live", "Live");
-                }
                 schedule(POLL_MS);
             })
             .catch(function (error) {
@@ -581,32 +531,27 @@
                     return;
                 }
                 if (current) {
-                    setConnection("stale", "Stale");
                     showNotice(
                         "warning",
-                        "Showing the last known state",
+                        "Showing last recorded state",
                         "The latest request failed (" + error.message +
-                        "). The dashboard retries automatically.",
+                        "). Polling continues automatically.",
                         true
                     );
                 } else if (error.status === 404) {
-                    setConnection("empty", "No data");
                     showNotice(
                         "empty",
-                        "Waiting for the first measurement",
-                        "The dashboard reads status.json, which the monitor writes after " +
-                        "its first successful inverter read. This can take up to two " +
-                        "minutes after installation.",
+                        "Waiting for first measurement",
+                        "The dashboard reads status.json after the monitor completes " +
+                        "its first inverter poll (up to two minutes after installation).",
                         true
                     );
                 } else {
-                    setConnection("error", "Unavailable");
                     showNotice(
                         "error",
                         "Cannot read status.json",
-                        "The dashboard could not load its data (" + error.message +
-                        "). Check that the monitor has run and that lighttpd serves the " +
-                        "add-on directory.",
+                        "The dashboard could not load telemetry (" + error.message +
+                        "). Verify that the monitor has run and lighttpd serves the add-on directory.",
                         true
                     );
                 }
@@ -650,13 +595,11 @@
 
     function renderDemo() {
         render(demoData());
-        setConnection("demo", "Demo");
-        el.lastUpdate.textContent = "demo";
         showNotice(
             "warning",
-            "Demo data",
-            "status.json is not reachable. These values are generated for preview only; " +
-            "open the dashboard through the CCU3 to see live measurements.",
+            "Exhibition Preview Data",
+            "status.json is not reachable. Showing synthesized telemetry; " +
+            "open the dashboard via the CCU3 for live inverter measurements.",
             false
         );
     }
@@ -934,8 +877,6 @@
     }
 
     function verifySignalAfterSave() {
-        // Runs after the save has completed and must not lock the form: the
-        // user can keep editing while the CCU delivers the test message.
         showSettingsStatus("pending", "Configuration saved. Sending a test message…");
         showToast("pending", "Configuration saved. Testing Signal…");
 
@@ -1041,11 +982,11 @@
         pullActive = false;
         el.pull.dataset.active = "false";
         el.pull.dataset.ready = "false";
-        el.mainContent.style.transition = "transform 220ms cubic-bezier(0.2, 0.7, 0.2, 1)";
+        el.mainContent.style.transition = "transform 200ms cubic-bezier(0.16, 1, 0.3, 1)";
         el.mainContent.style.transform = "";
         setTimeout(function () {
             el.mainContent.style.transition = "";
-        }, 240);
+        }, 220);
     }
 
     el.main.addEventListener("touchstart", function (event) {
@@ -1142,9 +1083,6 @@
         setSettingsBusy(true);
         saveSettings(false).then(function (data) {
             if (data.signal_enabled === true) {
-                // A save that leaves Signal enabled is verified right away, so
-                // a wrong phone/UUID or API key surfaces immediately instead
-                // of waiting for the battery to reach the trigger level.
                 verifySignalAfterSave();
             } else {
                 showToast("success", "Configuration saved.");
@@ -1189,8 +1127,6 @@
             load();
         }
     });
-
-    relativeTimer = setInterval(updateRelativeTime, RELATIVE_MS);
 
     if (demoRequested) {
         renderDemo();
