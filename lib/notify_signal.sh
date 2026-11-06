@@ -15,6 +15,9 @@
 #  Sends a message through the CallMeBot Signal gateway (or any compatible
 #  endpoint). The main cron job never waits for this script.
 #
+#  Messages follow UI_LANGUAGE from .env ("en" or "de", default "en"). They
+#  contain no URLs or host names; only the measured values are interpolated.
+#
 #  Safety features:
 #    - curl --data-urlencode performs the percent-encoding, so spaces and
 #      German umlauts work without python, jq or iconv on BusyBox.
@@ -130,10 +133,28 @@ load_config() {
     THRESHOLD_RESET=${THRESHOLD_RESET:-90}
     SMA_IP=${SMA_IP:-}
 
-    # New names take precedence; legacy SIGNAL_TEXT_* values still work.
-    SIGNAL_MESSAGE_OVERFLOW=${SIGNAL_MESSAGE_OVERFLOW:-${SIGNAL_TEXT_TRIGGER:-"Achtung: Batteriespeicher hat {SOC}% erreicht! Überschuss verfügbar."}}
-    SIGNAL_MESSAGE_RESET=${SIGNAL_MESSAGE_RESET:-${SIGNAL_TEXT_RESET:-"Batteriespeicher wieder unter {RESET_SOC}% ({SOC}%). Überschuss beendet."}}
-    SIGNAL_MESSAGE_TEST=${SIGNAL_MESSAGE_TEST:-"Testnachricht von Sentinella auf {HOST}. Signal-Benachrichtigungen funktionieren."}
+    # UI_LANGUAGE selects the built-in notification text. Unknown values fall
+    # back to English so a typo never silences an alert.
+    case "${UI_LANGUAGE:-}" in
+        de|DE|de_DE|de-DE) UI_LANGUAGE=de ;;
+        *) UI_LANGUAGE=en ;;
+    esac
+
+    if [ "$UI_LANGUAGE" = "de" ]; then
+        _default_overflow='Sentinella: Batteriespeicher bei {SOC}% (Schwelle: {TRIGGER_SOC}%). Überschuss verfügbar.'
+        _default_reset='Sentinella: Batteriespeicher unter {RESET_SOC}% gefallen ({SOC}%). Normalbetrieb aktiv.'
+        _default_test='Sentinella: Verbindung erfolgreich getestet. Alarmsystem bereit.'
+    else
+        _default_overflow='Sentinella: Battery reached {SOC}% (Trigger: {TRIGGER_SOC}%). Excess energy available.'
+        _default_reset='Sentinella: Battery dropped below {RESET_SOC}% ({SOC}%). Overflow mode inactive.'
+        _default_test='Sentinella: Connection verified. Telemetry and alert channel ready.'
+    fi
+
+    # Explicit templates win, including the legacy SIGNAL_TEXT_* names. Leave
+    # them unset to follow UI_LANGUAGE.
+    SIGNAL_MESSAGE_OVERFLOW=${SIGNAL_MESSAGE_OVERFLOW:-${SIGNAL_TEXT_TRIGGER:-$_default_overflow}}
+    SIGNAL_MESSAGE_RESET=${SIGNAL_MESSAGE_RESET:-${SIGNAL_TEXT_RESET:-$_default_reset}}
+    SIGNAL_MESSAGE_TEST=${SIGNAL_MESSAGE_TEST:-$_default_test}
 
     STATE_DIR=${STATE_DIR:-$APP_DIR/state}
     NOTIFY_LOCK_DIR=$STATE_DIR/.notify.lock

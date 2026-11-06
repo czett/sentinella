@@ -175,6 +175,47 @@ a {
     gap: 12px;
 }
 
+.lang-toggle {
+    display: inline-flex;
+    align-items: stretch;
+    border: var(--rule);
+    background: var(--white);
+}
+
+.lang-option {
+    min-width: 44px;
+    min-height: var(--tap);
+    padding: 0 10px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease;
+}
+
+.lang-option + .lang-option {
+    border-left: var(--rule-hairline);
+}
+
+.lang-option[aria-pressed="true"] {
+    background: var(--ink);
+    color: var(--white);
+}
+
+.lang-option:hover {
+    background: var(--blue);
+    color: var(--white);
+}
+
+.lang-option:active {
+    background: var(--red);
+    color: var(--white);
+}
+
 .settings-trigger {
     display: inline-flex;
     align-items: center;

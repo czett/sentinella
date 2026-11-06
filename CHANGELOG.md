@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `UI_LANGUAGE` (`en`/`de`, default `en`) for the dashboard and the built-in
+  Signal messages. The header `EN / DE` switch updates the interface
+  immediately and persists the choice through `api/config.cgi`.
+- Built-in, URL-free notification texts for trigger, reset and test events in
+  English and German.
 - `SIGNAL_MESSAGE_OVERFLOW` and `SIGNAL_MESSAGE_RESET` templates with
   `{SOC}`, `{TRIGGER_SOC}`, `{RESET_SOC}` and `{HOST}` placeholders.
 - `notify_signal.sh --test` for credential/delivery checks without touching

@@ -210,6 +210,7 @@ SV_SOC_NAME="SV_Batterie_SoC"
 SV_SIGNAL_NAME="SV_Batterie_95_Signal"
 THRESHOLD_TRIGGER="95"
 THRESHOLD_RESET="90"
+UI_LANGUAGE="en"
 SIGNAL_ENABLED="{'true' if signal_enabled else 'false'}"
 SIGNAL_PHONE="+491701234567"
 SIGNAL_APIKEY="test-key"
@@ -522,8 +523,13 @@ def main() -> int:
         if signal_state.signal_requests:
             query = parse_qs(urlparse(signal_state.signal_requests[0]).query)
             text = query.get("text", [""])[0]
-            check("Testnachricht" in text, "test message is clearly marked", failures)
+            check(
+                text == "Sentinella: Connection verified. Telemetry and alert channel ready.",
+                "test message uses the compact English default",
+                failures,
+            )
             check("Überschuss" not in text, "test is not an overflow alert", failures)
+            check("http" not in text, "test message contains no URL", failures)
         check(
             (addon2 / "state" / "signal").read_text() == signal_before,
             "state/signal unchanged by --test",
@@ -571,6 +577,54 @@ def main() -> int:
                 failures,
             )
 
+        print("\n10d. built-in messages follow UI_LANGUAGE=de")
+        addon4 = make_addon(tmp, sma_port, rega_port, signal_port, True, name="addon4")
+        reset_state(addon4)
+        (addon4 / "state").mkdir(parents=True)
+        (addon4 / "state" / "signal").write_text("0\n")
+        with (addon4 / ".env").open("a") as env_file:
+            env_file.write(
+                'UI_LANGUAGE="de"\n'
+                'SIGNAL_TEXT_TRIGGER=""\n'
+                'SIGNAL_TEXT_RESET=""\n'
+            )
+        sma_state.soc = 96
+        sma_state.reset_requests()
+        signal_state.reset_requests()
+        result = run_check(addon4)
+        check(result.returncode == 0, "main run exits 0", failures)
+        check(
+            wait_until(lambda: bool(signal_state.signal_requests)),
+            "German trigger request received",
+            failures,
+        )
+        if signal_state.signal_requests:
+            query = parse_qs(urlparse(signal_state.signal_requests[0]).query)
+            text = query.get("text", [""])[0]
+            check(
+                text == "Sentinella: Batteriespeicher bei 96% (Schwelle: 95%). "
+                        "Überschuss verfügbar.",
+                "German trigger message matches",
+                failures,
+            )
+
+        signal_state.reset_requests()
+        result = run_notify(addon4, "--test")
+        check(result.returncode == 0, "German --test exits 0", failures)
+        check(
+            wait_until(lambda: bool(signal_state.signal_requests)),
+            "German test request received",
+            failures,
+        )
+        if signal_state.signal_requests:
+            query = parse_qs(urlparse(signal_state.signal_requests[0]).query)
+            text = query.get("text", [""])[0]
+            check(
+                text == "Sentinella: Verbindung erfolgreich getestet. Alarmsystem bereit.",
+                "German test message matches",
+                failures,
+            )
+
         print("\n11. setup_variables.sh builds the ReGa payload")
         rega_state.reset_requests()
         env = os.environ.copy()
@@ -597,6 +651,7 @@ def main() -> int:
             "ccu_status", "generated_at", "variables", "charging",
         }
         check(required.issubset(status.keys()), "all required fields present", failures)
+        check(status.get("ui_language") == "en", "status.json reports the UI language", failures)
         check(isinstance(status["history"], list) and status["history"], "history present", failures)
 
         print("\n13. settings API returns the current configuration")
@@ -608,6 +663,7 @@ def main() -> int:
         check(config.get("signal_phone") == "+491701234567", "phone returned", failures)
         check(config.get("signal_apikey_set") is True, "API key presence reported", failures)
         check(config.get("sma_password_set") is True, "inverter password presence reported", failures)
+        check(config.get("ui_language") == "en", "UI language returned", failures)
         check("test-key" not in result.stdout, "API key is never returned", failures)
         check("test-secret" not in result.stdout, "inverter password is never returned", failures)
 
@@ -621,6 +677,7 @@ def main() -> int:
             ({"signal_phone": "not-a-phone"}, "signal_phone"),
             ({"sma_ip": "192.168.1.1/24"}, "sma_ip"),
             ({"sma_port": 70000}, "sma_port"),
+            ({"ui_language": "fr"}, "ui_language"),
         ]
         for payload, field in invalid_cases:
             result = run_cgi(addon2, "POST", body=json.dumps(payload))
@@ -659,6 +716,16 @@ def main() -> int:
         check(not list(addon2.glob(".env.tmp*")), "no temporary files left behind", failures)
         check(not (addon2 / "state" / ".config.lock").exists(), "config lock released", failures)
 
+        print("\n15a. UI language is persisted through the settings API")
+        result = run_cgi(addon4, "POST", body=json.dumps({"ui_language": "en"}))
+        status_code, saved = parse_cgi(result)
+        check(status_code == "200 OK", f"language POST returns 200 (got {status_code})", failures)
+        check(saved.get("ui_language") == "en", "language returned in the response", failures)
+        check('UI_LANGUAGE=\'en\'' in (addon4 / ".env").read_text(), "language written to .env", failures)
+        status_code, config = parse_cgi(run_cgi(addon4, "GET"))
+        check(status_code == "200 OK" and config.get("ui_language") == "en",
+              "language survives a settings reload", failures)
+
         print("\n16. test notification is dispatched in the background")
         signal_before = (addon2 / "state" / "signal").read_text()
         signal_state.reset_requests()
@@ -674,7 +741,11 @@ def main() -> int:
         if signal_state.signal_requests:
             query = parse_qs(urlparse(signal_state.signal_requests[0]).query)
             text = query.get("text", [""])[0]
-            check("Testnachricht" in text, "test message is clearly marked", failures)
+            check(
+                text == "Sentinella: Connection verified. Telemetry and alert channel ready.",
+                "test message is clearly marked",
+                failures,
+            )
             check(query.get("phone", [""])[0] == "+491709876543", "test uses the saved phone", failures)
 
         deadline = time.time() + 8

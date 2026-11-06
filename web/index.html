@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="./style.css">
 </head>
 <body data-state="loading">
-<a class="skip-link" href="#main">Skip to content</a>
+<a class="skip-link" href="#main" data-i18n="skipToContent">Skip to content</a>
 
 <div class="app">
     <header class="bar">
@@ -18,15 +18,23 @@
             <span class="brand-mark" aria-hidden="true"></span>
             <div class="brand-titles">
                 <span class="brand-name">SENTINELLA</span>
-                <span class="brand-sub">Battery Monitor &amp; Hysteresis Sentinel</span>
+                <span class="brand-sub" data-i18n="brandSub">Battery Monitor &amp; Hysteresis Sentinel</span>
             </div>
         </div>
 
         <div class="bar-right">
+            <div class="lang-toggle" id="lang-toggle" role="group"
+                 aria-label="Language" data-i18n-aria="languageLabel">
+                <button class="lang-option" type="button" data-lang="en"
+                        aria-pressed="true">EN</button>
+                <button class="lang-option" type="button" data-lang="de"
+                        aria-pressed="false">DE</button>
+            </div>
             <button class="settings-trigger" id="settings-open" type="button"
                     aria-label="Open settings" aria-haspopup="dialog"
-                    aria-expanded="false" aria-controls="settings-drawer">
-                <span class="settings-trigger-text">Settings</span>
+                    aria-expanded="false" aria-controls="settings-drawer"
+                    data-i18n-aria="openSettings">
+                <span class="settings-trigger-text" data-i18n="settings">Settings</span>
                 <span class="settings-trigger-mark" aria-hidden="true">+</span>
             </button>
         </div>
@@ -35,7 +43,7 @@
     <main id="main" class="main" tabindex="-1">
         <div class="pull-indicator" id="pull" aria-hidden="true">
             <span class="pull-square"></span>
-            <span id="pull-label">Pull to refresh</span>
+            <span id="pull-label" data-i18n="pullRefresh">Pull to refresh</span>
         </div>
 
         <div class="main-content" id="main-content">
@@ -45,15 +53,15 @@
                     <strong id="notice-title"></strong>
                     <p id="notice-text"></p>
                 </div>
-                <button class="button button-ink" id="retry" type="button" hidden>Retry now</button>
+                <button class="button button-ink" id="retry" type="button" hidden data-i18n="retryNow">Retry now</button>
             </div>
 
             <section class="poster-grid" aria-labelledby="instrument-title">
                 <div class="poster-blue" id="hero-block" data-charge="unknown">
                     <div class="poster-meta">
                         <span class="poster-index">01</span>
-                        <h1 class="poster-eyebrow" id="instrument-title">State of charge</h1>
-                        <span class="state-tag" id="soc-state" data-charge="unknown">UNKNOWN</span>
+                        <h1 class="poster-eyebrow" id="instrument-title" data-i18n="stateOfCharge">State of charge</h1>
+                        <span class="state-tag" id="soc-state" data-charge="unknown" data-i18n="unknown">UNKNOWN</span>
                     </div>
 
                     <div class="soc" id="gauge" role="img" aria-label="Battery state of charge unknown">
@@ -61,7 +69,7 @@
                     </div>
 
                     <div class="poster-foot">
-                        <p class="poster-caption" id="soc-caption">Waiting for the first measurement.</p>
+                        <p class="poster-caption" id="soc-caption" data-i18n="waitingFirstMeasurement">Waiting for the first measurement.</p>
                     </div>
                 </div>
 
@@ -69,22 +77,22 @@
                     <div class="signal-panel">
                         <div class="panel-header">
                             <span class="panel-index">02</span>
-                            <span class="panel-eyebrow">Hysteresis signal</span>
+                            <span class="panel-eyebrow" data-i18n="hysteresisSignal">Hysteresis signal</span>
                         </div>
 
                         <div class="signal-display">
                             <span class="signal-square" id="signal-square" aria-hidden="true"></span>
-                            <p class="signal-value" id="signal-chip" data-tone="unknown">Unknown</p>
+                            <p class="signal-value" id="signal-chip" data-tone="unknown" data-i18n="unknown">Unknown</p>
                         </div>
 
-                        <p class="signal-copy" id="signal-copy">The signal is written to the CCU3 system variable on every run. Between the thresholds the previous state is held.</p>
+                        <p class="signal-copy" id="signal-copy" data-i18n="signalCopyDefault">The signal is written to the CCU3 system variable on every run. Between the thresholds the previous state is held.</p>
                     </div>
 
                     <div class="rail-panel">
                         <div class="rail-header">
-                            <span class="rail-title">Threshold corridor (0—100 %)</span>
+                            <span class="rail-title" data-i18n="thresholdCorridor">Threshold corridor (0—100 %)</span>
                             <span class="rail-readout">
-                                Reset <strong id="rail-reset-value">90</strong>% / Trigger <strong id="rail-trigger-value">95</strong>%
+                                <span data-i18n="reset">Reset</span> <strong id="rail-reset-value">90</strong>% / <span data-i18n="trigger">Trigger</span> <strong id="rail-trigger-value">95</strong>%
                             </span>
                         </div>
 
@@ -114,19 +122,19 @@
 
                     <section class="metrics" aria-label="Current telemetry">
                         <div class="metric">
-                            <span class="metric-label">Charging state</span>
+                            <span class="metric-label" data-i18n="chargingState">Charging state</span>
                             <span class="metric-value" id="charge-state">—</span>
                         </div>
                         <div class="metric">
-                            <span class="metric-label">Battery power</span>
+                            <span class="metric-label" data-i18n="batteryPower">Battery power</span>
                             <span class="metric-value" id="power-state">—</span>
                         </div>
                         <div class="metric">
-                            <span class="metric-label">CCU write</span>
+                            <span class="metric-label" data-i18n="ccuWrite">CCU write</span>
                             <span class="metric-value" id="ccu-state">—</span>
                         </div>
                         <div class="metric">
-                            <span class="metric-label">Last sample</span>
+                            <span class="metric-label" data-i18n="lastSample">Last sample</span>
                             <span class="metric-value" id="metric-last">—</span>
                         </div>
                     </section>
@@ -139,24 +147,24 @@
                         <div class="section-head-left">
                             <span class="panel-index">03</span>
                             <div>
-                                <h2 id="history-title">State of charge history</h2>
-                                <p>One sample per monitor run. Dashed rules mark reset and trigger thresholds.</p>
+                                <h2 id="history-title" data-i18n="historyTitle">State of charge history</h2>
+                                <p data-i18n="historyDescription">One sample per monitor run. Dashed rules mark reset and trigger thresholds.</p>
                             </div>
                         </div>
-                        <span class="sample-count" id="history-count">No samples</span>
+                        <span class="sample-count" id="history-count" data-i18n="noSamples">No samples</span>
                     </div>
 
                     <div class="chart-wrap">
                         <svg id="chart" class="chart" viewBox="0 0 760 220" role="img" aria-label="No state of charge history yet">
                             <g id="chart-layer"></g>
                         </svg>
-                        <p class="chart-empty" id="chart-empty">No history recorded yet.</p>
+                        <p class="chart-empty" id="chart-empty" data-i18n="noHistory">No history recorded yet.</p>
                     </div>
 
                     <div class="chart-legend">
-                        <span class="legend-item"><span class="legend-swatch legend-swatch-soc" aria-hidden="true"></span>SoC trajectory</span>
-                        <span class="legend-item"><span class="legend-swatch legend-swatch-threshold" aria-hidden="true"></span>Hysteresis bounds</span>
-                        <span class="chart-range" id="chart-range">No data</span>
+                        <span class="legend-item"><span class="legend-swatch legend-swatch-soc" aria-hidden="true"></span><span data-i18n="legendSoc">SoC trajectory</span></span>
+                        <span class="legend-item"><span class="legend-swatch legend-swatch-threshold" aria-hidden="true"></span><span data-i18n="legendBounds">Hysteresis bounds</span></span>
+                        <span class="chart-range" id="chart-range" data-i18n="noData">No data</span>
                     </div>
                 </section>
 
@@ -165,25 +173,25 @@
                         <div class="section-head-left">
                             <span class="panel-index">04</span>
                             <div>
-                                <h2 id="meta-title">System register</h2>
-                                <p>Parameters reported by the latest completed run.</p>
+                                <h2 id="meta-title" data-i18n="systemRegister">System register</h2>
+                                <p data-i18n="systemRegisterDescription">Parameters reported by the latest completed run.</p>
                             </div>
                         </div>
                     </div>
 
                     <dl class="meta-list">
-                        <div class="meta-row"><dt>Inverter host</dt><dd id="meta-host">—</dd></div>
-                        <div class="meta-row"><dt>SoC variable</dt><dd id="meta-soc-var">—</dd></div>
-                        <div class="meta-row"><dt>Signal variable</dt><dd id="meta-signal-var">—</dd></div>
-                        <div class="meta-row"><dt>Signal gateway</dt><dd id="meta-notify">—</dd></div>
-                        <div class="meta-row"><dt>Timestamp</dt><dd id="meta-last">—</dd></div>
+                        <div class="meta-row"><dt data-i18n="inverterHost">Inverter host</dt><dd id="meta-host">—</dd></div>
+                        <div class="meta-row"><dt data-i18n="socVariable">SoC variable</dt><dd id="meta-soc-var">—</dd></div>
+                        <div class="meta-row"><dt data-i18n="signalVariable">Signal variable</dt><dd id="meta-signal-var">—</dd></div>
+                        <div class="meta-row"><dt data-i18n="signalGateway">Signal gateway</dt><dd id="meta-notify">—</dd></div>
+                        <div class="meta-row"><dt data-i18n="timestamp">Timestamp</dt><dd id="meta-last">—</dd></div>
                     </dl>
                 </section>
             </div>
 
             <footer class="footer">
                 <span>SENTINELLA · SMA / CCU3 TELEMETRY</span>
-                <span>BATTERY MONITOR &amp; HYSTERESIS SENTINEL · LOCAL</span>
+                <span data-i18n="footerTagline">BATTERY MONITOR &amp; HYSTERESIS SENTINEL · LOCAL</span>
             </footer>
         </div>
     </main>
@@ -200,11 +208,12 @@
            aria-labelledby="settings-title" tabindex="-1">
         <header class="drawer-head">
             <div>
-                <p class="drawer-kicker">System configuration</p>
-                <h2 id="settings-title">Settings</h2>
+                <p class="drawer-kicker" data-i18n="systemConfiguration">System configuration</p>
+                <h2 id="settings-title" data-i18n="settings">Settings</h2>
             </div>
-            <button class="drawer-close" id="settings-close" type="button" aria-label="Close settings">
-                <span aria-hidden="true">Close ×</span>
+            <button class="drawer-close" id="settings-close" type="button" aria-label="Close settings"
+                    data-i18n-aria="closeSettings">
+                <span aria-hidden="true"><span data-i18n="close">Close</span> ×</span>
             </button>
         </header>
 
@@ -212,98 +221,99 @@
 
         <form class="settings-form" id="settings-form" novalidate>
             <fieldset class="field-group">
-                <legend><span class="group-index">01</span>Battery thresholds</legend>
-                <p class="field-note">The signal turns on at the trigger level and off again at the reset level. Reset must stay below trigger.</p>
+                <legend><span class="group-index">01</span><span data-i18n="batteryThresholds">Battery thresholds</span></legend>
+                <p class="field-note" data-i18n="thresholdsNote">The signal turns on at the trigger level and off again at the reset level. Reset must stay below trigger.</p>
 
                 <div class="field-row">
                     <label class="field" for="trigger-soc">
-                        <span class="field-label">Trigger level</span>
+                        <span class="field-label" data-i18n="triggerLevel">Trigger level</span>
                         <span class="input-suffix">
                             <input class="input" id="trigger-soc" name="trigger_soc" type="number"
                                    inputmode="numeric" min="0" max="100" step="1" required
-                                   aria-label="Trigger level">
+                                   aria-label="Trigger level" data-i18n-aria="triggerLevel">
                             <span class="suffix" aria-hidden="true">%</span>
                         </span>
                         <input class="range" id="trigger-range" type="range" min="0" max="100" step="1"
-                               aria-label="Trigger level slider">
+                               aria-label="Trigger level slider" data-i18n-aria="triggerSlider">
                     </label>
                     <label class="field" for="reset-soc">
-                        <span class="field-label">Reset level</span>
+                        <span class="field-label" data-i18n="resetLevel">Reset level</span>
                         <span class="input-suffix">
                             <input class="input" id="reset-soc" name="reset_soc" type="number"
                                    inputmode="numeric" min="0" max="100" step="1" required
-                                   aria-label="Reset level">
+                                   aria-label="Reset level" data-i18n-aria="resetLevel">
                             <span class="suffix" aria-hidden="true">%</span>
                         </span>
                         <input class="range" id="reset-range" type="range" min="0" max="100" step="1"
-                               aria-label="Reset level slider">
+                               aria-label="Reset level slider" data-i18n-aria="resetSlider">
                     </label>
                 </div>
             </fieldset>
 
             <fieldset class="field-group">
-                <legend><span class="group-index">02</span>Signal alerts</legend>
+                <legend><span class="group-index">02</span><span data-i18n="signalAlerts">Signal alerts</span></legend>
 
                 <label class="switch-row" for="signal-enabled">
                     <span>
-                        <span class="field-label">Send notifications</span>
-                        <span class="field-note">Calls the CallMeBot Signal gateway when the signal changes.</span>
+                        <span class="field-label" data-i18n="sendNotifications">Send notifications</span>
+                        <span class="field-note" data-i18n="sendNotificationsNote">Calls the CallMeBot Signal gateway when the signal changes.</span>
                     </span>
                     <input class="switch" id="signal-enabled" name="signal_enabled" type="checkbox" role="switch"
-                           aria-label="Send Signal notifications">
+                           aria-label="Send Signal notifications" data-i18n-aria="sendNotifications">
                 </label>
 
                 <label class="field" for="signal-phone">
-                    <span class="field-label">Phone / UUID</span>
+                    <span class="field-label" data-i18n="phoneLabel">Phone / UUID</span>
                     <input class="input" id="signal-phone" name="signal_phone" type="text"
                            inputmode="tel" autocomplete="off" spellcheck="false"
-                           aria-label="Phone number or Signal UUID"
+                           aria-label="Phone number or Signal UUID" data-i18n-aria="phoneAria"
                            placeholder="+491701234567">
                 </label>
 
                 <label class="field" for="signal-apikey">
-                    <span class="field-label">CallMeBot API key</span>
+                    <span class="field-label" data-i18n="apikeyLabel">CallMeBot API key</span>
                     <input class="input" id="signal-apikey" name="signal_apikey" type="password"
                            autocomplete="new-password" spellcheck="false"
-                           aria-label="CallMeBot API key"
-                           placeholder="Required">
+                           aria-label="CallMeBot API key" data-i18n-aria="apikeyLabel"
+                           placeholder="Required" data-i18n-placeholder="required">
                 </label>
-                <p class="field-hint" id="apikey-hint" hidden>An API key is stored. Leave the field empty to keep it.</p>
+                <p class="field-hint" id="apikey-hint" hidden data-i18n="storedKeepHint">An API key is stored. Leave the field empty to keep it.</p>
             </fieldset>
 
             <fieldset class="field-group">
-                <legend><span class="group-index">03</span>Inverter</legend>
+                <legend><span class="group-index">03</span><span data-i18n="inverter">Inverter</span></legend>
 
                 <label class="field" for="sma-ip">
-                    <span class="field-label">SMA IP address</span>
+                    <span class="field-label" data-i18n="smaIp">SMA IP address</span>
                     <input class="input" id="sma-ip" name="sma_ip" type="text"
                            autocomplete="off" spellcheck="false"
-                           aria-label="SMA inverter IP address or hostname" placeholder="192.168.178.123">
+                           aria-label="SMA inverter IP address or hostname" data-i18n-aria="smaIpAria" placeholder="192.168.178.123">
                 </label>
 
                 <div class="field-row">
                     <label class="field" for="sma-port">
-                        <span class="field-label">HTTPS port</span>
+                        <span class="field-label" data-i18n="httpsPort">HTTPS port</span>
                         <input class="input" id="sma-port" name="sma_port" type="number"
                                inputmode="numeric" min="1" max="65535" step="1"
-                               aria-label="Inverter HTTPS port">
+                               aria-label="Inverter HTTPS port" data-i18n-aria="httpsPort">
                     </label>
                     <label class="field" for="sma-password">
-                        <span class="field-label">Inverter password</span>
+                        <span class="field-label" data-i18n="inverterPassword">Inverter password</span>
                         <input class="input" id="sma-password" name="sma_password" type="password"
                                autocomplete="new-password" placeholder="Unchanged"
-                               aria-label="Inverter password">
+                               aria-label="Inverter password" data-i18n-aria="inverterPassword"
+                               data-i18n-placeholder="unchanged">
                     </label>
                 </div>
-                <p class="field-hint" id="sma-password-hint" hidden>A password is stored. Leave the field empty to keep it.</p>
+                <p class="field-hint" id="sma-password-hint" hidden data-i18n="storedPasswordHint">A password is stored. Leave the field empty to keep it.</p>
             </fieldset>
 
             <div class="drawer-actions">
-                <button class="button button-outline" id="settings-test" type="button">Test notification</button>
-                <button class="button button-primary" id="settings-save" type="submit">Save settings</button>
+                <button class="button button-outline" id="settings-test" type="button" data-i18n="testNotification">Test notification</button>
+                <button class="button button-primary" id="settings-save" type="submit" data-i18n="saveSettings">Save settings</button>
             </div>
 
-            <p class="drawer-footnote">Values are written to <code>.env</code> on the CCU. The next monitor run applies them, at most two minutes away.</p>
+            <p class="drawer-footnote"><span data-i18n="footnotePrefix">Values are written to</span> <code>.env</code> <span data-i18n="footnoteSuffix">on the CCU. The next monitor run applies them, at most two minutes away.</span></p>
         </form>
     </aside>
 </div>

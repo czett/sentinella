@@ -264,6 +264,13 @@ load_config() {
     WEB_STATUS_FILE=${WEB_STATUS_FILE:-$STATE_DIR/status.json}
     WEB_HISTORY_POINTS=${WEB_HISTORY_POINTS:-288}
 
+    # Language for the dashboard and Signal notifications. Unknown values fall
+    # back to English so a typo cannot break the monitor or the alerts.
+    case "${UI_LANGUAGE:-}" in
+        de|DE|de_DE|de-DE) UI_LANGUAGE=de ;;
+        *) UI_LANGUAGE=en ;;
+    esac
+
     # Logging
     LOG_FILE=${LOG_FILE:-$STATE_DIR/check_soc.log}
     LOG_MAX_BYTES=${LOG_MAX_BYTES:-262144}
@@ -775,7 +782,7 @@ determine_charge_state() {
 
 status_json() {
     cat <<EOF
-{"schema":1,"generated_at":"$_j_generated","generated_epoch":$NOW,"host":"$_j_host","soc":$SOC,"previous_soc":$_j_prev,"delta":$_j_delta,"charging":"$CHARGE_STATE","charge_power_w":$_j_charge,"discharge_power_w":$_j_discharge,"signal":$_j_signal,"signal_state":"$SIGNAL_STATE","signal_notifications":$_j_notify,"thresholds":{"trigger":$THRESHOLD_TRIGGER,"reset":$THRESHOLD_RESET},"variables":{"soc":"$SV_SOC_NAME","signal":"$SV_SIGNAL_NAME"},"ccu_status":"$_j_ccu","history":$_j_history}
+{"schema":1,"ui_language":"$UI_LANGUAGE","generated_at":"$_j_generated","generated_epoch":$NOW,"host":"$_j_host","soc":$SOC,"previous_soc":$_j_prev,"delta":$_j_delta,"charging":"$CHARGE_STATE","charge_power_w":$_j_charge,"discharge_power_w":$_j_discharge,"signal":$_j_signal,"signal_state":"$SIGNAL_STATE","signal_notifications":$_j_notify,"thresholds":{"trigger":$THRESHOLD_TRIGGER,"reset":$THRESHOLD_RESET},"variables":{"soc":"$SV_SOC_NAME","signal":"$SV_SIGNAL_NAME"},"ccu_status":"$_j_ccu","history":$_j_history}
 EOF
 }
 

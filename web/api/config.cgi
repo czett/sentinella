@@ -77,6 +77,7 @@ TEST_LOG=$STATE_DIR/notify_test.log
 TEST_LOCK=$STATE_DIR/.test_signal.lock
 CONFIG_LOCK=$STATE_DIR/.config.lock
 TEST_WRAPPER=
+UI_LANGUAGE=en
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -158,6 +159,100 @@ shquote() {
     printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
 }
 
+# Localized, user-facing API messages. UI_LANGUAGE is loaded from .env before
+# any request is validated; unknown values fall back to English.
+msg() {
+    case "$UI_LANGUAGE:${1:-}" in
+        de:invalid_content_length) printf 'Ungültige Content-Length.' ;;
+        en:invalid_content_length) printf 'Invalid Content-Length.' ;;
+        de:body_too_large) printf 'Der Anfrageinhalt ist zu groß.' ;;
+        en:body_too_large) printf 'Request body is too large.' ;;
+        de:incomplete_body) printf 'Der Anfrageinhalt ist unvollständig.' ;;
+        en:incomplete_body) printf 'Incomplete request body.' ;;
+        de:cross_origin) printf 'Änderungen an den Einstellungen von einer anderen Origin sind nicht erlaubt.' ;;
+        en:cross_origin) printf 'Cross-origin settings changes are not allowed.' ;;
+        de:config_missing) printf 'Die Konfigurationsdatei fehlt oder ist nicht lesbar.' ;;
+        en:config_missing) printf 'The configuration file is missing or unreadable.' ;;
+        de:config_not_writable) printf 'Die Konfigurationsdatei ist für den Webserver nicht beschreibbar.' ;;
+        en:config_not_writable) printf 'The configuration file is not writable by the web server.' ;;
+        de:trigger_invalid) printf 'Die Triggerschwelle muss eine ganze Zahl zwischen 0 und 100 sein.' ;;
+        en:trigger_invalid) printf 'Trigger level must be a whole number between 0 and 100.' ;;
+        de:reset_invalid) printf 'Die Rücksetzschwelle muss eine ganze Zahl zwischen 0 und 100 sein.' ;;
+        en:reset_invalid) printf 'Reset level must be a whole number between 0 and 100.' ;;
+        de:trigger_order) printf 'Die Triggerschwelle muss größer als die Rücksetzschwelle sein.' ;;
+        en:trigger_order) printf 'Trigger level must be greater than reset level.' ;;
+        de:signal_bool) printf 'Signalbenachrichtigungen müssen aktiviert oder deaktiviert sein.' ;;
+        en:signal_bool) printf 'Signal alerts must be either enabled or disabled.' ;;
+        de:phone_invalid) printf 'Geben Sie eine E.164-Telefonnummer (zum Beispiel +491701234567) oder eine Signal-UUID ein.' ;;
+        en:phone_invalid) printf 'Enter an E.164 phone number (for example +491701234567) or a Signal UUID.' ;;
+        de:apikey_invalid) printf 'Der CallMeBot-API-Schlüssel darf nur Buchstaben, Ziffern, Punkt, Bindestrich, Unterstrich und Doppelpunkt enthalten.' ;;
+        en:apikey_invalid) printf 'The CallMeBot API key may only contain letters, digits, dot, dash, underscore and colon.' ;;
+        de:phone_required) printf 'Wenn Benachrichtigungen aktiviert sind, ist eine Telefonnummer oder Signal-UUID erforderlich.' ;;
+        en:phone_required) printf 'A phone number or Signal UUID is required when alerts are enabled.' ;;
+        de:apikey_required) printf 'Wenn Benachrichtigungen aktiviert sind, ist ein CallMeBot-API-Schlüssel erforderlich.' ;;
+        en:apikey_required) printf 'A CallMeBot API key is required when alerts are enabled.' ;;
+        de:ip_invalid) printf 'Geben Sie eine gültige IPv4-Adresse oder einen Hostnamen des Wechselrichters ein.' ;;
+        en:ip_invalid) printf 'Enter a valid inverter IPv4 address or hostname.' ;;
+        de:port_invalid) printf 'Der Wechselrichter-Port muss zwischen 1 und 65535 liegen.' ;;
+        en:port_invalid) printf 'Inverter port must be between 1 and 65535.' ;;
+        de:password_invalid) printf 'Das Wechselrichter-Passwort enthält nicht unterstützte Zeichen.' ;;
+        en:password_invalid) printf 'The inverter password contains unsupported characters.' ;;
+        de:language_invalid) printf 'Die Sprache muss "en" oder "de" sein.' ;;
+        en:language_invalid) printf 'The language must be "en" or "de".' ;;
+        de:config_busy) printf 'Eine andere Konfigurationsänderung läuft gerade. Bitte erneut versuchen.' ;;
+        en:config_busy) printf 'Another configuration change is in progress. Try again.' ;;
+        de:tmp_create) printf 'Temporäre Konfigurationsdatei kann nicht erstellt werden.' ;;
+        en:tmp_create) printf 'Cannot create a temporary configuration file.' ;;
+        de:write_trigger) printf 'Die Triggerschwelle kann nicht geschrieben werden.' ;;
+        en:write_trigger) printf 'Cannot write the trigger level.' ;;
+        de:write_language) printf 'Die Sprache kann nicht geschrieben werden.' ;;
+        en:write_language) printf 'Cannot write the language.' ;;
+        de:write_reset) printf 'Die Rücksetzschwelle kann nicht geschrieben werden.' ;;
+        en:write_reset) printf 'Cannot write the reset level.' ;;
+        de:write_signal) printf 'Der Signal-Schalter kann nicht geschrieben werden.' ;;
+        en:write_signal) printf 'Cannot write the Signal switch.' ;;
+        de:write_phone) printf 'Die Telefonnummer kann nicht geschrieben werden.' ;;
+        en:write_phone) printf 'Cannot write the phone number.' ;;
+        de:write_apikey) printf 'Der API-Schlüssel kann nicht geschrieben werden.' ;;
+        en:write_apikey) printf 'Cannot write the API key.' ;;
+        de:write_ip) printf 'Die Wechselrichter-Adresse kann nicht geschrieben werden.' ;;
+        en:write_ip) printf 'Cannot write the inverter address.' ;;
+        de:write_port) printf 'Der Wechselrichter-Port kann nicht geschrieben werden.' ;;
+        en:write_port) printf 'Cannot write the inverter port.' ;;
+        de:write_password) printf 'Das Wechselrichter-Passwort kann nicht geschrieben werden.' ;;
+        en:write_password) printf 'Cannot write the inverter password.' ;;
+        de:replace_config) printf 'Die Konfigurationsdatei kann nicht ersetzt werden.' ;;
+        en:replace_config) printf 'Cannot replace the configuration file.' ;;
+        de:readback) printf 'Die Konfiguration wurde gespeichert, kann aber nicht erneut gelesen werden.' ;;
+        en:readback) printf 'The configuration was saved but cannot be read back.' ;;
+        de:notify_missing) printf 'Das Benachrichtigungsskript fehlt oder ist nicht ausführbar.' ;;
+        en:notify_missing) printf 'The notification script is missing or not executable.' ;;
+        de:test_credentials) printf 'Speichern Sie zuerst eine Telefonnummer und einen CallMeBot-API-Schlüssel.' ;;
+        en:test_credentials) printf 'Save a phone number and CallMeBot API key before testing.' ;;
+        de:test_running) printf 'Es läuft bereits eine Testbenachrichtigung.' ;;
+        en:test_running) printf 'A test notification is already running.' ;;
+        de:state_dir) printf 'Das Statusverzeichnis kann nicht erstellt werden.' ;;
+        en:state_dir) printf 'Cannot create the state directory.' ;;
+        de:test_lock) printf 'Die Testsperre kann nicht erstellt werden.' ;;
+        en:test_lock) printf 'Cannot create the test lock.' ;;
+        de:test_runner) printf 'Der Testrunner kann nicht erstellt werden.' ;;
+        en:test_runner) printf 'Cannot create the test runner.' ;;
+        de:queued) printf 'Testbenachrichtigung eingereiht.' ;;
+        en:queued) printf 'Test notification queued.' ;;
+        de:test_sent) printf 'Sentinella: Verbindung bestätigt. Bereit für Benachrichtigungen.' ;;
+        en:test_sent) printf 'Sentinella: Connection verified. Ready for alerts.' ;;
+        de:test_failed) printf 'Testbenachrichtigung fehlgeschlagen. Prüfen Sie Telefonnummer, API-Schlüssel und die Internetverbindung der CCU.' ;;
+        en:test_failed) printf 'Test notification failed. Check the phone number, API key and the CCU internet connection.' ;;
+        de:test_pending) printf 'Testbenachrichtigung wird gesendet.' ;;
+        en:test_pending) printf 'Test notification is being sent.' ;;
+        de:method) printf 'Verwenden Sie GET oder POST für diesen Endpunkt.' ;;
+        en:method) printf 'Use GET or POST for this endpoint.' ;;
+        de:unknown_action) printf 'Unbekannte API-Aktion.' ;;
+        en:unknown_action) printf 'Unknown API action.' ;;
+        *) printf 'Request failed.' ;;
+    esac
+}
+
 # shellcheck disable=SC2317,SC2329  # invoked indirectly through trap
 cleanup() {
     [ -n "${TMP_FILE:-}" ] && rm -f "$TMP_FILE" 2>/dev/null
@@ -207,12 +302,12 @@ CONTENT_TYPE=${CONTENT_TYPE:-}
 BODY=
 
 read_body() {
-    is_uint "$CONTENT_LENGTH" || fail "400 Bad Request" "Invalid Content-Length."
+    is_uint "$CONTENT_LENGTH" || fail "400 Bad Request" "$(msg invalid_content_length)"
     [ "$CONTENT_LENGTH" -le 16384 ] \
-        || fail "413 Payload Too Large" "Request body is too large."
+        || fail "413 Payload Too Large" "$(msg body_too_large)"
     if [ "$CONTENT_LENGTH" -gt 0 ]; then
         BODY=$(dd bs=1 count="$CONTENT_LENGTH" 2>/dev/null)
-        [ -n "$BODY" ] || fail "400 Bad Request" "Incomplete request body."
+        [ -n "$BODY" ] || fail "400 Bad Request" "$(msg incomplete_body)"
     fi
 }
 
@@ -221,7 +316,7 @@ check_origin() {
     case "$HTTP_ORIGIN" in
         "http://${HTTP_HOST:-}"|"https://${HTTP_HOST:-}") return 0 ;;
     esac
-    fail "403 Forbidden" "Cross-origin settings changes are not allowed."
+    fail "403 Forbidden" "$(msg cross_origin)"
 }
 
 # POST bodies are flat JSON. The UI sends exactly these keys; unknown keys are
@@ -264,6 +359,10 @@ load_env() {
     SMA_IP=${SMA_IP:-}
     SMA_PORT=${SMA_PORT:-443}
     SMA_PASS=${SMA_PASS:-}
+    case "${UI_LANGUAGE:-}" in
+        de|DE|de_DE|de-DE) UI_LANGUAGE=de ;;
+        *) UI_LANGUAGE=en ;;
+    esac
     return 0
 }
 
@@ -286,6 +385,7 @@ config_payload() {
     esac
 
     printf '{"ok":true'
+    printf ',"ui_language":%s' "$(json_str "$UI_LANGUAGE")"
     printf ',"trigger_soc":%s' "$_trigger"
     printf ',"reset_soc":%s' "$_reset"
     printf ',"signal_enabled":%s' "$(json_bool_str "$_enabled")"
@@ -356,10 +456,10 @@ release_config_lock() {
 
 save_config() {
     load_env || fail "500 Internal Server Error" \
-        "The configuration file is missing or unreadable."
+        "$(msg config_missing)"
 
     [ -w "$ENV_FILE" ] || fail "500 Internal Server Error" \
-        "The configuration file is not writable by the web server."
+        "$(msg config_not_writable)"
 
     _trigger=$THRESHOLD_TRIGGER
     _reset=$THRESHOLD_RESET
@@ -369,6 +469,7 @@ save_config() {
     _ip=$SMA_IP
     _port=$SMA_PORT
     _password=$SMA_PASS
+    _language=$UI_LANGUAGE
 
     _want_trigger=0
     _want_reset=0
@@ -378,12 +479,22 @@ save_config() {
     _want_ip=0
     _want_port=0
     _want_password=0
+    _want_language=0
+
+    if body_has ui_language; then
+        _language=$(body_str ui_language)
+        case "$_language" in
+            en|de) ;;
+            *) fail "400 Bad Request" "$(msg language_invalid)" "ui_language" ;;
+        esac
+        _want_language=1
+    fi
 
     if body_has trigger_soc; then
         _trigger=$(body_num trigger_soc)
         if ! is_uint "$_trigger" || [ "$_trigger" -gt 100 ]; then
             fail "400 Bad Request" \
-                "Trigger level must be a whole number between 0 and 100." \
+                "$(msg trigger_invalid)" \
                 "trigger_soc"
         fi
         _want_trigger=1
@@ -393,7 +504,7 @@ save_config() {
         _reset=$(body_num reset_soc)
         if ! is_uint "$_reset" || [ "$_reset" -gt 100 ]; then
             fail "400 Bad Request" \
-                "Reset level must be a whole number between 0 and 100." \
+                "$(msg reset_invalid)" \
                 "reset_soc"
         fi
         _want_reset=1
@@ -401,7 +512,7 @@ save_config() {
 
     if [ "$_trigger" -le "$_reset" ]; then
         fail "400 Bad Request" \
-            "Trigger level must be greater than reset level." \
+            "$(msg trigger_order)" \
             "trigger_soc"
     fi
 
@@ -412,7 +523,7 @@ save_config() {
             case "$_raw" in
                 true|false) _enabled=$_raw ;;
                 *) fail "400 Bad Request" \
-                    "Signal alerts must be either enabled or disabled." \
+                    "$(msg signal_bool)" \
                     "signal_enabled" ;;
             esac
         fi
@@ -423,7 +534,7 @@ save_config() {
         _phone=$(body_str signal_phone)
         if [ -n "$_phone" ] && ! is_phone_or_uuid "$_phone"; then
             fail "400 Bad Request" \
-                "Enter an E.164 phone number (for example +491701234567) or a Signal UUID." \
+                "$(msg phone_invalid)" \
                 "signal_phone"
         fi
         _want_phone=1
@@ -433,7 +544,7 @@ save_config() {
         _newkey=$(body_str signal_apikey)
         if [ -n "$_newkey" ]; then
             is_apikey "$_newkey" || fail "400 Bad Request" \
-                "The CallMeBot API key may only contain letters, digits, dot, dash, underscore and colon." \
+                "$(msg apikey_invalid)" \
                 "signal_apikey"
             _apikey=$_newkey
             _want_apikey=1
@@ -444,17 +555,17 @@ save_config() {
 
     if [ "$_enabled" = "true" ]; then
         [ -n "$_phone" ] || fail "400 Bad Request" \
-            "A phone number or Signal UUID is required when alerts are enabled." \
+            "$(msg phone_required)" \
             "signal_phone"
         [ -n "$_apikey" ] || fail "400 Bad Request" \
-            "A CallMeBot API key is required when alerts are enabled." \
+            "$(msg apikey_required)" \
             "signal_apikey"
     fi
 
     if body_has sma_ip; then
         _ip=$(body_str sma_ip)
         is_safe_host "$_ip" || fail "400 Bad Request" \
-            "Enter a valid inverter IPv4 address or hostname." "sma_ip"
+            "$(msg ip_invalid)" "sma_ip"
         _want_ip=1
     fi
 
@@ -462,7 +573,7 @@ save_config() {
         _port=$(body_num sma_port)
         if ! is_uint "$_port" || [ "$_port" -lt 1 ] || [ "$_port" -gt 65535 ]; then
             fail "400 Bad Request" \
-                "Inverter port must be between 1 and 65535." "sma_port"
+                "$(msg port_invalid)" "sma_port"
         fi
         _want_port=1
     fi
@@ -471,7 +582,7 @@ save_config() {
         _newpw=$(body_str sma_password)
         if [ -n "$_newpw" ]; then
             is_password "$_newpw" || fail "400 Bad Request" \
-                "The inverter password contains unsupported characters." \
+                "$(msg password_invalid)" \
                 "sma_password"
             _password=$_newpw
             _want_password=1
@@ -479,54 +590,58 @@ save_config() {
     fi
 
     acquire_config_lock || fail "409 Conflict" \
-        "Another configuration change is in progress. Try again."
+        "$(msg config_busy)"
 
     TMP_FILE="$ENV_FILE.tmp.$$"
     cp -p "$ENV_FILE" "$TMP_FILE" 2>/dev/null \
-        || fail "500 Internal Server Error" "Cannot create a temporary configuration file."
+        || fail "500 Internal Server Error" "$(msg tmp_create)"
     chmod 600 "$TMP_FILE" 2>/dev/null || true
 
+    if [ "$_want_language" = "1" ]; then
+        env_set "$TMP_FILE" UI_LANGUAGE "$_language" || \
+            fail "500 Internal Server Error" "$(msg write_language)"
+    fi
     if [ "$_want_trigger" = "1" ]; then
         env_set "$TMP_FILE" THRESHOLD_TRIGGER "$_trigger" || \
-            fail "500 Internal Server Error" "Cannot write the trigger level."
+            fail "500 Internal Server Error" "$(msg write_trigger)"
     fi
     if [ "$_want_reset" = "1" ]; then
         env_set "$TMP_FILE" THRESHOLD_RESET "$_reset" || \
-            fail "500 Internal Server Error" "Cannot write the reset level."
+            fail "500 Internal Server Error" "$(msg write_reset)"
     fi
     if [ "$_want_enabled" = "1" ]; then
         env_set "$TMP_FILE" SIGNAL_ENABLED "$_enabled" || \
-            fail "500 Internal Server Error" "Cannot write the Signal switch."
+            fail "500 Internal Server Error" "$(msg write_signal)"
     fi
     if [ "$_want_phone" = "1" ]; then
         env_set "$TMP_FILE" SIGNAL_PHONE "$_phone" || \
-            fail "500 Internal Server Error" "Cannot write the phone number."
+            fail "500 Internal Server Error" "$(msg write_phone)"
     fi
     if [ "$_want_apikey" = "1" ]; then
         env_set "$TMP_FILE" SIGNAL_APIKEY "$_apikey" || \
-            fail "500 Internal Server Error" "Cannot write the API key."
+            fail "500 Internal Server Error" "$(msg write_apikey)"
     fi
     if [ "$_want_ip" = "1" ]; then
         env_set "$TMP_FILE" SMA_IP "$_ip" || \
-            fail "500 Internal Server Error" "Cannot write the inverter address."
+            fail "500 Internal Server Error" "$(msg write_ip)"
     fi
     if [ "$_want_port" = "1" ]; then
         env_set "$TMP_FILE" SMA_PORT "$_port" || \
-            fail "500 Internal Server Error" "Cannot write the inverter port."
+            fail "500 Internal Server Error" "$(msg write_port)"
     fi
     if [ "$_want_password" = "1" ]; then
         env_set "$TMP_FILE" SMA_PASS "$_password" || \
-            fail "500 Internal Server Error" "Cannot write the inverter password."
+            fail "500 Internal Server Error" "$(msg write_password)"
     fi
 
     chmod 600 "$TMP_FILE" 2>/dev/null || true
     mv -f "$TMP_FILE" "$ENV_FILE" 2>/dev/null \
-        || fail "500 Internal Server Error" "Cannot replace the configuration file."
+        || fail "500 Internal Server Error" "$(msg replace_config)"
     TMP_FILE=
 
     release_config_lock
     load_env || fail "500 Internal Server Error" \
-        "The configuration was saved but cannot be read back."
+        "$(msg readback)"
     emit_json "200 OK" "$(config_payload)"
 }
 
@@ -545,24 +660,24 @@ test_lock_is_fresh() {
 
 start_test() {
     load_env || fail "500 Internal Server Error" \
-        "The configuration file is missing or unreadable."
+        "$(msg config_missing)"
 
     [ -x "$NOTIFY_SCRIPT" ] || fail "500 Internal Server Error" \
-        "The notification script is missing or not executable."
+        "$(msg notify_missing)"
 
     if [ -z "$SIGNAL_PHONE" ] || [ -z "$SIGNAL_APIKEY" ]; then
         fail "400 Bad Request" \
-            "Save a phone number and CallMeBot API key before testing."
+            "$(msg test_credentials)"
     fi
 
     if test_lock_is_fresh; then
-        fail "409 Conflict" "A test notification is already running."
+        fail "409 Conflict" "$(msg test_running)"
     fi
     rm -rf "$TEST_LOCK" 2>/dev/null || true
     mkdir -p "$STATE_DIR" 2>/dev/null \
-        || fail "500 Internal Server Error" "Cannot create the state directory."
+        || fail "500 Internal Server Error" "$(msg state_dir)"
     mkdir "$TEST_LOCK" 2>/dev/null \
-        || fail "500 Internal Server Error" "Cannot create the test lock."
+        || fail "500 Internal Server Error" "$(msg test_lock)"
     TEST_LOCK_OWNED=1
     printf '%s\n' "$(date +%s 2>/dev/null)" > "$TEST_LOCK/started" 2>/dev/null || true
 
@@ -586,7 +701,7 @@ start_test() {
         # shellcheck disable=SC2016  # "$0" must stay literal in the wrapper
         printf 'rm -f "$0"\n'
     } > "$TEST_WRAPPER" 2>/dev/null \
-        || fail "500 Internal Server Error" "Cannot create the test runner."
+        || fail "500 Internal Server Error" "$(msg test_runner)"
 
     chmod 700 "$TEST_WRAPPER" 2>/dev/null || true
 
@@ -602,7 +717,7 @@ start_test() {
     TEST_LOCK_OWNED=0
 
     emit_json "202 Accepted" \
-        '{"ok":true,"status":"queued","message":"Test notification queued."}'
+        "{\"ok\":true,\"status\":\"queued\",\"message\":$(json_str "$(msg queued)")}"
 }
 
 read_test_result() {
@@ -620,18 +735,19 @@ read_test_result() {
 }
 
 report_test() {
+    load_env 2>/dev/null || true
     if read_test_result; then
         if [ "$TEST_RC" = "0" ]; then
             emit_json "200 OK" \
-                '{"ok":true,"status":"sent","message":"Sentinella: Connection verified. Ready for alerts."}'
+                "{\"ok\":true,\"status\":\"sent\",\"message\":$(json_str "$(msg test_sent)")}"
         fi
         emit_json "200 OK" \
-            '{"ok":false,"status":"failed","error":"Test notification failed. Check the phone number, API key and the CCU internet connection."}'
+            "{\"ok\":false,\"status\":\"failed\",\"error\":$(json_str "$(msg test_failed)")}"
     fi
 
     if test_lock_is_fresh; then
         emit_json "200 OK" \
-            '{"ok":true,"status":"pending","message":"Test notification is being sent."}'
+            "{\"ok\":true,\"status\":\"pending\",\"message\":$(json_str "$(msg test_pending)")}"
     fi
 
     emit_json "200 OK" '{"ok":true,"status":"idle"}'
@@ -654,12 +770,16 @@ if [ -z "$ACTION" ]; then
     esac
 fi
 
+# Load the saved language before validating the request, so even early 400
+# responses are rendered in the user's language.
+load_env 2>/dev/null || true
+
 case "$ACTION" in
     config)
         case "$REQUEST_METHOD" in
             GET|HEAD)
                 load_env || fail "500 Internal Server Error" \
-                    "The configuration file is missing or unreadable."
+                    "$(msg config_missing)"
                 emit_json "200 OK" "$(config_payload)"
                 ;;
             POST)
@@ -669,7 +789,7 @@ case "$ACTION" in
                 ;;
             *)
                 emit_json "405 Method Not Allowed" \
-                    '{"ok":false,"error":"Use GET or POST for this endpoint."}'
+                    "{\"ok\":false,\"error\":$(json_str "$(msg method)")}"
                 ;;
         esac
         ;;
@@ -685,12 +805,12 @@ case "$ACTION" in
                 ;;
             *)
                 emit_json "405 Method Not Allowed" \
-                    '{"ok":false,"error":"Use GET or POST for this endpoint."}'
+                    "{\"ok\":false,\"error\":$(json_str "$(msg method)")}"
                 ;;
         esac
         ;;
     *)
         emit_json "404 Not Found" \
-            '{"ok":false,"error":"Unknown API action."}'
+            "{\"ok\":false,\"error\":$(json_str "$(msg unknown_action)")}"
         ;;
 esac

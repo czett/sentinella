@@ -241,6 +241,14 @@ All keys live in `.env`. The file is sourced by `/bin/sh`; quote values, and pre
 
 `THRESHOLD_TRIGGER` must be greater than `THRESHOLD_RESET`. Variable names may contain only letters, digits and underscores.
 
+### Language
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `UI_LANGUAGE` | enum `en`/`de` | `en` | dashboard and built-in Signal message language |
+
+The `EN / DE` switch in the dashboard header writes this key back to `.env`, so the interface and the next Signal notification use the same language. Unknown values fall back to English.
+
 ### Notifications
 
 | Key | Type | Default | Description |
@@ -249,9 +257,9 @@ All keys live in `.env`. The file is sourced by `/bin/sh`; quote values, and pre
 | `SIGNAL_PHONE` | string | — | E.164 number, including `+` |
 | `SIGNAL_APIKEY` | secret | — | CallMeBot API key for that number |
 | `SIGNAL_API_URL` | url | CallMeBot Signal endpoint | compatible gateway |
-| `SIGNAL_MESSAGE_OVERFLOW` | string | see `.env.example` | overflow message; placeholders `{SOC}`, `{TRIGGER_SOC}`, `{RESET_SOC}`, `{HOST}` |
-| `SIGNAL_MESSAGE_RESET` | string | see `.env.example` | recovery message; same placeholders |
-| `SIGNAL_MESSAGE_TEST` | string | see `.env.example` | text sent by `notify_signal.sh --test` |
+| `SIGNAL_MESSAGE_OVERFLOW` | string | built-in text | optional overflow override; placeholders `{SOC}`, `{TRIGGER_SOC}`, `{RESET_SOC}` |
+| `SIGNAL_MESSAGE_RESET` | string | built-in text | optional recovery override; same placeholders |
+| `SIGNAL_MESSAGE_TEST` | string | built-in text | optional text for `notify_signal.sh --test` |
 | `SIGNAL_NOTIFY_ON_START` | bool | `false` | notify on first run if the signal is already active |
 | `SIGNAL_TIMEOUT` | int | `15` | notification request timeout |
 | `SIGNAL_RETRIES` | int | `2` | notification attempts |
@@ -314,7 +322,7 @@ Fault handling is conservative:
 
 ## Dashboard
 
-The dashboard is a static single-page app with no external fonts, scripts or CDNs. It reads `status.json` every 30 seconds and renders the SoC, the charging state, the hysteresis rail, battery power, the CCU write result, the last sample time, a history chart and a system register with inverter host, variable names, Signal gateway and timestamp. Mobile pull-to-refresh is supported; freshness is conveyed by the values and by a notice strip when a poll fails.
+The dashboard is a static single-page app with no external fonts, scripts or CDNs. It reads `status.json` every 30 seconds and renders the SoC, the charging state, the hysteresis rail, battery power, the CCU write result, the last sample time, a history chart and a system register with inverter host, variable names, Signal gateway and timestamp. The header carries an `EN / DE` switch; it updates every label immediately and persists the choice through `api/config.cgi`, so the next notification is sent in the same language. Mobile pull-to-refresh is supported; freshness is conveyed by the values and by a notice strip when a poll fails.
 
 ![Mobile dashboard: 100dvh container, pull-to-refresh, 48 px targets and column collapse](docs/assets/feature-card-mobile-touch.png)
 
@@ -323,6 +331,7 @@ The dashboard is a static single-page app with no external fonts, scripts or CDN
 ```json
 {
   "schema": 1,
+  "ui_language": "en",
   "generated_at": "2026-11-06T16:30:00Z",
   "generated_epoch": 1762446600,
   "host": "192.168.178.123",
@@ -388,6 +397,14 @@ SIGNAL_APIKEY="123456"
 ```
 
 `--test` sends a clearly marked test message and does not read or write `state/signal`. `deploy.sh` runs the same test automatically when `SIGNAL_ENABLED="true"` and `--skip-test` is not given.
+
+The built-in texts are compact and contain no URLs:
+
+| Event | English (`UI_LANGUAGE="en"`) | German (`UI_LANGUAGE="de"`) |
+|---|---|---|
+| Trigger | `Sentinella: Battery reached {SOC}% (Trigger: {TRIGGER_SOC}%). Excess energy available.` | `Sentinella: Batteriespeicher bei {SOC}% (Schwelle: {TRIGGER_SOC}%). Überschuss verfügbar.` |
+| Reset | `Sentinella: Battery dropped below {RESET_SOC}% ({SOC}%). Overflow mode inactive.` | `Sentinella: Batteriespeicher unter {RESET_SOC}% gefallen ({SOC}%). Normalbetrieb aktiv.` |
+| Test | `Sentinella: Connection verified. Telemetry and alert channel ready.` | `Sentinella: Verbindung erfolgreich getestet. Alarmsystem bereit.` |
 
 ![CallMeBot Signal test message and a zero exit status](docs/assets/feature-card-signal.png)
 

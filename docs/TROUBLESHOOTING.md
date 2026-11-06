@@ -295,13 +295,15 @@ ls -l /usr/local/addons/sma_battery/lib/notify_signal.sh
 
 ### Message text is wrong
 
-Templates use `{SOC}`, `{TRIGGER_SOC}`, `{RESET_SOC}` and `{HOST}`. The legacy spellings `%SOC%`, `%TRIGGER%`, `%RESET%`, `%HOST%` and `%%` are still accepted. Quote templates that contain spaces. Example:
+`UI_LANGUAGE` selects the built-in text: `en` (default) or `de`. The dashboard `EN / DE` switch writes the same key, so the interface and the next message stay in sync. Check that the saved value is one of those two spellings.
+
+Explicit templates override the built-in text. They use `{SOC}`, `{TRIGGER_SOC}`, `{RESET_SOC}` and `{HOST}`. The legacy spellings `%SOC%`, `%TRIGGER%`, `%RESET%`, `%HOST%` and `%%` are still accepted. Quote templates that contain spaces. Example:
 
 ```sh
 SIGNAL_MESSAGE_OVERFLOW="Speicher voll: {SOC}% (Schwelle {TRIGGER_SOC}%)"
 ```
 
-Umlauts and `ß` are sent as UTF-8 and percent-encoded by `curl --data-urlencode`; no python or jq is required. After editing `.env`, no service restart is needed; the next run reads the file.
+Leave `SIGNAL_MESSAGE_OVERFLOW`, `SIGNAL_MESSAGE_RESET` and `SIGNAL_MESSAGE_TEST` unset to follow `UI_LANGUAGE`. Umlauts and `ß` are sent as UTF-8 and percent-encoded by `curl --data-urlencode`; no python or jq is required. After editing `.env`, no service restart is needed; the next run reads the file.
 
 ### CallMeBot rate limit
 
