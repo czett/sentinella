@@ -44,7 +44,7 @@
 
     var I18N = {
         en: {
-            pageTitle: "Sentinella — SMA Battery Monitor for CCU3",
+            pageTitle: "Sentinella",
             skipToContent: "Skip to content",
             retryNow: "Retry now",
             brandSub: "SMA Battery Monitor for CCU3",
@@ -91,17 +91,17 @@
             signalAlerts: "Signal alerts",
             sendNotifications: "Send notifications",
             sendNotificationsNote: "Calls the CallMeBot Signal gateway when the signal changes.",
-            phoneLabel: "Phone / UUID",
-            phoneAria: "Phone number or Signal UUID",
-            phoneHint: "E.164 format (e.g. +49 171 1234567 or 0171 1234567). Auto-normalized on save.",
+            phoneLabel: "Signal Account UUID",
+            phoneAria: "Signal Account UUID",
             apikeyLabel: "CallMeBot API key",
-            quickSetupLabel: "Quick Setup via CallMeBot Message",
+            quickSetupLabel: "CallMeBot Onboarding Message",
+            quickSetupHint: "Paste activation message from CallMeBot to automatically extract UUID and API key.",
             quickSetupPlaceholder: "Paste the activation message here (e.g. 'The APIKey created for you is: 653590 ... phone=98526357-0cec...')",
             quickSetupButton: "Extract & Apply",
             quickSetupSuccessBoth: "Extracted UUID & API Key successfully",
-            quickSetupSuccessPhone: "Extracted Phone / UUID successfully",
+            quickSetupSuccessPhone: "Extracted Signal Account UUID successfully",
             quickSetupSuccessApikey: "Extracted API Key successfully",
-            quickSetupNotFound: "Could not find a CallMeBot Phone/UUID or API key in the pasted text.",
+            quickSetupNotFound: "Could not find a Signal Account UUID or API key in the pasted text.",
             required: "Required",
             storedKeepHint: "An API key is stored. Leave the field empty to keep it.",
             inverter: "Inverter",
@@ -172,21 +172,21 @@
             testSavedSending: "Configuration saved. Sending a test message…",
             testSavedTesting: "Configuration saved. Testing Signal…",
             testSuccess: "Sentinella: Connection verified. Ready for alerts.",
-            testFailedWarning: "Settings saved, but test message failed. Check phone/UUID and API key.",
+            testFailedWarning: "Settings saved, but test message failed. Check Signal Account UUID and API key.",
             savingBeforeTest: "Saving configuration before the test…",
             sendingTest: "Sending test notification…",
             languageSaveFailed: "Language saved locally. The backend could not be updated.",
             triggerWhole: "Trigger level must be a whole number between 0 and 100.",
             resetWhole: "Reset level must be a whole number between 0 and 100.",
             resetLower: "Reset level must be lower than the trigger level.",
-            phoneInvalid: "Enter an E.164 phone number (for example +491701234567) or a Signal UUID.",
-            phoneRequired: "A phone number or Signal UUID is required when alerts are enabled.",
+            phoneInvalid: "Enter a valid Signal Account UUID (for example 98526357-0cec-4e7f-9d60-d854432414d3).",
+            phoneRequired: "A Signal Account UUID is required when alerts are enabled.",
             apikeyRequired: "A CallMeBot API key is required when alerts are enabled.",
             ipInvalid: "Enter a valid inverter IPv4 address or hostname.",
             portInvalid: "Inverter port must be a whole number between 1 and 65535."
         },
         de: {
-            pageTitle: "Sentinella — SMA Batteriestatus für CCU3",
+            pageTitle: "Sentinella",
             skipToContent: "Zum Inhalt springen",
             retryNow: "Jetzt erneut versuchen",
             brandSub: "SMA Batteriestatus für CCU3",
@@ -233,17 +233,17 @@
             signalAlerts: "Signalbenachrichtigungen",
             sendNotifications: "Benachrichtigungen senden",
             sendNotificationsNote: "Sendet eine Signal-Nachricht über CallMeBot, wenn das Signal umschaltet.",
-            phoneLabel: "Telefon / UUID",
-            phoneAria: "Telefonnummer oder Signal-UUID",
-            phoneHint: "E.164-Format (z. B. +49 171 1234567 oder 0171 1234567). Wird beim Speichern automatisch normalisiert.",
+            phoneLabel: "Signal Account UUID",
+            phoneAria: "Signal Account UUID",
             apikeyLabel: "CallMeBot-API-Schlüssel",
-            quickSetupLabel: "Schnelleinrichtung via CallMeBot-Nachricht",
+            quickSetupLabel: "CallMeBot-Aktivierungsnachricht",
+            quickSetupHint: "Nachricht vom CallMeBot hier einfügen, um UUID und API-Key automatisch zu übernehmen.",
             quickSetupPlaceholder: "Aktivierungsnachricht hier einfügen (z. B. 'The APIKey created for you is: 653590 ... phone=98526357-0cec...')",
             quickSetupButton: "Extrahieren & Übernehmen",
             quickSetupSuccessBoth: "UUID & API-Schlüssel erfolgreich extrahiert",
-            quickSetupSuccessPhone: "Telefon / UUID erfolgreich extrahiert",
+            quickSetupSuccessPhone: "Signal Account UUID erfolgreich extrahiert",
             quickSetupSuccessApikey: "API-Schlüssel erfolgreich extrahiert",
-            quickSetupNotFound: "Keine CallMeBot-Telefonnummer/UUID oder API-Schlüssel im eingefügten Text gefunden.",
+            quickSetupNotFound: "Keine Signal Account UUID oder API-Schlüssel im eingefügten Text gefunden.",
             required: "Erforderlich",
             storedKeepHint: "Ein API-Schlüssel ist gespeichert. Feld leer lassen, um ihn zu behalten.",
             inverter: "Wechselrichter",
@@ -314,15 +314,15 @@
             testSavedSending: "Konfiguration gespeichert. Testnachricht wird gesendet…",
             testSavedTesting: "Konfiguration gespeichert. Signal wird getestet…",
             testSuccess: "Sentinella: Verbindung bestätigt. Bereit für Benachrichtigungen.",
-            testFailedWarning: "Einstellungen gespeichert, aber die Testnachricht ist fehlgeschlagen. Prüfen Sie Telefon/UUID und API-Schlüssel.",
+            testFailedWarning: "Einstellungen gespeichert, aber die Testnachricht ist fehlgeschlagen. Prüfen Sie Signal Account UUID und API-Schlüssel.",
             savingBeforeTest: "Konfiguration wird vor dem Test gespeichert…",
             sendingTest: "Testbenachrichtigung wird gesendet…",
             languageSaveFailed: "Sprache lokal gespeichert. Das Backend konnte nicht aktualisiert werden.",
             triggerWhole: "Die Einschaltschwelle muss eine ganze Zahl zwischen 0 und 100 sein.",
             resetWhole: "Die Ausschaltschwelle muss eine ganze Zahl zwischen 0 und 100 sein.",
             resetLower: "Die Ausschaltschwelle muss unter der Einschaltschwelle liegen.",
-            phoneInvalid: "Geben Sie eine E.164-Telefonnummer (zum Beispiel +491701234567) oder eine Signal-UUID ein.",
-            phoneRequired: "Wenn Benachrichtigungen aktiviert sind, ist eine Telefonnummer oder Signal-UUID erforderlich.",
+            phoneInvalid: "Geben Sie eine gültige Signal Account UUID ein (zum Beispiel 98526357-0cec-4e7f-9d60-d854432414d3).",
+            phoneRequired: "Wenn Benachrichtigungen aktiviert sind, ist eine Signal Account UUID erforderlich.",
             apikeyRequired: "Wenn Benachrichtigungen aktiviert sind, ist ein CallMeBot-API-Schlüssel erforderlich.",
             ipInvalid: "Geben Sie eine gültige IPv4-Adresse oder einen Hostnamen des Wechselrichters ein.",
             portInvalid: "Der Wechselrichter-Port muss eine ganze Zahl zwischen 1 und 65535 sein."
@@ -1156,22 +1156,8 @@
         el.settingsForm.setAttribute("aria-busy", busy ? "true" : "false");
     }
 
-    function normalizeSignalPhone(value) {
-        var raw = String(value || "").trim();
-        if (!raw) {
-            return "";
-        }
-        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)) {
-            return raw;
-        }
-        var stripped = raw.replace(/[\s\-/()]/g, "");
-        if (stripped.indexOf("00") === 0) {
-            return "+" + stripped.slice(2);
-        }
-        if (stripped.indexOf("0") === 0) {
-            return "+49" + stripped.slice(1);
-        }
-        return stripped;
+    function isSignalUuid(value) {
+        return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || "").trim());
     }
 
     function parseCallMeBotMessage(raw) {
@@ -1193,22 +1179,10 @@
 
         var phoneUuidMatch = text.match(/phone=([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/);
         var anyUuidMatch = text.match(/\b([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\b/);
-        var phoneParamMatch = text.match(/phone=([^&\s"'<>]+)/i);
 
         if (phoneUuidMatch) {
             phone = phoneUuidMatch[1];
-        } else if (phoneParamMatch) {
-            var candidate = phoneParamMatch[1].replace(/[.,;)]+$/, "");
-            try {
-                candidate = decodeURIComponent(candidate);
-            } catch (error) {
-                /* Keep raw candidate if malformed percent encoding */
-            }
-            if (!/^\[.*\]$/.test(candidate) && candidate.toLowerCase() !== "your_phone_number") {
-                phone = normalizeSignalPhone(candidate);
-            }
-        }
-        if (!phone && anyUuidMatch) {
+        } else if (anyUuidMatch) {
             phone = anyUuidMatch[1];
         }
 
@@ -1293,7 +1267,7 @@
         el.resetRange.value = String(data.reset_soc);
 
         el.signalEnabled.checked = data.signal_enabled === true;
-        el.signalPhone.value = normalizeSignalPhone(data.signal_phone || "");
+        el.signalPhone.value = String(data.signal_phone || "").trim();
         el.signalApikey.value = "";
         el.signalApikey.placeholder = data.signal_apikey_set ? t("unchanged") : t("required");
         el.apikeyHint.hidden = !data.signal_apikey_set;
@@ -1356,8 +1330,8 @@
             };
         }
 
-        var phone = normalizeSignalPhone(el.signalPhone.value);
-        if (phone && !/^(\+[1-9]\d{6,14}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.test(phone)) {
+        var phone = el.signalPhone.value.trim();
+        if (phone && !isSignalUuid(phone)) {
             return {
                 field: "signal-phone",
                 text: t("phoneInvalid")
@@ -1402,7 +1376,7 @@
     }
 
     function buildPayload() {
-        var phone = normalizeSignalPhone(el.signalPhone.value);
+        var phone = el.signalPhone.value.trim();
         el.signalPhone.value = phone;
         var payload = {
             trigger_soc: Number(el.triggerSoc.value.trim()),

@@ -4,22 +4,11 @@
 
 Sentinella queries an SMA Sunny Tripower or Sunny Boy Storage inverter every two minutes over its local WebConnect API, updates two HomeMatic CCU3 / RaspberryMatic system variables (`SV_Batterie_SoC` and `SV_Batterie_95_Signal`), and optionally sends a Signal alert via CallMeBot when the configured thresholds are crossed.
 
-## Overview
+## Architecture
 
 - Runs directly on a stock CCU3 or RaspberryMatic using `/bin/sh`, BusyBox `ash`, `curl`, `sed`, and `lighttpd`.
 - No Python, Node.js, build step, or external CDN on the CCU.
-- About 275 KB installed under `/usr/local/`.
 - Failed or out-of-range readings never overwrite the last valid SoC.
-
-```mermaid
-flowchart LR
-    A[SMA Sunny Tripower<br/>WebConnect API] -->|HTTPS JSON<br/>login / getValues / logout| B[bin/check_soc.sh]
-    B -->|ReGa tclrega.exe| C[CCU3 system variables<br/>SV_Batterie_SoC<br/>SV_Batterie_95_Signal]
-    C --> D[CCU3 programs]
-    B -->|background hook| E[lib/notify_signal.sh]
-    E -->|HTTPS| F[CallMeBot Signal]
-    B -->|status.json| G[lighttpd dashboard<br/>/addons/sma_battery/]
-```
 
 ![SMA inverter over HTTPS, two-minute cron job, CCU3 system variables, and Signal alert](docs/assets/feature-diagram-telemetry.png)
 
@@ -33,9 +22,18 @@ flowchart LR
 
 ![BusyBox ash, under 60 KB compressed, no external CDNs, served by lighttpd](docs/assets/feature-card-native-ccu.png)
 
+### System Footprint
+
+![System Footprint](docs/assets/feature-card-footprint.png)
+
+- **Storage:** ~284 KB on `/usr/local/addons/sma_battery/`
+- **Resident RAM:** 0 MB (stateless, on-demand execution via BusyBox crontab)
+- **CPU Overhead:** ~0.59s per cycle (0.43s user, 0.16s sys)
+- **Duty Cycle:** Active ~1.9% of the time, dormant for 98.1%
+
 ## Requirements
 
-- **CCU3 / RaspberryMatic**: ReGaHSS on port `8181`, root SSH access, and ~275 KB free under `/usr/local/`.
+- **CCU3 / RaspberryMatic**: ReGaHSS on port `8181`, root SSH access, and ~284 KB free under `/usr/local/`.
 - **SMA inverter**: HTTPS WebConnect reachable from the CCU3, read-capable WebUI password (`usr` or `user`), and battery channel `6100_00295A00` (see [docs/PROTOCOL.md](docs/PROTOCOL.md) if your firmware uses a different key).
 - **Workstation** (for `deploy.sh` and tests): `bash`, `ssh`, `tar`, `curl`, `openssl`, Python 3.8+.
 
@@ -57,7 +55,7 @@ Set at least `SMA_IP` and `SMA_PASS` in `.env`, then deploy to the CCU3:
 ./deploy.sh -H 192.168.178.10
 ```
 
-`deploy.sh` copies the add-on to `/usr/local/addons/sma_battery`, links the web UI under `/usr/local/etc/config/addons/www/sma_battery/`, sets file permissions (`600` on `.env`, `755` on scripts and CGI endpoints), registers the two-minute cron job, creates `SV_Batterie_SoC` and `SV_Batterie_95_Signal`, and runs an initial check. Existing remote `.env` files and crontab lines are preserved.
+`deploy.sh` copies the add-on to `/usr/local/addons/sma_battery`, links the web UI under `/addons/sentinella/` (keeping `/addons/sma_battery/` active for existing bookmarks), sets file permissions (`600` on `.env`, `755` on scripts and CGI endpoints), registers the two-minute cron job, creates `SV_Batterie_SoC` and `SV_Batterie_95_Signal`, and runs an initial check. Existing remote `.env` files and crontab lines are preserved.
 
 Options:
 
@@ -75,7 +73,7 @@ ssh root@ccu3 "mkdir -p /usr/local/addons/sma_battery/state /usr/local/etc/confi
 tar -cf - -C . bin lib web setup_variables.sh .env \
   | ssh root@ccu3 "tar -xf - -C /usr/local/addons/sma_battery"
 
-# 2. Permissions, web files, variables, and cron on the CCU3
+# 2. Permissions, web files, symlinks, variables, and cron on the CCU3
 ssh root@ccu3 '
   cd /usr/local/addons/sma_battery &&
   chown -R root:root . &&
@@ -85,6 +83,8 @@ ssh root@ccu3 '
   cp web/api/config.cgi web/api/test_signal.cgi /usr/local/etc/config/addons/www/sma_battery/api/ &&
   chmod 755 /usr/local/etc/config/addons/www/sma_battery/api/*.cgi &&
   printf "%s\n" /usr/local/addons/sma_battery > /usr/local/etc/config/addons/www/sma_battery/api/addon_dir &&
+  ln -sfn /usr/local/etc/config/addons/www/sma_battery /usr/local/etc/config/addons/www/sentinella &&
+  [ -d /www/addons ] && ln -sfn /usr/local/addons/sma_battery /www/addons/sentinella &&
   sh setup_variables.sh
 '
 ```
@@ -97,7 +97,7 @@ Add the cron entry (`crontab -e`, see [`examples/crontab.txt`](examples/crontab.
 
 ## Dashboard & Settings UI
 
-Open `http://<ccu-address>/addons/sma_battery/` (`?demo=1` loads preview data when testing locally).
+Open `http://<ccu-ip>/addons/sentinella/` (legacy `/addons/sma_battery/` remains available; `?demo=1` loads preview data when testing locally).
 
 The dashboard refreshes `status.json` every 30 seconds and includes:
 
@@ -192,16 +192,16 @@ SoC
 Sentinella uses the [CallMeBot Signal API](https://www.callmebot.com/blog/free-api-signal-send-messages/) to deliver alerts. Activation takes two steps:
 
 1. Send `I allow callmebot to send me messages` to CallMeBot on Signal. The bot replies with your credentials.
-2. Copy the entire reply into the **Quick Setup** textarea in Sentinella's Settings drawer and click **Extract & Apply**.
+2. Copy the entire reply into the **CallMeBot Onboarding Message** textarea in Sentinella's Settings drawer (or click **Extract & Apply**).
 
-Sentinella parses the Signal Account UUID (or phone number) and the API key from that text and fills both fields automatically, so nothing has to be retyped. The values are written to `SIGNAL_PHONE` and `SIGNAL_APIKEY` when the settings are saved.
+Sentinella parses the Signal Account UUID and the API key from that text and populates both fields automatically. When saved, the values are written to `SIGNAL_PHONE` and `SIGNAL_APIKEY` in `.env`.
 
 #### Configuration
 
 | Key | Default | Description |
 |---|---|---|
 | `SIGNAL_ENABLED` | `false` | Enable Signal alerts via CallMeBot |
-| `SIGNAL_PHONE` | — | Phone number (auto-normalized to E.164, e.g. `+491711234567`) or Signal UUID |
+| `SIGNAL_PHONE` | — | Signal Account UUID (e.g. `98526357-0cec-4e7f-9d60-d854432414d3`) |
 | `SIGNAL_APIKEY` | — | CallMeBot API key |
 | `SIGNAL_API_URL` | CallMeBot URL | Gateway endpoint |
 | `SIGNAL_MESSAGE_OVERFLOW` | built-in | Optional custom trigger message (`{SOC}`, `{TRIGGER_SOC}`, `{RESET_SOC}`) |
@@ -211,16 +211,6 @@ Sentinella parses the Signal Account UUID (or phone number) and the API key from
 | `SIGNAL_TIMEOUT` | `15` | Request timeout (s) |
 | `SIGNAL_RETRIES` | `2` | Delivery attempts |
 | `SIGNAL_COOLDOWN` | `3600` | Minimum seconds between identical events |
-
-Built-in messages:
-
-| Event | English (`UI_LANGUAGE="en"`) | German (`UI_LANGUAGE="de"`) |
-|---|---|---|
-| Trigger | `Sentinella: Battery reached {SOC}% (Trigger: {TRIGGER_SOC}%). Excess energy available.` | `Sentinella: Batteriespeicher bei {SOC}% (Schwelle: {TRIGGER_SOC}%). Überschuss verfügbar.` |
-| Reset | `Sentinella: Battery dropped below {RESET_SOC}% ({SOC}%). Overflow mode inactive.` | `Sentinella: Batteriespeicher unter {RESET_SOC}% gefallen ({SOC}%). Normalbetrieb aktiv.` |
-| Test | `Sentinella: Connection verified. Telemetry and alert channel ready.` | `Sentinella: Verbindung erfolgreich getestet. Alarmsystem bereit.` |
-
-![CallMeBot Signal test notification](docs/assets/feature-card-signal.png)
 
 Test Signal delivery from the shell without altering battery state:
 

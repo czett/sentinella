@@ -153,20 +153,8 @@ is_safe_host() {
     return 0
 }
 
-normalize_phone() {
-    _raw=$(printf '%s' "${1:-}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-    [ -n "$_raw" ] || return 0
-    if printf '%s' "$_raw" | grep -Eq \
-        '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'; then
-        printf '%s' "$_raw"
-        return 0
-    fi
-    _clean=$(printf '%s' "$_raw" | tr -d ' \t\r\n/()-')
-    case "$_clean" in
-        00*) printf '+%s' "${_clean#00}" ;;
-        0*)  printf '+49%s' "${_clean#0}" ;;
-        *)   printf '%s' "$_clean" ;;
-    esac
+trim_ws() {
+    printf '%s' "${1:-}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
 }
 
 json_escape() {
@@ -263,7 +251,7 @@ load_config() {
 
     # Notifications
     SIGNAL_ENABLED=${SIGNAL_ENABLED:-false}
-    SIGNAL_PHONE=$(normalize_phone "${SIGNAL_PHONE:-}")
+    SIGNAL_PHONE=$(trim_ws "${SIGNAL_PHONE:-}")
     SIGNAL_APIKEY=${SIGNAL_APIKEY:-}
     SIGNAL_API_URL=${SIGNAL_API_URL:-https://signal.callmebot.com/signal/send.php}
     SIGNAL_MESSAGE_OVERFLOW=${SIGNAL_MESSAGE_OVERFLOW:-}
@@ -369,10 +357,6 @@ load_config() {
         case "$SIGNAL_API_URL" in
             http://*|https://*) ;;
             *) log "ERROR: SIGNAL_API_URL must start with http:// or https://"; return 2 ;;
-        esac
-        case "$SIGNAL_PHONE" in
-            +*|*-*-*-*) ;;
-            *) log "WARNING: SIGNAL_PHONE should use E.164 format, e.g. +491701234567" ;;
         esac
     fi
     if ! is_bool "$SIGNAL_NOTIFY_ON_START"; then

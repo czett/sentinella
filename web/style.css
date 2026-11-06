@@ -1580,47 +1580,19 @@ body.drawer-open {
 }
 
 .quick-setup {
-    margin-top: 16px;
+    margin-top: 18px;
     border: var(--rule);
     background: var(--paper);
 }
 
-.quick-setup-summary {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    min-height: 44px;
-    padding: 10px 14px;
-    color: var(--ink);
-    font-size: 11.5px;
-    font-weight: 800;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
+.quick-setup-header {
+    display: block;
+    padding: 12px 14px 10px;
     cursor: pointer;
-    list-style: none;
-    user-select: none;
 }
 
-.quick-setup-summary::-webkit-details-marker {
-    display: none;
-}
-
-.quick-setup-summary:hover {
-    background: var(--white);
-}
-
-.quick-setup-chevron {
-    flex: 0 0 auto;
-    font-family: var(--font-mono);
-    font-size: 15px;
-    font-weight: 800;
-    line-height: 1;
-    transition: transform 150ms var(--ease);
-}
-
-.quick-setup[open] .quick-setup-chevron {
-    transform: rotate(45deg);
+.quick-setup-header .field-note {
+    margin-top: 4px;
 }
 
 .quick-setup-body {

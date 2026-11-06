@@ -183,7 +183,7 @@ fi
 
 REMOTE="${SSH_USER}@${HOST}"
 LOG_FILE_REMOTE=${LOG_FILE:-$ADDON_DIR/state/check_soc.log}
-DASHBOARD_URL="http://${HOST}/addons/$(basename "$WEB_DIR")/"
+DASHBOARD_URL="http://${HOST}/addons/sentinella/"
 
 if [ "$DRY_RUN" -eq 1 ]; then
     cat <<EOF
@@ -344,9 +344,40 @@ if [ "$SKIP_WEB" != "1" ]; then
     chown -R root:root "$WEB_DIR"
     printf 'Dashboard installed in %s\n' "$WEB_DIR"
 
+    # Also mirror the web files and addon_dir into $ADDON_DIR so a direct
+    # symlink (/www/addons/sentinella -> $ADDON_DIR) or the lighttpd add-on
+    # root (/usr/local/etc/config/addons/www/sentinella -> $WEB_DIR) both serve
+    # the dashboard, status.json and CGI endpoints without 404s.
+    mkdir -p "$ADDON_DIR/api"
+    chmod 755 "$ADDON_DIR/api"
+    for file in index.html style.css app.js; do
+        cp -f "$ADDON_DIR/web/$file" "$ADDON_DIR/$file"
+        chmod 644 "$ADDON_DIR/$file"
+    done
+    for file in config.cgi test_signal.cgi; do
+        cp -f "$ADDON_DIR/web/api/$file" "$ADDON_DIR/api/$file"
+        chmod 755 "$ADDON_DIR/api/$file"
+    done
+    printf '%s\n' "$ADDON_DIR" > "$ADDON_DIR/api/addon_dir"
+    chmod 644 "$ADDON_DIR/api/addon_dir"
+    ln -sfn "$WEB_DIR/status.json" "$ADDON_DIR/status.json" 2>/dev/null || true
+    chown -h root:root "$ADDON_DIR/status.json" 2>/dev/null || true
+
+    # Canonical /addons/sentinella/ symlink alongside legacy /addons/sma_battery/
+    _web_parent=$(dirname "$WEB_DIR")
+    if [ -d "$_web_parent" ] && [ "$(basename "$WEB_DIR")" != "sentinella" ]; then
+        ln -sfn "$WEB_DIR" "$_web_parent/sentinella" 2>/dev/null || true
+    fi
+    if [ -d /www/addons ]; then
+        ln -sfn "$ADDON_DIR" /www/addons/sentinella 2>/dev/null || true
+        if [ ! -e /www/addons/sma_battery ]; then
+            ln -sfn "$WEB_DIR" /www/addons/sma_battery 2>/dev/null || true
+        fi
+    fi
+
     # Best-effort probe: CGI may need to be enabled in lighttpd on some
     # firmware versions. Never fail the deployment because of it.
-    WEB_PATH="/addons/$(basename "$WEB_DIR")"
+    WEB_PATH="/addons/sentinella"
     if command -v curl >/dev/null 2>&1; then
         # A static .cgi download would not have the CGI Content-Type header.
         _content_type=$(curl -fsSL -m 5 -o /dev/null \

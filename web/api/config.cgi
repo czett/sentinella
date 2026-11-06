@@ -7,10 +7,12 @@
 #
 #  Endpoints (installed as .cgi files because lighttpd maps by suffix):
 #
-#      GET  /addons/sma_battery/api/config.cgi
-#      POST /addons/sma_battery/api/config.cgi
-#      POST /addons/sma_battery/api/test_signal.cgi
-#      GET  /addons/sma_battery/api/test_signal.cgi   (async result)
+#      GET  /addons/sentinella/api/config.cgi
+#      POST /addons/sentinella/api/config.cgi
+#      POST /addons/sentinella/api/test_signal.cgi
+#      GET  /addons/sentinella/api/test_signal.cgi   (async result)
+#
+#  Also reachable under the legacy /addons/sma_battery/api/ path.
 #
 #  The handler can also be routed as /api/config and /api/test_signal through
 #  PATH_INFO, and the action can be forced with SMA_CGI_ACTION for tests.
@@ -115,44 +117,13 @@ is_safe_host() {
     return 0
 }
 
-normalize_phone() {
-    _raw=$(printf '%s' "${1:-}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-    [ -n "$_raw" ] || return 0
-    if printf '%s' "$_raw" | grep -Eq \
-        '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'; then
-        printf '%s' "$_raw"
-        return 0
-    fi
-    _clean=$(printf '%s' "$_raw" | tr -d ' \t\r\n/()-')
-    case "$_clean" in
-        00*) printf '+%s' "${_clean#00}" ;;
-        0*)  printf '+49%s' "${_clean#0}" ;;
-        *)   printf '%s' "$_clean" ;;
-    esac
+trim_ws() {
+    printf '%s' "${1:-}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
 }
 
-is_phone_or_uuid() {
-    case "$1" in
-        +*)
-            # E.164: a leading +, a non-zero country digit, 7..15 digits total.
-            _digits=${1#+}
-            case "$_digits" in
-                ''|*[!0-9]*) return 1 ;;
-            esac
-            [ "${#_digits}" -ge 7 ] || return 1
-            [ "${#_digits}" -le 15 ] || return 1
-            case "$_digits" in
-                0*) return 1 ;;
-            esac
-            return 0
-            ;;
-        *)
-            # Signal UUID (any common version) as accepted by CallMeBot.
-            printf '%s' "$1" | grep -Eq \
-                '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
-            return $?
-            ;;
-    esac
+is_signal_uuid() {
+    printf '%s' "$1" | grep -Eq \
+        '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
 }
 
 is_apikey() {
@@ -199,12 +170,12 @@ msg() {
         en:trigger_order) printf 'Trigger level must be greater than reset level.' ;;
         de:signal_bool) printf 'Signalbenachrichtigungen müssen aktiviert oder deaktiviert sein.' ;;
         en:signal_bool) printf 'Signal alerts must be either enabled or disabled.' ;;
-        de:phone_invalid) printf 'Geben Sie eine E.164-Telefonnummer (zum Beispiel +491701234567) oder eine Signal-UUID ein.' ;;
-        en:phone_invalid) printf 'Enter an E.164 phone number (for example +491701234567) or a Signal UUID.' ;;
+        de:phone_invalid) printf 'Geben Sie eine gültige Signal Account UUID ein (zum Beispiel 98526357-0cec-4e7f-9d60-d854432414d3).' ;;
+        en:phone_invalid) printf 'Enter a valid Signal Account UUID (for example 98526357-0cec-4e7f-9d60-d854432414d3).' ;;
         de:apikey_invalid) printf 'Der CallMeBot-API-Schlüssel darf nur Buchstaben, Ziffern, Punkt, Bindestrich, Unterstrich und Doppelpunkt enthalten.' ;;
         en:apikey_invalid) printf 'The CallMeBot API key may only contain letters, digits, dot, dash, underscore and colon.' ;;
-        de:phone_required) printf 'Wenn Benachrichtigungen aktiviert sind, ist eine Telefonnummer oder Signal-UUID erforderlich.' ;;
-        en:phone_required) printf 'A phone number or Signal UUID is required when alerts are enabled.' ;;
+        de:phone_required) printf 'Wenn Benachrichtigungen aktiviert sind, ist eine Signal Account UUID erforderlich.' ;;
+        en:phone_required) printf 'A Signal Account UUID is required when alerts are enabled.' ;;
         de:apikey_required) printf 'Wenn Benachrichtigungen aktiviert sind, ist ein CallMeBot-API-Schlüssel erforderlich.' ;;
         en:apikey_required) printf 'A CallMeBot API key is required when alerts are enabled.' ;;
         de:ip_invalid) printf 'Geben Sie eine gültige IPv4-Adresse oder einen Hostnamen des Wechselrichters ein.' ;;
@@ -227,8 +198,8 @@ msg() {
         en:write_reset) printf 'Cannot write the reset level.' ;;
         de:write_signal) printf 'Der Signal-Schalter kann nicht geschrieben werden.' ;;
         en:write_signal) printf 'Cannot write the Signal switch.' ;;
-        de:write_phone) printf 'Die Telefonnummer kann nicht geschrieben werden.' ;;
-        en:write_phone) printf 'Cannot write the phone number.' ;;
+        de:write_phone) printf 'Die Signal Account UUID kann nicht geschrieben werden.' ;;
+        en:write_phone) printf 'Cannot write the Signal Account UUID.' ;;
         de:write_apikey) printf 'Der API-Schlüssel kann nicht geschrieben werden.' ;;
         en:write_apikey) printf 'Cannot write the API key.' ;;
         de:write_ip) printf 'Die Wechselrichter-Adresse kann nicht geschrieben werden.' ;;
@@ -243,8 +214,8 @@ msg() {
         en:readback) printf 'The configuration was saved but cannot be read back.' ;;
         de:notify_missing) printf 'Das Benachrichtigungsskript fehlt oder ist nicht ausführbar.' ;;
         en:notify_missing) printf 'The notification script is missing or not executable.' ;;
-        de:test_credentials) printf 'Speichern Sie zuerst eine Telefonnummer und einen CallMeBot-API-Schlüssel.' ;;
-        en:test_credentials) printf 'Save a phone number and CallMeBot API key before testing.' ;;
+        de:test_credentials) printf 'Speichern Sie zuerst eine Signal Account UUID und einen CallMeBot-API-Schlüssel.' ;;
+        en:test_credentials) printf 'Save a Signal Account UUID and CallMeBot API key before testing.' ;;
         de:test_running) printf 'Es läuft bereits eine Testbenachrichtigung.' ;;
         en:test_running) printf 'A test notification is already running.' ;;
         de:state_dir) printf 'Das Statusverzeichnis kann nicht erstellt werden.' ;;
@@ -257,8 +228,8 @@ msg() {
         en:queued) printf 'Test notification queued.' ;;
         de:test_sent) printf 'Sentinella: Verbindung bestätigt. Bereit für Benachrichtigungen.' ;;
         en:test_sent) printf 'Sentinella: Connection verified. Ready for alerts.' ;;
-        de:test_failed) printf 'Testbenachrichtigung fehlgeschlagen. Prüfen Sie Telefonnummer, API-Schlüssel und die Internetverbindung der CCU.' ;;
-        en:test_failed) printf 'Test notification failed. Check the phone number, API key and the CCU internet connection.' ;;
+        de:test_failed) printf 'Testbenachrichtigung fehlgeschlagen. Prüfen Sie Signal Account UUID, API-Schlüssel und die Internetverbindung der CCU.' ;;
+        en:test_failed) printf 'Test notification failed. Check the Signal Account UUID, API key and the CCU internet connection.' ;;
         de:test_pending) printf 'Testbenachrichtigung wird gesendet.' ;;
         en:test_pending) printf 'Test notification is being sent.' ;;
         de:method) printf 'Verwenden Sie GET oder POST für diesen Endpunkt.' ;;
@@ -370,7 +341,7 @@ load_env() {
     case "${THRESHOLD_TRIGGER:-}" in ''|*[!0-9]*) THRESHOLD_TRIGGER=95 ;; esac
     case "${THRESHOLD_RESET:-}" in ''|*[!0-9]*) THRESHOLD_RESET=90 ;; esac
     SIGNAL_ENABLED=${SIGNAL_ENABLED:-false}
-    SIGNAL_PHONE=$(normalize_phone "${SIGNAL_PHONE:-}")
+    SIGNAL_PHONE=$(trim_ws "${SIGNAL_PHONE:-}")
     SIGNAL_APIKEY=${SIGNAL_APIKEY:-}
     SMA_IP=${SMA_IP:-}
     SMA_PORT=${SMA_PORT:-443}
@@ -547,8 +518,8 @@ save_config() {
     fi
 
     if body_has signal_phone; then
-        _phone=$(normalize_phone "$(body_str signal_phone)")
-        if [ -n "$_phone" ] && ! is_phone_or_uuid "$_phone"; then
+        _phone=$(trim_ws "$(body_str signal_phone)")
+        if [ -n "$_phone" ] && ! is_signal_uuid "$_phone"; then
             fail "400 Bad Request" \
                 "$(msg phone_invalid)" \
                 "signal_phone"

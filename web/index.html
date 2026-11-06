@@ -6,7 +6,7 @@
     <meta name="color-scheme" content="light">
     <meta name="theme-color" content="#f8f8f9">
     <meta name="description" content="Sentinella — SMA battery monitor for Homematic CCU3.">
-    <title>Sentinella — SMA Battery Monitor for CCU3</title>
+    <title>Sentinella</title>
     <script>
         (function () {
             var theme = "light";
@@ -310,15 +310,15 @@
                            aria-label="Send Signal notifications" data-i18n-aria="sendNotifications">
                 </label>
 
-                <details class="quick-setup" id="callmebot-quick-setup">
-                    <summary class="quick-setup-summary">
-                        <span data-i18n="quickSetupLabel">Quick Setup via CallMeBot Message</span>
-                        <span class="quick-setup-chevron" aria-hidden="true">+</span>
-                    </summary>
+                <div class="quick-setup" id="callmebot-quick-setup">
+                    <label class="quick-setup-header" for="callmebot-paste">
+                        <span class="field-label" data-i18n="quickSetupLabel">CallMeBot Onboarding Message</span>
+                        <span class="field-note" data-i18n="quickSetupHint">Paste activation message from CallMeBot to automatically extract UUID and API key.</span>
+                    </label>
                     <div class="quick-setup-body">
                         <textarea class="input quick-setup-textarea" id="callmebot-paste" rows="3"
                                   autocomplete="off" spellcheck="false"
-                                  aria-label="Quick Setup via CallMeBot Message" data-i18n-aria="quickSetupLabel"
+                                  aria-label="CallMeBot Onboarding Message" data-i18n-aria="quickSetupLabel"
                                   placeholder="Paste the activation message here (e.g. 'The APIKey created for you is: 653590 ... phone=98526357-0cec...')"
                                   data-i18n-placeholder="quickSetupPlaceholder"></textarea>
                         <div class="quick-setup-footer">
@@ -326,16 +326,14 @@
                             <p class="quick-setup-status" id="callmebot-status" role="status" aria-live="polite" hidden></p>
                         </div>
                     </div>
-                </details>
+                </div>
 
                 <label class="field" for="signal-phone">
-                    <span class="field-label" data-i18n="phoneLabel">Phone / UUID</span>
+                    <span class="field-label" data-i18n="phoneLabel">Signal Account UUID</span>
                     <input class="input" id="signal-phone" name="signal_phone" type="text"
-                           inputmode="tel" autocomplete="off" spellcheck="false"
-                           aria-label="Phone number or Signal UUID" data-i18n-aria="phoneAria"
-                           aria-describedby="phone-hint"
-                           placeholder="+49 171 1234567">
-                    <span class="field-hint" id="phone-hint" data-i18n="phoneHint">E.164 format (e.g. +49 171 1234567 or 0171 1234567). Auto-normalized on save.</span>
+                           autocomplete="off" spellcheck="false"
+                           aria-label="Signal Account UUID" data-i18n-aria="phoneAria"
+                           placeholder="98526357-0cec-4e7f-9d60-d854432414d3">
                 </label>
 
                 <label class="field" for="signal-apikey">

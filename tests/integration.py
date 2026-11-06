@@ -31,6 +31,8 @@ SMA_SOC_KEY = "6100_00295A00"
 SMA_CHARGE_KEY = "6100_00417800"
 SMA_DISCHARGE_KEY = "6100_00417900"
 PASSWORD = "test-secret"
+DEFAULT_UUID = "98526357-0cec-4e7f-9d60-d854432414d3"
+UPDATED_UUID = "123e4567-e89b-12d3-a456-426614174000"
 
 
 class State:
@@ -212,7 +214,7 @@ THRESHOLD_TRIGGER="95"
 THRESHOLD_RESET="90"
 UI_LANGUAGE="en"
 SIGNAL_ENABLED="{'true' if signal_enabled else 'false'}"
-SIGNAL_PHONE="+491701234567"
+SIGNAL_PHONE="{DEFAULT_UUID}"
 SIGNAL_APIKEY="test-key"
 SIGNAL_API_URL="http://127.0.0.1:{signal_port or 1}/signal"
 SIGNAL_TEXT_TRIGGER="Battery full: SoC %SOC% on %HOST%"
@@ -285,12 +287,13 @@ def run_notify(addon: Path, *args: str, timeout: float = 20) -> subprocess.Compl
 
 
 def run_cgi(addon: Path, method: str = "GET", action: str = "config",
-            body: str = "", timeout: float = 20) -> subprocess.CompletedProcess:
+            body: str = "", prefix: str = "sentinella",
+            timeout: float = 20) -> subprocess.CompletedProcess:
     env = os.environ.copy()
     env.update(
         {
             "REQUEST_METHOD": method,
-            "SCRIPT_NAME": f"/addons/sma_battery/api/{action}.cgi",
+            "SCRIPT_NAME": f"/addons/{prefix}/api/{action}.cgi",
             "PATH_INFO": "",
             "CONTENT_LENGTH": str(len(body.encode())),
             "CONTENT_TYPE": "application/json",
@@ -491,7 +494,7 @@ def main() -> int:
             query = parse_qs(urlparse(signal_state.signal_requests[0]).query)
             text = query.get("text", [""])[0]
             check("96" in text, "message contains the SoC", failures)
-            check(query.get("phone", [""])[0] == "+491701234567", "phone passed", failures)
+            check(query.get("phone", [""])[0] == DEFAULT_UUID, "UUID passed directly", failures)
             check(query.get("apikey", [""])[0] == "test-key", "api key passed", failures)
 
         print("\n10a. duplicate trigger inside the 60 minute window is suppressed")
@@ -658,9 +661,15 @@ def main() -> int:
         result = run_cgi(addon2, "GET")
         status_code, config = parse_cgi(result)
         check(status_code == "200 OK", f"GET config returns 200 (got {status_code})", failures)
+        legacy_status, legacy_config = parse_cgi(run_cgi(addon2, "GET", prefix="sma_battery"))
+        check(
+            legacy_status == "200 OK" and legacy_config.get("signal_phone") == DEFAULT_UUID,
+            "GET config works identically under legacy /addons/sma_battery/ path",
+            failures,
+        )
         check(config.get("trigger_soc") == 95, "trigger level returned", failures)
         check(config.get("reset_soc") == 90, "reset level returned", failures)
-        check(config.get("signal_phone") == "+491701234567", "phone returned", failures)
+        check(config.get("signal_phone") == DEFAULT_UUID, "UUID returned", failures)
         check(config.get("signal_apikey_set") is True, "API key presence reported", failures)
         check(config.get("sma_password_set") is True, "inverter password presence reported", failures)
         check(config.get("ui_language") == "en", "UI language returned", failures)
@@ -674,7 +683,9 @@ def main() -> int:
             ({"trigger_soc": 150}, "trigger_soc"),
             ({"reset_soc": -1}, "reset_soc"),
             ({"trigger_soc": 80, "reset_soc": 90}, "trigger_soc"),
-            ({"signal_phone": "not-a-phone"}, "signal_phone"),
+            ({"signal_phone": "not-a-uuid"}, "signal_phone"),
+            ({"signal_phone": "+491701234567"}, "signal_phone"),
+            ({"signal_phone": "0171 1234567"}, "signal_phone"),
             ({"sma_ip": "192.168.1.1/24"}, "sma_ip"),
             ({"sma_port": 70000}, "sma_port"),
             ({"ui_language": "fr"}, "ui_language"),
@@ -696,7 +707,7 @@ def main() -> int:
             "trigger_soc": 96,
             "reset_soc": 91,
             "signal_enabled": True,
-            "signal_phone": "+491709876543",
+            "signal_phone": UPDATED_UUID,
             "sma_ip": "10.1.2.3",
             "sma_port": 8443,
         }
@@ -708,7 +719,7 @@ def main() -> int:
         check(saved.get("signal_apikey_set") is True, "API key kept when field omitted", failures)
         check(saved.get("sma_password_set") is True, "password kept when field omitted", failures)
         check("THRESHOLD_TRIGGER='96'" in env_text, "threshold written to .env", failures)
-        check("SIGNAL_PHONE='+491709876543'" in env_text, "phone written to .env", failures)
+        check(f"SIGNAL_PHONE='{UPDATED_UUID}'" in env_text, "UUID written to .env", failures)
         check("# preserved comment" in env_text, "comments preserved during rewrite", failures)
         check("SMA_PASS='test-secret'" in env_text, "existing secret preserved", failures)
         check("SIGNAL_APIKEY=\"test-key\"" in env_text, "existing API key preserved", failures)
@@ -726,60 +737,38 @@ def main() -> int:
         check(status_code == "200 OK" and config.get("ui_language") == "en",
               "language survives a settings reload", failures)
 
-        print("\n15b. Signal phone numbers are normalized on save and read, and URL-encoded in curl")
-        phone_cases = [
-            ("+49 171 1234567", "+491711234567"),
-            ("0171 1234567", "+491711234567"),
-            ("+491711234567", "+491711234567"),
-            ("0049 (171) 123-45/67", "+491711234567"),
-            ("123e4567-e89b-12d3-a456-426614174000", "123e4567-e89b-12d3-a456-426614174000"),
-        ]
-        for raw_phone, expected_phone in phone_cases:
-            result = run_cgi(addon4, "POST", body=json.dumps({"signal_phone": raw_phone}))
-            status_code, saved = parse_cgi(result)
-            check(
-                status_code == "200 OK" and saved.get("signal_phone") == expected_phone,
-                f"normalizes {raw_phone!r} -> {expected_phone!r} on save",
-                failures,
-            )
-            check(
-                f"SIGNAL_PHONE='{expected_phone}'" in (addon4 / ".env").read_text(),
-                f"writes normalized {expected_phone!r} to .env",
-                failures,
-            )
-
-        # Verify normalization when reading an unnormalized .env directly (GET config + notify_signal.sh)
-        env4_text = (addon4 / ".env").read_text().replace(
-            "SIGNAL_PHONE='123e4567-e89b-12d3-a456-426614174000'",
-            "SIGNAL_PHONE='0171 123-4567'",
-        )
-        (addon4 / ".env").write_text(env4_text)
-        (addon4 / ".env").chmod(0o600)
-        status_code, config = parse_cgi(run_cgi(addon4, "GET"))
+        print("\n15b. Signal Account UUID is trimmed and passed directly to CallMeBot without phone normalization")
+        result = run_cgi(addon4, "POST", body=json.dumps({"signal_phone": f"  {UPDATED_UUID}  "}))
+        status_code, saved = parse_cgi(result)
         check(
-            status_code == "200 OK" and config.get("signal_phone") == "+491711234567",
-            "GET config normalizes unnormalized SIGNAL_PHONE from .env",
+            status_code == "200 OK" and saved.get("signal_phone") == UPDATED_UUID,
+            "trims whitespace around Signal Account UUID on save",
+            failures,
+        )
+        check(
+            f"SIGNAL_PHONE='{UPDATED_UUID}'" in (addon4 / ".env").read_text(),
+            "writes exact UUID with hyphens intact to .env",
             failures,
         )
         signal_state.reset_requests()
         result = run_notify(addon4, "--test")
-        check(result.returncode == 0, "notify_signal.sh --test with unnormalized .env phone exits 0", failures)
+        check(result.returncode == 0, "notify_signal.sh --test with UUID exits 0", failures)
         check(
             wait_until(lambda: bool(signal_state.signal_requests)),
-            "normalized phone test request received",
+            "UUID test request received",
             failures,
         )
         if signal_state.signal_requests:
             raw_req = signal_state.signal_requests[0]
             query = parse_qs(urlparse(raw_req).query)
             check(
-                "phone=%2B491711234567" in raw_req or "phone=%2b491711234567" in raw_req,
-                "leading '+' is explicitly percent-encoded as %2B in query string",
+                f"phone={UPDATED_UUID}" in raw_req,
+                "UUID is passed directly in query string with hyphens intact",
                 failures,
             )
             check(
-                query.get("phone", [""])[0] == "+491711234567",
-                "gateway decodes normalized phone with leading '+' intact",
+                query.get("phone", [""])[0] == UPDATED_UUID,
+                "gateway receives exact UUID",
                 failures,
             )
 
@@ -803,7 +792,7 @@ def main() -> int:
                 "test message is clearly marked",
                 failures,
             )
-            check(query.get("phone", [""])[0] == "+491709876543", "test uses the saved phone", failures)
+            check(query.get("phone", [""])[0] == UPDATED_UUID, "test uses the saved UUID", failures)
 
         deadline = time.time() + 8
         test_status = ""
@@ -825,12 +814,12 @@ def main() -> int:
             node_script = """
 const fs = require("fs");
 const code = fs.readFileSync(process.argv[1], "utf8");
-const normMatch = code.match(/function normalizeSignalPhone\\([\\s\\S]*?\\n    \\}/);
+const uuidMatch = code.match(/function isSignalUuid\\([\\s\\S]*?\\n    \\}/);
 const parseMatch = code.match(/function parseCallMeBotMessage\\([\\s\\S]*?\\n    \\}/);
-if (!normMatch || !parseMatch) {
+if (!uuidMatch || !parseMatch) {
     process.exit(2);
 }
-const fn = new Function(normMatch[0] + "\\n" + parseMatch[0] + "\\nreturn parseCallMeBotMessage;")();
+const fn = new Function(uuidMatch[0] + "\\n" + parseMatch[0] + "\\nreturn parseCallMeBotMessage;")();
 const samples = [
     {
         input: "APIKey created for Signal CallMeBot!!\\nThe APIKey created for you is: 653590\\nYou can now send messages using the API.\\nhttps://signal.callmebot.com/signal/send.php?phone=98526357-0cec-4a2b-8f1d-123456789abc&apikey=653590&text=This+is+a+test",
@@ -838,8 +827,8 @@ const samples = [
         apikey: "653590"
     },
     {
-        input: "https://api.callmebot.com/signal/send.php?phone=+491711234567&apikey=abc123XYZ&text=Hello",
-        phone: "+491711234567",
+        input: "https://signal.callmebot.com/signal/send.php?phone=98526357-0cec-4e7f-9d60-d854432414d3&apikey=abc123XYZ&text=Hello",
+        phone: "98526357-0cec-4e7f-9d60-d854432414d3",
         apikey: "abc123XYZ"
     },
     {
@@ -848,8 +837,8 @@ const samples = [
         apikey: "998877"
     },
     {
-        input: "apikey: 445566\\nphone=01711234567",
-        phone: "+491711234567",
+        input: "apikey: 445566\\nphone=+491711234567",
+        phone: "",
         apikey: "445566"
     }
 ];
@@ -869,11 +858,11 @@ for (const s of samples) {
             )
             check(
                 node_res.returncode == 0,
-                f"parseCallMeBotMessage extracts UUID/phone & API key across CallMeBot formats ({node_res.stderr.strip() or 'ok'})",
+                f"parseCallMeBotMessage extracts UUID & API key across CallMeBot formats ({node_res.stderr.strip() or 'ok'})",
                 failures,
             )
 
-            print("\n18. Streamlined EN/DE UI terminology and footer in web/")
+            print("\n18. Streamlined EN/DE UI terminology, title, UUID-only labels, and footer in web/")
             i18n_script = """
 const fs = require("fs");
 const code = fs.readFileSync(process.argv[1], "utf8");
@@ -887,6 +876,8 @@ const assertEq = (actual, expected, label) => {
         process.exit(1);
     }
 };
+assertEq(I18N.en.pageTitle, "Sentinella", "EN pageTitle");
+assertEq(I18N.de.pageTitle, "Sentinella", "DE pageTitle");
 assertEq(I18N.en.brandSub, "SMA Battery Monitor for CCU3", "EN brandSub");
 assertEq(I18N.de.brandSub, "SMA Batteriestatus für CCU3", "DE brandSub");
 assertEq(I18N.en.hysteresisSignal, "Excess Signal", "EN signal box label");
@@ -895,11 +886,24 @@ assertEq(I18N.en.thresholdCorridor, "Thresholds", "EN slider title");
 assertEq(I18N.de.thresholdCorridor, "Schaltschwellen", "DE slider title");
 assertEq(I18N.en.legendBounds, "Thresholds", "EN chart bounds");
 assertEq(I18N.de.legendBounds, "Schaltschwellen", "DE chart bounds");
+assertEq(I18N.en.phoneLabel, "Signal Account UUID", "EN phoneLabel");
+assertEq(I18N.de.phoneLabel, "Signal Account UUID", "DE phoneLabel");
+assertEq(I18N.en.quickSetupLabel, "CallMeBot Onboarding Message", "EN quickSetupLabel");
+assertEq(I18N.en.quickSetupHint, "Paste activation message from CallMeBot to automatically extract UUID and API key.", "EN quickSetupHint");
+assertEq(I18N.de.quickSetupHint, "Nachricht vom CallMeBot hier einfügen, um UUID und API-Key automatisch zu übernehmen.", "DE quickSetupHint");
 assertEq(I18N.de.signalCopyActive, "Aktiv. Schaltet ab unter {reset}%.", "DE active signal copy");
 assertEq(I18N.de.signalCopyHeld, "Aktiv. Schaltet ab unter {reset}%.", "DE held signal copy");
 assertEq(I18N.de.signalCopyInactive, "Inaktiv. Schaltet ein ab {trigger}%.", "DE inactive signal copy");
 assertEq(I18N.en.signalCopyActive, "Active. Turns off below {reset}%.", "EN active signal copy");
 assertEq(I18N.en.signalCopyInactive, "Inactive. Turns on at {trigger}%.", "EN inactive signal copy");
+if (!html.includes("<title>Sentinella</title>")) {
+    console.error("HTML title not simplified to <title>Sentinella</title>");
+    process.exit(1);
+}
+if (!html.includes('placeholder="98526357-0cec-4e7f-9d60-d854432414d3"')) {
+    console.error("UUID placeholder missing in HTML");
+    process.exit(1);
+}
 if (!html.includes("<span>SENTINELLA · CCU3</span>") || html.includes("footerTagline")) {
     console.error("Footer not simplified properly");
     process.exit(1);

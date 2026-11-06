@@ -200,13 +200,16 @@ ls -l /usr/local/etc/config/addons/www/sma_battery/status.json
 The add-on URL is:
 
 ```
-http://<ccu>/addons/sma_battery/
+http://<ccu>/addons/sentinella/
 ```
+
+(Legacy `http://<ccu>/addons/sma_battery/` is also kept active.)
 
 Check the directory and permissions:
 
 ```sh
 ls -la /usr/local/etc/config/addons/www/sma_battery/
+ls -la /www/addons/sentinella
 ```
 
 Files must be readable by the lighttpd user. `deploy.sh` sets `755` on the directory and `644` on the files. If you changed `WEB_DIR`, update `WEB_STATUS_FILE` in `.env` to match.
@@ -235,7 +238,7 @@ The settings button in the dashboard masthead reads and writes `api/config.cgi` 
 Check the endpoint from the CCU itself:
 
 ```sh
-curl -i http://127.0.0.1/addons/sma_battery/api/config.cgi
+curl -i http://127.0.0.1/addons/sentinella/api/config.cgi
 ```
 
 Expected: `HTTP/1.1 200 OK` and a JSON object. If the response is `403`, `404` or the file is offered as a download, lighttpd is not executing CGI:
