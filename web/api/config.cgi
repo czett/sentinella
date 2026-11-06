@@ -52,10 +52,10 @@ resolve_addon_dir() {
 
     case "$_dir" in
         /?*) ;;
-        *) _dir=/usr/local/addons/sma_battery ;;
+        *) _dir=/usr/local/addons/sentinella ;;
     esac
     case "$_dir" in
-        *..*) _dir=/usr/local/addons/sma_battery ;;
+        *..*) _dir=/usr/local/addons/sentinella ;;
     esac
     printf '%s\n' "$_dir"
 }

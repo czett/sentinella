@@ -34,7 +34,7 @@ export PATH
 umask 077
 
 APP_DIR=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)
-[ -n "$APP_DIR" ] || APP_DIR=/usr/local/addons/sma_battery
+[ -n "$APP_DIR" ] || APP_DIR=/usr/local/addons/sentinella
 
 ENV_FILE=${SMA_MONITOR_ENV:-}
 if [ -z "$ENV_FILE" ]; then
@@ -56,7 +56,7 @@ log() {
     [ -n "$_ts" ] || _ts=-
     printf '%s %s\n' "$_ts" "$*" >&2
     if command -v logger >/dev/null 2>&1; then
-        logger -t sma_battery_notify "$*" 2>/dev/null || true
+        logger -t sentinella_notify "$*" 2>/dev/null || true
     fi
 }
 

@@ -45,9 +45,9 @@ Options:
   -H, --host HOST        SSH host of the CCU3 (default: DEPLOY_HOST from .env)
   -u, --user USER        SSH user (default: DEPLOY_USER or root)
   -p, --port PORT        SSH port (default: DEPLOY_PORT or 22)
-      --dir PATH         Remote add-on directory (default: /usr/local/addons/sma_battery)
+      --dir PATH         Remote add-on directory (default: /usr/local/addons/sentinella)
       --web-dir PATH     Remote dashboard directory
-                         (default: /usr/local/etc/config/addons/www/sma_battery)
+                         (default: /usr/local/etc/config/addons/www/sentinella)
   -n, --dry-run          Show what would be done, change nothing
       --skip-cron        Do not install or restart the cron job
       --skip-vars        Do not create the ReGa system variables
@@ -139,8 +139,8 @@ fi
 HOST=${HOST:-${DEPLOY_HOST:-}}
 SSH_USER=${SSH_USER:-${DEPLOY_USER:-root}}
 SSH_PORT=${SSH_PORT:-${DEPLOY_PORT:-22}}
-ADDON_DIR=${ADDON_DIR:-${DEPLOY_ADDON_DIR:-/usr/local/addons/sma_battery}}
-WEB_DIR=${WEB_DIR:-${DEPLOY_WEB_DIR:-/usr/local/etc/config/addons/www/sma_battery}}
+ADDON_DIR=${ADDON_DIR:-${DEPLOY_ADDON_DIR:-/usr/local/addons/sentinella}}
+WEB_DIR=${WEB_DIR:-${DEPLOY_WEB_DIR:-/usr/local/etc/config/addons/www/sentinella}}
 
 [ -n "$HOST" ] || die "no CCU host given (use -H or set DEPLOY_HOST in .env)"
 [ -n "$SSH_USER" ] || die "empty SSH user"
@@ -206,7 +206,7 @@ EOF
     exit 0
 fi
 
-STAGE=$(mktemp -d "${TMPDIR:-/tmp}/sma-battery-deploy.XXXXXX")
+STAGE=$(mktemp -d "${TMPDIR:-/tmp}/sentinella-deploy.XXXXXX")
 cleanup() {
     rm -rf "$STAGE"
 }
@@ -261,6 +261,11 @@ else
         mv -f "$ADDON_DIR/.env.new" "$ADDON_DIR/.env"
         printf 'Installed new %s/.env from workstation.\n' "$ADDON_DIR"
     fi
+fi
+
+# Backwards compatibility: link legacy /usr/local/addons/sma_battery to /usr/local/addons/sentinella
+if [ "$ADDON_DIR" = "/usr/local/addons/sentinella" ]; then
+    ln -sfn /usr/local/addons/sentinella /usr/local/addons/sma_battery 2>/dev/null || true
 fi
 # Enforce ownership and secret permissions after the .env install. This keeps
 # a fresh deploy from leaving the tree owned by avahi (tar extraction) and
@@ -363,16 +368,16 @@ if [ "$SKIP_WEB" != "1" ]; then
     ln -sfn "$WEB_DIR/status.json" "$ADDON_DIR/status.json" 2>/dev/null || true
     chown -h root:root "$ADDON_DIR/status.json" 2>/dev/null || true
 
-    # Canonical /addons/sentinella/ symlink alongside legacy /addons/sma_battery/
-    _web_parent=$(dirname "$WEB_DIR")
-    if [ -d "$_web_parent" ] && [ "$(basename "$WEB_DIR")" != "sentinella" ]; then
-        ln -sfn "$WEB_DIR" "$_web_parent/sentinella" 2>/dev/null || true
+    # Canonical /addons/sentinella/ and legacy /addons/sma_battery/ symlinks
+    if [ "$ADDON_DIR" = "/usr/local/addons/sentinella" ]; then
+        ln -sfn /usr/local/addons/sentinella /usr/local/addons/sma_battery 2>/dev/null || true
+    fi
+    if [ "$WEB_DIR" = "/usr/local/etc/config/addons/www/sentinella" ]; then
+        ln -sfn /usr/local/etc/config/addons/www/sentinella /usr/local/etc/config/addons/www/sma_battery 2>/dev/null || true
     fi
     if [ -d /www/addons ]; then
-        ln -sfn "$ADDON_DIR" /www/addons/sentinella 2>/dev/null || true
-        if [ ! -e /www/addons/sma_battery ]; then
-            ln -sfn "$WEB_DIR" /www/addons/sma_battery 2>/dev/null || true
-        fi
+        ln -sfn /usr/local/addons/sentinella /www/addons/sma_battery 2>/dev/null || true
+        ln -sfn /usr/local/addons/sentinella /www/addons/sentinella 2>/dev/null || true
     fi
 
     # Best-effort probe: CGI may need to be enabled in lighttpd on some
@@ -406,7 +411,7 @@ if [ "$SKIP_CRON" != "1" ]; then
     }
 
     if command -v crontab >/dev/null 2>&1; then
-        CRON_TMP=/tmp/sma_battery_cron.$$
+        CRON_TMP=/tmp/sentinella_cron.$$
         crontab -l > "$CRON_TMP" 2>/dev/null || : > "$CRON_TMP"
         if cron_has_target "$CRON_TMP"; then
             printf 'Cron entry already present; crontab left untouched.\n'

@@ -18,7 +18,7 @@ export PATH
 umask 077
 
 APP_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
-[ -n "$APP_DIR" ] || APP_DIR=/usr/local/addons/sma_battery
+[ -n "$APP_DIR" ] || APP_DIR=/usr/local/addons/sentinella
 
 ENV_FILE=${SMA_MONITOR_ENV:-}
 if [ -z "$ENV_FILE" ]; then

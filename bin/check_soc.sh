@@ -28,7 +28,7 @@ umask 077
 # Paths and state
 # ---------------------------------------------------------------------------
 APP_DIR=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)
-[ -n "$APP_DIR" ] || APP_DIR=/usr/local/addons/sma_battery
+[ -n "$APP_DIR" ] || APP_DIR=/usr/local/addons/sentinella
 
 ENV_FILE=${SMA_MONITOR_ENV:-}
 if [ -z "$ENV_FILE" ]; then
@@ -78,7 +78,7 @@ log() {
         printf '%s %s\n' "$_ts" "$*" >> "$LOG_FILE" 2>/dev/null || true
     fi
     if command -v logger >/dev/null 2>&1; then
-        logger -t sma_battery "$*" 2>/dev/null || true
+        logger -t sentinella "$*" 2>/dev/null || true
     fi
 }
 

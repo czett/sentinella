@@ -3,7 +3,7 @@
 Start with the foreground run. It shows the real error and does not depend on cron:
 
 ```sh
-/usr/local/addons/sma_battery/bin/check_soc.sh; echo "exit=$?"
+/usr/local/addons/sentinella/bin/check_soc.sh; echo "exit=$?"
 ```
 
 Exit codes:
@@ -14,21 +14,21 @@ Exit codes:
 | `1` | runtime error; the previous CCU3 values were kept |
 | `2` | configuration error; nothing was written |
 
-The log is written to stderr, syslog and (by default) `/usr/local/addons/sma_battery/state/check_soc.log`:
+The log is written to stderr, syslog and (by default) `/usr/local/addons/sentinella/state/check_soc.log`:
 
 ```sh
-tail -n 80 /usr/local/addons/sma_battery/state/check_soc.log
-logread | grep -E 'sma_battery|sma_soc'
+tail -n 80 /usr/local/addons/sentinella/state/check_soc.log
+logread | grep -E 'sentinella'
 ```
 
 ## Configuration
 
 ### `configuration file ... is missing or unreadable`
 
-`deploy.sh` installs `.env` next to `bin/` as `/usr/local/addons/sma_battery/.env`. Check:
+`deploy.sh` installs `.env` next to `bin/` as `/usr/local/addons/sentinella/.env`. Check:
 
 ```sh
-ls -l /usr/local/addons/sma_battery/.env
+ls -l /usr/local/addons/sentinella/.env
 ```
 
 The file must be readable by root. If you use the legacy `config.env`, the engine still falls back to it only when `.env` does not exist.
@@ -50,8 +50,8 @@ This is a deliberate strict check. Either fill both values or set `SIGNAL_ENABLE
 Fix it:
 
 ```sh
-chown root:root /usr/local/addons/sma_battery/.env
-chmod 600 /usr/local/addons/sma_battery/.env
+chown root:root /usr/local/addons/sentinella/.env
+chmod 600 /usr/local/addons/sentinella/.env
 ```
 
 The warning does not stop the run, but the file contains the inverter password and the CallMeBot key.
@@ -129,7 +129,7 @@ Some firmware versions execute the ReGa script but do not return `WriteLine()` o
 ### Variables are missing
 
 ```sh
-cd /usr/local/addons/sma_battery
+cd /usr/local/addons/sentinella
 sh setup_variables.sh
 ```
 
@@ -162,7 +162,7 @@ ps | grep crond
 The expected entry is:
 
 ```
-*/2 * * * * /usr/local/addons/sma_battery/bin/check_soc.sh >/dev/null 2>&1
+*/2 * * * * /usr/local/addons/sentinella/bin/check_soc.sh >/dev/null 2>&1
 ```
 
 The script sets its own `PATH`; a minimal cron environment is fine. If the entry is missing after a firmware update, re-run `./deploy.sh`.
@@ -172,8 +172,8 @@ The script sets its own `PATH`; a minimal cron environment is fine. If the entry
 The lock directory `state/.lock` prevents this. If a run is killed with `SIGKILL`, the lock remains until the next run detects that the PID is gone. Check:
 
 ```sh
-ls -la /usr/local/addons/sma_battery/state/.lock
-cat /usr/local/addons/sma_battery/state/.lock/pid
+ls -la /usr/local/addons/sentinella/state/.lock
+cat /usr/local/addons/sentinella/state/.lock/pid
 ```
 
 Do not delete a live lock. If the PID is gone, the next run removes the lock automatically. A PID can be reused by another process; in that rare case, remove the lock manually after confirming no monitor is running.
@@ -192,7 +192,7 @@ A full cycle can take up to `SMA_RETRIES × (connect + max time + delay)`, plus 
 - Check that the status file exists:
 
 ```sh
-ls -l /usr/local/etc/config/addons/www/sma_battery/status.json
+ls -l /usr/local/etc/config/addons/www/sentinella/status.json
 ```
 
 ### The page is blank or shows a 404
@@ -203,12 +203,12 @@ The add-on URL is:
 http://<ccu>/addons/sentinella/
 ```
 
-(Legacy `http://<ccu>/addons/sma_battery/` is also kept active.)
+(Legacy `http://<ccu>/addons/sma_battery/` is also kept active via symlink.)
 
 Check the directory and permissions:
 
 ```sh
-ls -la /usr/local/etc/config/addons/www/sma_battery/
+ls -la /usr/local/etc/config/addons/www/sentinella/
 ls -la /www/addons/sentinella
 ```
 
@@ -244,7 +244,7 @@ curl -i http://127.0.0.1/addons/sentinella/api/config.cgi
 Expected: `HTTP/1.1 200 OK` and a JSON object. If the response is `403`, `404` or the file is offered as a download, lighttpd is not executing CGI:
 
 ```sh
-ls -l /usr/local/etc/config/addons/www/sma_battery/api/
+ls -l /usr/local/etc/config/addons/www/sentinella/api/
 ```
 
 Both `.cgi` files must be mode `755`, and `addon_dir` must contain the add-on path (mode `644`). `deploy.sh` sets this automatically.
@@ -260,13 +260,13 @@ then restart lighttpd (find the init script with `ls /etc/init.d/*lighttpd*`, us
 
 ### Saving fails with "not writable"
 
-The CGI must be able to read and replace `/usr/local/addons/sma_battery/.env`. On a stock CCU3 lighttpd and its CGI handlers run as root. If you hardened lighttpd to drop privileges, the settings API cannot read a `600` root-owned `.env`; either run the CGI as root or adjust ownership, but do not make `.env` world-readable.
+The CGI must be able to read and replace `/usr/local/addons/sentinella/.env`. On a stock CCU3 lighttpd and its CGI handlers run as root. If you hardened lighttpd to drop privileges, the settings API cannot read a `600` root-owned `.env`; either run the CGI as root or adjust ownership, but do not make `.env` world-readable.
 
 ### A test notification fails
 
-- Save the phone/UUID and API key first. The test button saves the form before it runs.
+- Save the UUID and API key first. The test button saves the form before it runs.
 - Empty secret fields intentionally keep the stored value; type a new value to replace it.
-- Check `state/notify_test.log` on the CCU and the `sma_battery_notify` syslog tag.
+- Check `state/notify_test.log` on the CCU and the `sentinella_notify` syslog tag.
 - Verify that the CCU can reach `SIGNAL_API_URL` (HTTPS, port 443).
 
 ### After saving, the dashboard still shows the old thresholds for a moment
@@ -278,21 +278,21 @@ The dashboard applies saved values immediately, but `status.json` is only rewrit
 ### No message arrives
 
 - `SIGNAL_ENABLED="true"`?
-- `SIGNAL_PHONE` in E.164 format with `+`?
+- `SIGNAL_PHONE` set to your Signal Account UUID?
 - `SIGNAL_APIKEY` correct and activated in CallMeBot?
 - Is the notifier executable?
 
 ```sh
-ls -l /usr/local/addons/sma_battery/lib/notify_signal.sh
+ls -l /usr/local/addons/sentinella/lib/notify_signal.sh
 ```
 
 - Test credentials and delivery without changing `state/signal`:
 
 ```sh
-/usr/local/addons/sma_battery/lib/notify_signal.sh --test; echo "exit=$?"
+/usr/local/addons/sentinella/lib/notify_signal.sh --test; echo "exit=$?"
 ```
 
-- Check the log and syslog tag `sma_battery_notify`.
+- Check the log and syslog tag `sentinella_notify`.
 - Messages are only sent on a transition after a successful CCU3 write. Lower `THRESHOLD_TRIGGER` temporarily to force a `false → true` transition, or set `SIGNAL_NOTIFY_ON_START="true"` for one run if the signal is already active.
 - The same event is suppressed for `SIGNAL_COOLDOWN` seconds (default 3600). A "notification suppressed" log line means this protection fired. Remove `state/notify_trigger` or `state/notify_reset` only if you intentionally want to resend immediately.
 
@@ -379,15 +379,15 @@ The monitor worked, but the web directory is missing or not writable. Fix `WEB_S
 
 ```sh
 # 1. configuration and permissions
-ls -l /usr/local/addons/sma_battery/.env
-ls -l /usr/local/addons/sma_battery/bin/check_soc.sh
+ls -l /usr/local/addons/sentinella/.env
+ls -l /usr/local/addons/sentinella/bin/check_soc.sh
 
 # 2. foreground run
-/usr/local/addons/sma_battery/bin/check_soc.sh; echo "exit=$?"
+/usr/local/addons/sentinella/bin/check_soc.sh; echo "exit=$?"
 
 # 3. state
-cat /usr/local/addons/sma_battery/state/signal
-cat /usr/local/addons/sma_battery/state/status.json
+cat /usr/local/addons/sentinella/state/signal
+cat /usr/local/addons/sentinella/state/status.json
 
 # 4. cron
 crontab -l
@@ -397,7 +397,7 @@ ps | grep crond
 #    Status and Control -> System variables
 
 # 6. dashboard
-ls -l /usr/local/etc/config/addons/www/sma_battery/
+ls -l /usr/local/etc/config/addons/www/sentinella/
 
 # 7. network from the CCU3
 curl -k -sS -o /dev/null -w '%{http_code}\n' https://<inverter-ip>/

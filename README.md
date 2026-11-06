@@ -26,7 +26,7 @@ Sentinella queries an SMA Sunny Tripower or Sunny Boy Storage inverter every two
 
 ![System Footprint](docs/assets/feature-card-footprint.png)
 
-- **Storage:** ~284 KB on `/usr/local/addons/sma_battery/`
+- **Storage:** ~284 KB on `/usr/local/addons/sentinella/`
 - **Resident RAM:** 0 MB (stateless, on-demand execution via BusyBox crontab)
 - **CPU Overhead:** ~0.59s per cycle (0.43s user, 0.16s sys)
 - **Duty Cycle:** Active ~1.9% of the time, dormant for 98.1%
@@ -55,7 +55,7 @@ Set at least `SMA_IP` and `SMA_PASS` in `.env`, then deploy to the CCU3:
 ./deploy.sh -H 192.168.178.10
 ```
 
-`deploy.sh` copies the add-on to `/usr/local/addons/sma_battery`, links the web UI under `/addons/sentinella/` (keeping `/addons/sma_battery/` active for existing bookmarks), sets file permissions (`600` on `.env`, `755` on scripts and CGI endpoints), registers the two-minute cron job, creates `SV_Batterie_SoC` and `SV_Batterie_95_Signal`, and runs an initial check. Existing remote `.env` files and crontab lines are preserved.
+`deploy.sh` copies the add-on to `/usr/local/addons/sentinella`, installs the web UI under `/usr/local/etc/config/addons/www/sentinella/` (and links `/addons/sma_battery/` + `/usr/local/addons/sma_battery` for backwards compatibility), sets file permissions (`600` on `.env`, `755` on scripts and CGI endpoints), registers the two-minute cron job, creates `SV_Batterie_SoC` and `SV_Batterie_95_Signal`, and runs an initial check. Existing remote `.env` files and crontab lines are preserved.
 
 Options:
 
@@ -69,22 +69,24 @@ Options:
 
 ```sh
 # 1. Copy files to the CCU3
-ssh root@ccu3 "mkdir -p /usr/local/addons/sma_battery/state /usr/local/etc/config/addons/www/sma_battery/api"
+ssh root@ccu3 "mkdir -p /usr/local/addons/sentinella/state /usr/local/etc/config/addons/www/sentinella/api"
 tar -cf - -C . bin lib web setup_variables.sh .env \
-  | ssh root@ccu3 "tar -xf - -C /usr/local/addons/sma_battery"
+  | ssh root@ccu3 "tar -xf - -C /usr/local/addons/sentinella"
 
 # 2. Permissions, web files, symlinks, variables, and cron on the CCU3
 ssh root@ccu3 '
-  cd /usr/local/addons/sma_battery &&
+  cd /usr/local/addons/sentinella &&
   chown -R root:root . &&
   chmod 755 bin/check_soc.sh lib/notify_signal.sh setup_variables.sh &&
   chmod 600 .env &&
-  cp web/index.html web/style.css web/app.js /usr/local/etc/config/addons/www/sma_battery/ &&
-  cp web/api/config.cgi web/api/test_signal.cgi /usr/local/etc/config/addons/www/sma_battery/api/ &&
-  chmod 755 /usr/local/etc/config/addons/www/sma_battery/api/*.cgi &&
-  printf "%s\n" /usr/local/addons/sma_battery > /usr/local/etc/config/addons/www/sma_battery/api/addon_dir &&
-  ln -sfn /usr/local/etc/config/addons/www/sma_battery /usr/local/etc/config/addons/www/sentinella &&
-  [ -d /www/addons ] && ln -sfn /usr/local/addons/sma_battery /www/addons/sentinella &&
+  cp web/index.html web/style.css web/app.js /usr/local/etc/config/addons/www/sentinella/ &&
+  cp web/api/config.cgi web/api/test_signal.cgi /usr/local/etc/config/addons/www/sentinella/api/ &&
+  chmod 755 /usr/local/etc/config/addons/www/sentinella/api/*.cgi &&
+  printf "%s\n" /usr/local/addons/sentinella > /usr/local/etc/config/addons/www/sentinella/api/addon_dir &&
+  ln -sfn /usr/local/addons/sentinella /usr/local/addons/sma_battery &&
+  ln -sfn /usr/local/etc/config/addons/www/sentinella /usr/local/etc/config/addons/www/sma_battery &&
+  [ -d /www/addons ] && ln -sfn /usr/local/addons/sentinella /www/addons/sentinella &&
+  [ -d /www/addons ] && ln -sfn /usr/local/addons/sentinella /www/addons/sma_battery &&
   sh setup_variables.sh
 '
 ```
@@ -92,20 +94,14 @@ ssh root@ccu3 '
 Add the cron entry (`crontab -e`, see [`examples/crontab.txt`](examples/crontab.txt)):
 
 ```
-*/2 * * * * /usr/local/addons/sma_battery/bin/check_soc.sh >/dev/null 2>&1
+*/2 * * * * /usr/local/addons/sentinella/bin/check_soc.sh >/dev/null 2>&1
 ```
 
 ## Dashboard & Settings UI
 
-Open `http://<ccu-ip>/addons/sentinella/` (legacy `/addons/sma_battery/` remains available; `?demo=1` loads preview data when testing locally).
+Open `http://<ccu-ip>/addons/sentinella/` (`?demo=1` loads preview data when testing locally).
 
-The dashboard refreshes `status.json` every 30 seconds and includes:
-
-- **EN / DE** language switch (persisted to `.env` via `api/config.cgi` so Signal alerts match the UI language).
-- **Light / Dark** theme toggle (Light is the default; selection is stored in `localStorage`).
-- **Settings drawer** for thresholds, Signal notifications, CallMeBot onboarding message quick-paste extraction, and inverter credentials. Saving rewrites `.env` atomically (`chmod 600`) without exposing stored passwords or API keys to the browser.
-
-![Mobile dashboard layout](docs/assets/feature-card-mobile-touch.png)
+The Web UI is a zero-dependency Swiss-style dashboard served directly by the CCU3's native `lighttpd`. It refreshes `status.json` every 30 seconds and provides live SoC telemetry, hysteresis switch status, a manual dark mode toggle (light default), an **EN / DE** language toggle (persisted to `.env` via `api/config.cgi`), and a settings drawer for thresholds, CallMeBot Signal onboarding, and inverter credentials.
 
 `status.json` schema:
 
@@ -215,7 +211,7 @@ Sentinella parses the Signal Account UUID and the API key from that text and pop
 Test Signal delivery from the shell without altering battery state:
 
 ```sh
-/usr/local/addons/sma_battery/lib/notify_signal.sh --test; echo "exit=$?"
+/usr/local/addons/sentinella/lib/notify_signal.sh --test; echo "exit=$?"
 ```
 
 ### Web & Logging
@@ -223,9 +219,9 @@ Test Signal delivery from the shell without altering battery state:
 | Key | Default | Description |
 |---|---|---|
 | `WEB_ENABLED` | `true` | Copy `status.json` to lighttpd directory |
-| `WEB_STATUS_FILE` | `/usr/local/etc/config/addons/www/sma_battery/status.json` | Public status path |
+| `WEB_STATUS_FILE` | `/usr/local/etc/config/addons/www/sentinella/status.json` | Public status path |
 | `WEB_HISTORY_POINTS` | `288` | Chart samples kept (~9.6 h at 2-minute intervals) |
-| `LOG_FILE` | `<addon>/state/check_soc.log` | Log file path (empty logs to syslog only) |
+| `LOG_FILE` | `/usr/local/addons/sentinella/state/check_soc.log` | Log file path (empty logs to syslog only) |
 | `LOG_MAX_BYTES` | `262144` | Log rotation threshold in bytes |
 
 ## SMA WebConnect Quick Reference
@@ -254,9 +250,9 @@ curl -k -sS -X POST -H 'Content-Type: application/json' \
 See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for details. Quick diagnostics on the CCU3:
 
 ```sh
-/usr/local/addons/sma_battery/bin/check_soc.sh; echo "exit=$?"
-tail -n 50 /usr/local/addons/sma_battery/state/check_soc.log
-logread | grep sma_battery
+/usr/local/addons/sentinella/bin/check_soc.sh; echo "exit=$?"
+tail -n 50 /usr/local/addons/sentinella/state/check_soc.log
+logread | grep sentinella
 curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8181/tclrega.exe
 ```
 
