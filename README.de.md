@@ -64,7 +64,7 @@ Nur für `deploy.sh` und die Tests nötig: `bash`, `ssh`, `tar`, `curl`, Python 
 ### 1. Quellcode holen
 
 ```sh
-git clone https://github.com/<dein-konto>/sentinella.git
+git clone https://github.com/czett/sentinella.git
 cd sentinella
 ```
 

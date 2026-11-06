@@ -64,7 +64,7 @@ Only needed for `deploy.sh` and the tests: `bash`, `ssh`, `tar`, `curl`, Python 
 ### 1. Get the code
 
 ```sh
-git clone https://github.com/<your-account>/sentinella.git
+git clone https://github.com/czett/sentinella.git
 cd sentinella
 ```
 
