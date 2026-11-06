@@ -246,7 +246,6 @@ ssh_ccu "$REMOTE" \
 set -e
 
 mkdir -p "$ADDON_DIR/state"
-chown -R root:root "$ADDON_DIR"
 chmod 755 "$ADDON_DIR" "$ADDON_DIR/bin" "$ADDON_DIR/lib" "$ADDON_DIR/state"
 chmod 755 "$ADDON_DIR/bin/check_soc.sh" "$ADDON_DIR/lib/notify_signal.sh" "$ADDON_DIR/setup_variables.sh"
 
@@ -263,8 +262,11 @@ else
         printf 'Installed new %s/.env from workstation.\n' "$ADDON_DIR"
     fi
 fi
+# Enforce ownership and secret permissions after the .env install. This keeps
+# a fresh deploy from leaving the tree owned by avahi (tar extraction) and
+# keeps credentials readable by root only, even after an interrupted run.
 chmod 600 "$ADDON_DIR/.env" 2>/dev/null || true
-chown root:root "$ADDON_DIR/.env" 2>/dev/null || true
+chown -R root:root "$ADDON_DIR"
 if [ -d "$ADDON_DIR/web" ]; then
     chmod 755 "$ADDON_DIR/web"
 fi
@@ -365,17 +367,20 @@ fi
 if [ "$SKIP_CRON" != "1" ]; then
     CRON_TARGET="$ADDON_DIR/bin/check_soc.sh"
     CRON_LINE="*/2 * * * * $CRON_TARGET >/dev/null 2>&1"
+
+    # Match only active lines: a commented-out entry must not stop us from
+    # re-enabling the schedule, and existing entries stay byte-for-byte intact.
+    cron_has_target() {
+        grep -v '^[[:space:]]*#' "$1" 2>/dev/null | grep -qF "$CRON_TARGET"
+    }
+
     if command -v crontab >/dev/null 2>&1; then
-        CRON_LIST=$(crontab -l 2>/dev/null || true)
-        if printf '%s\n' "$CRON_LIST" | grep -qF "$CRON_TARGET"; then
+        CRON_TMP=/tmp/sma_battery_cron.$$
+        crontab -l > "$CRON_TMP" 2>/dev/null || : > "$CRON_TMP"
+        if cron_has_target "$CRON_TMP"; then
             printf 'Cron entry already present; crontab left untouched.\n'
+            rm -f "$CRON_TMP"
         else
-            CRON_TMP=/tmp/sma_battery_cron.$$
-            if [ -n "$CRON_LIST" ]; then
-                printf '%s\n' "$CRON_LIST" > "$CRON_TMP"
-            else
-                : > "$CRON_TMP"
-            fi
             printf '%s\n' "$CRON_LINE" >> "$CRON_TMP"
             crontab "$CRON_TMP"
             rm -f "$CRON_TMP"
@@ -385,14 +390,20 @@ if [ "$SKIP_CRON" != "1" ]; then
         CRON_FILE=/etc/crontabs/root
         mkdir -p /etc/crontabs
         touch "$CRON_FILE"
-        if grep -qF "$CRON_TARGET" "$CRON_FILE" 2>/dev/null; then
+        if cron_has_target "$CRON_FILE"; then
             printf 'Cron entry already present in %s; left untouched.\n' "$CRON_FILE"
         else
             printf '%s\n' "$CRON_LINE" >> "$CRON_FILE"
             printf 'Cron installed in %s: %s\n' "$CRON_FILE" "$CRON_LINE"
         fi
     fi
-    /etc/init.d/S71crond restart >/dev/null 2>&1 \
+
+    # BusyBox crond reads the crontab only when it starts. Restart it so a
+    # freshly installed schedule runs immediately; fall back to the firmware
+    # init script when crond is not a bare binary in PATH.
+    killall crond 2>/dev/null || true
+    crond 2>/dev/null \
+        || /etc/init.d/S71crond restart >/dev/null 2>&1 \
         || /etc/init.d/S98crond restart >/dev/null 2>&1 \
         || true
 fi

@@ -1,35 +1,23 @@
-# Sentinella — Hochpräziser SMA-Batteriemonitor für CCU3
+# Sentinella
 
-**Sentinella** ist ein eigenständiger, hochpräziser Batteriemonitor für eine **Homematic CCU3 / RaspberryMatic** und einen **SMA Sunny Tripower / Sunny Boy Storage** mit BYD- oder vergleichbarem Speicher. Sentinella liest den Ladezustand (State of Charge, SoC) über die lokale WebConnect-JSON-API des Wechselrichters, schreibt ihn in eine CCU3-Systemvariable und steuert daraus ein 95-%-Signal mit Hysterese für Programme und Automationen.
+![Sentinella — SMA-Batterie-Telemetrie für die CCU3](docs/assets/readme-hero-banner.png)
 
-Das Projekt bleibt bewusst klein: POSIX `/bin/sh`, BusyBox `ash`, `curl` und `sed`. Kein Python, kein Node.js und kein Build-Schritt auf der CCU.
+Sentinella liest den Ladezustand (State of Charge, SoC) eines SMA Sunny Tripower oder Sunny Boy Storage über die lokale WebConnect-API, schreibt den Wert in eine Systemvariable der HomeMatic CCU3 / RaspberryMatic und schaltet daraus ein boolesches Signal mit 95-%-/90-%-Hysterese. Signal-Benachrichtigungen über CallMeBot sind optional.
 
-- **Zuverlässig** - jede SMA-Sitzung wird abgemeldet, auch bei `SIGTERM`; ein Sperrverzeichnis verhindert überlappende Cron-Läufe.
-- **Sicher** - ein fehlender, ungültiger oder außerhalb des Bereichs liegender SoC überschreibt niemals den letzten guten CCU3-Wert.
-- **Konfigurierbar** - alle Einstellungen liegen in einer typisierten `.env`-Datei und werden beim Start validiert.
-- **Beobachtbar** - strukturierter `status.json`-Snapshot und ein eigenständiges Sentinella-Telemetrie-Dashboard.
-- **Dokumentiert** - deutsche und englische Anleitung, Protokollnotizen und Fehlerbehebung.
+## Eckdaten
 
-## Funktionen
-
-| | |
-|---|---|
-| Wechselrichter lesen | SMA WebConnect JSON-API über HTTPS, konfigurierbarer Kanal-Schlüssel |
-| CCU3 schreiben | ReGaHSS `tclrega.exe`, keine zusätzlichen CCU-Pakete nötig |
-| Hysterese | Einschalten bei `THRESHOLD_TRIGGER`, Zurücksetzen bei `THRESHOLD_RESET`, Zustand persistent |
-| Fehlerverhalten | `null`, nicht numerisch, außerhalb 0..100 oder nicht erreichbar: letzter CCU3-Zustand bleibt stehen |
-| Sitzungssicherheit | `EXIT`-, `INT`-, `TERM`- und `HUP`-Traps rufen immer `logout.json` auf |
-| Nebenläufigkeit | PID-Sperrverzeichnis mit Bereinigung verwaister Sperren |
-| Benachrichtigungen | optionaler, abgekoppelter CallMeBot-Signal-Hook ohne Cron-Blockade |
-| Dashboard | reines HTML/CSS/JS als Telemetriekonsole: farbiger SoC-Block, Hysterese-Leiste, nüchternes Verlaufsdiagramm |
-| Weboberfläche | Schwellen, Signal-Telefon/UUID, API-Schlüssel und Wechselrichter-Zugang im Browser bearbeiten |
-| Installation | `deploy.sh` über SSH, idempotenter Cron und Systemvariablen |
+- Läuft auf einer unveränderten CCU3 oder RaspberryMatic: POSIX `/bin/sh`, BusyBox `ash`, `curl`, `sed`, lighttpd.
+- Kein Python, Node.js, Build-Schritt oder externes CDN auf der CCU.
+- Unter 60 KB komprimiert; etwa 275 KB installiert unter `/usr/local/`, einschließlich der Dashboard-Kopie.
+- Alle zwei Minuten ein Login-, Lese- und Logout-Zyklus über Cron.
+- Ein fehlgeschlagener, fehlender oder ungültiger Messwert überschreibt nie den letzten gültigen SoC.
+- Dashboard und Einstellungsoberfläche werden vom vorhandenen lighttpd ausgeliefert.
 
 ## Architektur
 
 ```mermaid
 flowchart LR
-    A[SMA Sunny Tripower<br/>WebConnect API] -->|HTTPS JSON<br/>login / getValues / logout| B[bin/check_soc.sh]
+    A[SMA Sunny Tripower<br/>WebConnect-API] -->|HTTPS JSON<br/>login / getValues / logout| B[bin/check_soc.sh]
     B -->|ReGa tclrega.exe| C[CCU3-Systemvariablen<br/>SV_Batterie_SoC<br/>SV_Batterie_95_Signal]
     C --> D[CCU3-Programme<br/>und Automationen]
     B -->|abgekoppelter Hook| E[lib/notify_signal.sh]
@@ -37,88 +25,39 @@ flowchart LR
     B -->|atomare status.json| G[lighttpd-Dashboard<br/>/addons/sma_battery/]
 ```
 
-```
-+------------------+    HTTPS / JSON     +---------------------+    ReGa HTTP     +-----------------------+
-| SMA-Wechsel-     | ------------------> | bin/check_soc.sh    | ---------------> | SV_Batterie_SoC       |
-| richter          | <------------------ | Sperre, Traps, Retry| <--------------- | SV_Batterie_95_Signal |
-+------------------+                     +---------------------+                  +-----------------------+
-                                                   |         |
-                              abgekoppelte Meldung |         | atomares Schreiben
-                                                   v         v
-                                        lib/notify_signal.sh  web/status.json (lighttpd)
-                                                   |
-                                                   v
-                                        CallMeBot-Signal-API
-```
+![Telemetriepfad: SMA-Wechselrichter über HTTPS, Cron-Engine im Zwei-Minuten-Takt, CCU3-Systemvariable und Signal-Alarm](docs/assets/feature-diagram-telemetry.png)
 
 ### Ablauf eines Laufs
 
-1. `check_soc.sh` lädt `.env` und validiert alle Werte.
+1. `check_soc.sh` lädt `.env` und prüft alle Werte.
 2. Unter `state/` wird ein Sperrverzeichnis angelegt. Ein laufender PID lässt den neuen Lauf still beenden; eine verwaiste Sperre wird entfernt.
 3. Anmeldung (`POST /dyn/login.json`), Lesen von SoC und optionalen Leistungswerten, Abmeldung (`POST /dyn/logout.json`). Der Zyklus wird bis zu `SMA_RETRIES`-mal wiederholt.
 4. Der SoC muss eine ganze Zahl von 0 bis 100 sein. Ungültige Werte beenden den Lauf, ohne die CCU3-Variablen zu verändern.
 5. Die Hysterese wird mit dem gespeicherten Zustand ausgewertet. Zwischen den Schwellen bleibt der vorherige Zustand erhalten.
-6. Die CCU3-Variablen werden mit einer einzigen `tclrega.exe`-Anfrage geschrieben.
-7. `state/status.json` wird atomar aktualisiert und bei aktiviertem Dashboard als `status.json` in das lighttpd-Verzeichnis kopiert.
-8. Bei einem Zustandswechsel wird `lib/notify_signal.sh` im Hintergrund gestartet. Cron wartet nie auf die Telefonnachricht.
+6. Beide CCU3-Variablen werden mit einer einzigen `tclrega.exe`-Anfrage geschrieben.
+7. `state/status.json` wird atomar aktualisiert und bei aktiviertem Dashboard in das lighttpd-Verzeichnis kopiert.
+8. Bei einem Zustandswechsel startet `lib/notify_signal.sh` im Hintergrund. Cron wartet nie auf die Benachrichtigung.
 
-## Verzeichnisstruktur
-
-```
-.
-├── .env.example              Konfigurationsvorlage (nach .env kopieren)
-├── .gitignore                Geheimnisse, Logs, Zustand und Build-Ausgaben
-├── LICENSE                   MIT
-├── CHANGELOG.md              Versionshistorie
-├── SECURITY.md               Sicherheitsmeldungen und Umgang mit Geheimnissen
-├── README.md                 englische Anleitung
-├── README.de.md              diese Anleitung
-├── CONTRIBUTING.md           Regeln für Entwicklung und Pull Requests
-├── deploy.sh                 Installationshelfer auf dem Arbeitsplatz (bash)
-├── setup_variables.sh        idempotente ReGa-Systemvariablen
-├── bin/
-│   └── check_soc.sh          Kern (POSIX sh, BusyBox ash)
-├── lib/
-│   └── notify_signal.sh      abgekoppelter Signal-Hook
-├── web/
-│   ├── index.html            Sentinella-Telemetrie-Markup und Einstellungs-Schublade
-│   ├── style.css             Papier-/Ultramarin-Palette, responsiv, ohne externe Assets
-│   ├── app.js                Dashboard-, Diagramm- und Einstellungs-Client
-│   ├── api/
-│   │   ├── config.cgi        Konfigurations-API (GET/POST)
-│   │   └── test_signal.cgi   Testnachricht im Hintergrund
-│   └── status.example.json   Beispiel-Payload / lokale Vorschau
-├── docs/
-│   ├── PROTOCOL.md           Notizen zur SMA-WebConnect-API
-│   └── TROUBLESHOOTING.md    ausführliche Fehlerbehebung
-├── examples/
-│   ├── crontab.txt           Cron-Eintrag
-│   └── setup_variables.rega  ReGa-Rohskript für den Skripteditor
-├── tests/
-│   └── integration.py        Integrationstests mit Mock-Servern
-└── tools/
-    └── speedwire_sniffer.py  optionales Diagnosewerkzeug für Speedwire
-```
+![Laufzeit: BusyBox ash, unter 60 KB, keine externen CDNs, Auslieferung über den vorhandenen lighttpd](docs/assets/feature-card-native-ccu.png)
 
 ## Voraussetzungen
 
-**CCU3 / RaspberryMatic**
+### CCU3 / RaspberryMatic
 
 - Aktuelle CCU3- oder RaspberryMatic-Firmware mit ReGaHSS auf Port `8181`.
-- `curl`, `sed`, `tr`, `cut`, `head`, `tail`, `date`, `logger` (im Standardimage enthalten).
+- `curl`, `sed`, `tr`, `cut`, `head`, `tail`, `date` und `logger`; alle sind im Standardimage enthalten.
 - Root-SSH-Zugang für die Installation.
-- Etwa 250 KB dauerhafter Speicher unter `/usr/local/`.
+- Etwa 275 KB dauerhafter Speicher unter `/usr/local/`, einschließlich der Dashboard-Kopie.
 
-**SMA-Wechselrichter**
+### SMA-Wechselrichter
 
 - Vom CCU3 aus über HTTPS erreichbar.
-- WebUI-Benutzer mit Lesezugriff. Standard ist die Installateur-Rolle `usr`; `user` wird ebenfalls akzeptiert.
-- Batterie in der WebUI sichtbar. Der Standardschlüssel für den SoC ist `6100_00295A00`; je nach Firmware können andere Schlüssel nötig sein (siehe [docs/PROTOCOL.md](docs/PROTOCOL.md)).
+- Ein WebUI-Konto mit Lesezugriff. Standard ist die Installateur-Rolle `usr`; `user` funktioniert ebenfalls.
+- Die Batterie ist in der WebUI sichtbar. Der Standardschlüssel für den SoC ist `6100_00295A00`; je nach Firmware ist ein anderer Schlüssel nötig (siehe [docs/PROTOCOL.md](docs/PROTOCOL.md)).
 
-**Arbeitsplatz (nur für `deploy.sh` und Tests)**
+### Arbeitsplatz
 
-- `bash`, `ssh`, `tar`, `curl`.
-- Python 3.8+ und `openssl` für die Integrationstests.
+Nur für `deploy.sh` und die Tests nötig: `bash`, `ssh`, `tar`, `curl`, Python 3.8+ und `openssl`.
 
 ## Installation
 
@@ -143,33 +82,35 @@ Mindestens setzen:
 |---|---|
 | `SMA_IP` | Adresse des Wechselrichters, z. B. `192.168.178.123` |
 | `SMA_PASS` | Passwort der Wechselrichter-WebUI |
-| `CCU_IP` | `127.0.0.1`, wenn das Add-on auf der CCU3 läuft |
+| `CCU_IP` | `127.0.0.1`, wenn der Monitor auf der CCU3 läuft |
 | `DEPLOY_HOST` | CCU3-Adresse für `deploy.sh` |
 
 `.env` muss Modus `600` behalten. Die Datei ist bereits in `.gitignore` eingetragen.
 
-### 3. Mit `deploy.sh` installieren (empfohlen)
+### 3. Installieren
 
 ```sh
 ./deploy.sh -H 192.168.178.10
 ```
 
-`deploy.sh` führt diese Schritte idempotent aus:
+`deploy.sh` ist idempotent und führt diese Schritte aus:
 
 1. SSH-Verbindung prüfen.
-2. `bin/`, `lib/`, `web/`, `setup_variables.sh` und `.env` per `tar` über SSH nach `/usr/local/addons/sma_battery` übertragen (kein `rsync` auf der CCU nötig).
-3. Rechte setzen: `700` für Skripte und Verzeichnisse, `600` für `.env`, `644` für Dashboard-Dateien, `755` für die CGI-Endpunkte.
-4. Dashboard und Einstellungs-API nach `/usr/local/etc/config/addons/www/sma_battery/` kopieren und den CGI-Endpunkt über lighttpd prüfen.
-5. `*/2 * * * * /usr/local/addons/sma_battery/bin/check_soc.sh` in die Root-Crontab eintragen und `S71crond` neu starten.
+2. `bin/`, `lib/`, `web/`, `setup_variables.sh` und `.env` per `tar` über SSH nach `/usr/local/addons/sma_battery` übertragen. `rsync` ist auf der CCU nicht nötig.
+3. Eigentümer auf `root:root` setzen; Skripte und Verzeichnisse erhalten `755`, `.env` `600`, Dashboard-Dateien `644`, CGI-Endpunkte `755`.
+4. Dashboard und Einstellungs-API nach `/usr/local/etc/config/addons/www/sma_battery/` installieren und den CGI-Endpunkt über lighttpd prüfen.
+5. Den Zwei-Minuten-Cron-Eintrag anlegen, falls noch kein aktiver Eintrag existiert, und `crond` neu starten. Vorhandene Crontab-Zeilen bleiben erhalten.
 6. `setup_variables.sh` ausführen und die beiden Systemvariablen anlegen.
 7. Einen ersten Lauf ausführen und die Dashboard-URL ausgeben.
+
+Eine vorhandene `.env` auf der CCU wird nicht überschrieben. Nur bei der Erstinstallation wird die Datei vom Arbeitsplatz kopiert.
 
 Nützliche Optionen:
 
 ```sh
-./deploy.sh --dry-run                 # nur planen, nichts ändern
-./deploy.sh -H ccu3.local --skip-vars # vorhandene Variablen behalten
-./deploy.sh -H ccu3.local --skip-cron # eigene Zeitsteuerung
+./deploy.sh --dry-run                  # nur planen, nichts ändern
+./deploy.sh -H ccu3.local --skip-vars  # vorhandene Systemvariablen behalten
+./deploy.sh -H ccu3.local --skip-cron  # Zeitsteuerung selbst übernehmen
 ```
 
 ### 4. Manuelle Installation
@@ -192,7 +133,8 @@ Auf der CCU3:
 
 ```sh
 cd /usr/local/addons/sma_battery
-chmod 700 bin/check_soc.sh lib/notify_signal.sh setup_variables.sh
+chown -R root:root .
+chmod 755 bin/check_soc.sh lib/notify_signal.sh setup_variables.sh
 chmod 600 .env
 mkdir -p /usr/local/etc/config/addons/www/sma_battery/api
 cp web/index.html web/style.css web/app.js \
@@ -213,20 +155,24 @@ sh setup_variables.sh
 
 Das Skript ist idempotent und legt an:
 
-- `SV_Batterie_SoC` - Zahl, `0..100`, Einheit `%`
-- `SV_Batterie_95_Signal` - Boolean
+- `SV_Batterie_SoC` — Zahl, `0..100`, Einheit `%`
+- `SV_Batterie_95_Signal` — Boolean
 
 Beide werden unter `ID_SYSTEM_VARIABLES` registriert und erscheinen unter **Status und Bedienung → Systemvariablen**. Eine Rohfassung für den CCU3-Skripteditor liegt in [`examples/setup_variables.rega`](examples/setup_variables.rega).
 
 ### 6. Cron einrichten
 
-Auf der CCU3:
+Mit `deploy.sh` geschieht das automatisch. Für eine manuelle Installation die Zeile mit `crontab -e` ergänzen:
+
+```
+*/2 * * * * /usr/local/addons/sma_battery/bin/check_soc.sh >/dev/null 2>&1
+```
+
+Danach Cron neu starten:
 
 ```sh
-crontab -l 2>/dev/null | grep -v '/usr/local/addons/sma_battery/bin/check_soc.sh' > /tmp/sma.cron
-echo '*/2 * * * * /usr/local/addons/sma_battery/bin/check_soc.sh >/dev/null 2>&1' >> /tmp/sma.cron
-crontab /tmp/sma.cron
-/etc/init.d/S71crond restart
+killall crond 2>/dev/null
+crond
 ```
 
 Prüfen:
@@ -244,43 +190,43 @@ Eine vollständige Vorlage liegt in [`examples/crontab.txt`](examples/crontab.tx
 http://<ccu-adresse>/addons/sma_battery/
 ```
 
-Der erste Wert erscheint nach dem nächsten Cron-Lauf (maximal zwei Minuten). Die Seite aktualisiert sich alle 30 Sekunden und zeigt den Hinweis „Warte auf erste Messung“, solange `status.json` fehlt. Mit `?demo=1` lässt sich das Layout mit Beispieldaten ansehen; der Hinweis „Sentinella Preview Data“ kennzeichnet sie als Vorschau.
+Der erste Wert erscheint nach dem nächsten Cron-Lauf, spätestens nach zwei Minuten. Die Seite aktualisiert sich alle 30 Sekunden und zeigt „Warte auf erste Messung“, solange `status.json` fehlt. Mit `?demo=1` lässt sich das Layout mit Beispieldaten ansehen; der Hinweis „Sentinella Preview Data“ kennzeichnet sie als Vorschau.
 
 ### 8. Einstellungen im Browser
 
-Die Einstellungstaste im Kopfbereich öffnet die Einstellungs-Schublade. Dort lassen sich ohne `.env`-Bearbeitung und ohne Terminal ändern:
+Die Einstellungstaste im Kopfbereich des Dashboards öffnet eine Schublade für:
 
 - Trigger- und Reset-Schwelle des SoC,
-- der Signal-Schalter,
+- den Signal-Schalter,
 - Telefonnummer oder Signal-UUID und CallMeBot-API-Schlüssel,
 - SMA-Adresse, HTTPS-Port und WebUI-Passwort.
 
-**Test notification** speichert zuerst das Formular und startet dann `lib/notify_signal.sh --test` im Hintergrund auf der CCU. Die Schublade fragt das Ergebnis ab und zeigt Erfolg oder Fehler als Toast. Ein Test ändert weder `state/signal` noch den Cooldown.
+**Test notification** speichert das Formular und startet dann `lib/notify_signal.sh --test` im Hintergrund. Die Schublade fragt das Ergebnis ab und meldet Erfolg oder Fehler. Ein Test verändert weder `state/signal` noch den Cooldown.
 
-**Save configuration** schreibt die Werte atomar in `.env`: Eine private Kopie wird bearbeitet und mit `mv` über die Originaldatei gelegt. Ein Cron-Lauf liest dadurch immer entweder die vollständige alte oder die vollständige neue Datei. Ist Signal aktiviert, startet ein erfolgreiches Speichern sofort denselben Hintergrundtest. Eine falsche Telefonnummer/UUID oder ein falscher API-Schlüssel wird damit direkt gemeldet, statt bis zum Erreichen der Triggerschwelle zu warten. Das Formular bleibt während des Versands bedienbar. Die Datei bleibt `chmod 600`. Geheimnisse werden nie an den Browser zurückgegeben - die API liefert nur `signal_apikey_set` und `sma_password_set`; ein leeres Geheimnisfeld bedeutet „gespeicherten Wert behalten“.
+**Save configuration** schreibt `.env` atomar: Eine private Kopie wird bearbeitet und mit `mv` über die Originaldatei gelegt. Ein Cron-Lauf liest dadurch immer entweder die vollständige alte oder die vollständige neue Datei. Ist Signal aktiviert, startet ein erfolgreiches Speichern sofort denselben Hintergrundtest. Eine falsche Telefonnummer, UUID oder ein falscher API-Schlüssel wird damit gemeldet, ohne auf einen echten Trigger zu warten. Das Formular bleibt während des Versands bedienbar. Die Datei bleibt `chmod 600`. Geheimnisse werden nie an den Browser zurückgegeben: Die API liefert nur `signal_apikey_set` und `sma_password_set`; ein leeres Geheimnisfeld behält den gespeicherten Wert.
 
-Die API akzeptiert nur Same-Origin-Anfragen und validiert jeden Wert (SoC `0..100`, Trigger über Reset, E.164-Nummer oder Signal-UUID, Hostname, Portbereich). Sie wird über `api/config.cgi` und `api/test_signal.cgi` unter der Dashboard-URL ausgeliefert. Falls die Firmware `.cgi`-Dateien unter `/addons/` nicht ausführt, siehe [den CGI-Abschnitt in der Fehlerbehebung](docs/TROUBLESHOOTING.md#settings-panel-and-cgi).
+Die API akzeptiert nur Same-Origin-Anfragen und prüft jeden Wert: SoC `0..100`, Trigger über Reset, E.164-Nummer oder Signal-UUID, Hostname und Portbereich. Sie wird über `api/config.cgi` und `api/test_signal.cgi` ausgeliefert. Falls die Firmware `.cgi`-Dateien unter `/addons/` nicht ausführt, siehe [den CGI-Abschnitt in der Fehlerbehebung](docs/TROUBLESHOOTING.md#settings-panel-and-cgi).
 
 ## Konfiguration
 
-Alle Schlüssel stehen in `.env`. Die Datei wird von `/bin/sh` eingelesen; Werte quoten und für Geheimnisse einfache Anführungszeichen verwenden. Nach der Erstinstallation lassen sich die häufigen Einstellungen auch über die Einstellungs-Schublade im Dashboard ändern.
+Alle Schlüssel stehen in `.env`. Die Datei wird von `/bin/sh` eingelesen; Werte quoten und für Geheimnisse einfache Anführungszeichen verwenden. Nach der Installation lassen sich die häufigen Einstellungen auch im Dashboard ändern.
 
 ### Wechselrichter
 
 | Schlüssel | Typ | Standard | Beschreibung |
 |---|---|---|---|
-| `SMA_IP` | Host | - | IPv4-Adresse oder DNS-Name, ohne Schema |
+| `SMA_IP` | Host | — | IPv4-Adresse oder DNS-Name, ohne Schema |
 | `SMA_PORT` | int | `443` | HTTPS-Port der WebUI |
 | `SMA_ROLE` | `usr`/`user` | `usr` | WebUI-Rolle |
-| `SMA_PASS` | Geheimnis | - | WebUI-Passwort |
+| `SMA_PASS` | Geheimnis | — | WebUI-Passwort |
 | `BATTERY_SOC_KEY` | String | `6100_00295A00` | SoC-Kanalschlüssel |
 | `BATTERY_CHARGE_POWER_KEY` | String | `6100_00417800` | optionaler Ladeleistungsschlüssel; leer deaktiviert |
 | `BATTERY_DISCHARGE_POWER_KEY` | String | `6100_00417900` | optionaler Entladeleistungsschlüssel; leer deaktiviert |
 | `SMA_TLS_VERIFY` | bool | `false` | Zertifikat prüfen (`false` = `curl -k`) |
 | `SMA_CONNECT_TIMEOUT` | int | `5` | Verbindungs-Timeout in Sekunden |
-| `SMA_MAX_TIME` | int | `15` | Gesamt-Timeout pro Anfrage |
+| `SMA_MAX_TIME` | int | `15` | Gesamt-Timeout pro Anfrage in Sekunden |
 | `SMA_RETRIES` | int | `2` | vollständige Login-/Lese-/Logout-Zyklen |
-| `SMA_RETRY_DELAY` | int | `5` | Pause zwischen Versuchen |
+| `SMA_RETRY_DELAY` | int | `5` | Sekunden zwischen Versuchen |
 
 ### CCU3
 
@@ -300,8 +246,8 @@ Alle Schlüssel stehen in `.env`. Die Datei wird von `/bin/sh` eingelesen; Werte
 | Schlüssel | Typ | Standard | Beschreibung |
 |---|---|---|---|
 | `SIGNAL_ENABLED` | bool | `false` | CallMeBot-Signal aktivieren |
-| `SIGNAL_PHONE` | String | - | E.164-Nummer mit `+` |
-| `SIGNAL_APIKEY` | Geheimnis | - | CallMeBot-API-Schlüssel |
+| `SIGNAL_PHONE` | String | — | E.164-Nummer mit `+` |
+| `SIGNAL_APIKEY` | Geheimnis | — | CallMeBot-API-Schlüssel |
 | `SIGNAL_API_URL` | URL | CallMeBot-Signal | kompatibles Gateway |
 | `SIGNAL_MESSAGE_OVERFLOW` | String | siehe `.env.example` | Überschuss-Meldung; Platzhalter `{SOC}`, `{TRIGGER_SOC}`, `{RESET_SOC}`, `{HOST}` |
 | `SIGNAL_MESSAGE_RESET` | String | siehe `.env.example` | Reset-Meldung; gleiche Platzhalter |
@@ -311,7 +257,7 @@ Alle Schlüssel stehen in `.env`. Die Datei wird von `/bin/sh` eingelesen; Werte
 | `SIGNAL_RETRIES` | int | `2` | Versuche der Meldung |
 | `SIGNAL_COOLDOWN` | int | `3600` | gleiche Trigger-/Reset-Meldung innerhalb dieser Sekunden unterdrücken |
 
-Meldungen werden nur bei einem Hysterese-Wechsel (`false → true` und `true → false`) und erst nach erfolgreichem CCU3-Schreiben gesendet. Der Hook läuft mit `setsid`/`nohup` abgekoppelt und verzögert den Cron-Lauf nicht. Eine Sperrzeit pro Ereignis verhindert Doppelmeldungen bei einem Zwei-Minuten-Cron oder einem verlorenen Zustand. Der Text wird von `curl --data-urlencode` kodiert, damit Leerzeichen, Umlaute und `ß` ohne python/jq auf BusyBox funktionieren. Die alten Variablen `SIGNAL_TEXT_TRIGGER`/`SIGNAL_TEXT_RESET` und `%SOC%`-Platzhalter bleiben gültig.
+Meldungen werden nur bei einem Hysterese-Wechsel (`false → true` und `true → false`) und erst nach erfolgreichem CCU3-Schreiben gesendet. Der Hook läuft mit `setsid`/`nohup` abgekoppelt und verzögert Cron nicht. Eine Sperrzeit pro Ereignis verhindert Doppelmeldungen bei einem Zwei-Minuten-Cron oder einem verlorenen Zustand. `curl --data-urlencode` kodiert den Text, damit Leerzeichen, Umlaute und `ß` ohne Python oder jq auf BusyBox funktionieren. Die alten Schlüssel `SIGNAL_TEXT_TRIGGER`/`SIGNAL_TEXT_RESET` und `%SOC%`-Platzhalter bleiben gültig.
 
 ### Dashboard und Logging
 
@@ -320,22 +266,26 @@ Meldungen werden nur bei einem Hysterese-Wechsel (`false → true` und `true →
 | `WEB_ENABLED` | bool | `true` | `status.json` veröffentlichen |
 | `WEB_STATUS_FILE` | Pfad | `/usr/local/etc/config/addons/www/sma_battery/status.json` | lighttpd-Ziel |
 | `WEB_HISTORY_POINTS` | int | `288` | Punkte im Diagramm (2 min × 288 ≈ 9,6 h) |
-| `LOG_FILE` | Pfad | `<addon>/state/check_soc.log` | lokales Log; leer deaktiviert |
+| `LOG_FILE` | Pfad | `<addon>/state/check_soc.log` | lokales Log; leer deaktiviert die Dateiausgabe |
 | `LOG_MAX_BYTES` | int | `262144` | Rotation oberhalb dieser Größe |
 
 ### Installation
 
 | Schlüssel | Typ | Standard | Beschreibung |
 |---|---|---|---|
-| `DEPLOY_HOST` | Host | - | CCU3-SSH-Adresse für `deploy.sh` |
+| `DEPLOY_HOST` | Host | — | CCU3-SSH-Adresse für `deploy.sh` |
 | `DEPLOY_USER` | String | `root` | SSH-Benutzer |
 | `DEPLOY_PORT` | int | `22` | SSH-Port |
 | `DEPLOY_ADDON_DIR` | Pfad | `/usr/local/addons/sma_battery` | entferntes Add-on-Verzeichnis |
 | `DEPLOY_WEB_DIR` | Pfad | `/usr/local/etc/config/addons/www/sma_battery` | entferntes Dashboard-Verzeichnis |
 
-## So funktioniert das Signal
+![Ein stiller Wächter über jede Kilowattstunde](docs/assets/readme-divider-quote.png)
 
-Der Boolean ist ein klassischer Schmitt-Trigger:
+## Signallogik
+
+Der Boolean ist ein Schmitt-Trigger:
+
+![Hysterese: Reset bei 90 %, Trigger bei 95 %, dazwischen bleibt der vorherige Zustand](docs/assets/feature-diagram-hysteresis.png)
 
 ```
 SoC
@@ -349,9 +299,9 @@ SoC
 - Ab `THRESHOLD_TRIGGER` wird das Signal `true`.
 - Ab `THRESHOLD_RESET` wird es `false`.
 - Dazwischen wird der Wert aus `state/signal` verwendet.
-- Fehlt die Zustandsdatei und liegt der SoC im Totband (zum Beispiel 92 %), wird der Boolean absichtlich **nicht geschrieben**. Das verhindert einen vorzeitigen Reset nach einer Neuinstallation oder einem verlorenen Zustand. Das Dashboard zeigt dann `signal: null` und `signal_state: "unknown"`.
+- Fehlt die Zustandsdatei und liegt der SoC im Totband, wird der Boolean absichtlich **nicht geschrieben**. Das verhindert einen vorzeitigen Reset nach einer Neuinstallation oder einem verlorenen Zustand. Das Dashboard zeigt dann `signal: null` und `signal_state: "unknown"`.
 
-Fehlerverhalten:
+Das Fehlerverhalten ist bewusst konservativ:
 
 | Zustand | CCU3-SoC | CCU3-Signal | Exit |
 |---|---|---|---|
@@ -364,18 +314,35 @@ Fehlerverhalten:
 
 ## Dashboard
 
-Das Sentinella-Dashboard ist eine statische Single-Page-App ohne externe Schriften, Skripte oder CDNs. Es nutzt warmes Papier, ein randabfallendes ultramarines SoC-Feld, Haarlinien und schwere Helvetica-Ziffern; das signalrote Quadrat ist die einzige Marke. Es liest `status.json` alle 30 Sekunden per `fetch()` und zeigt:
+Das Dashboard ist eine statische Single-Page-App ohne externe Schriften, Skripte oder CDNs. Es liest `status.json` alle 30 Sekunden und zeigt SoC, Ladezustand, Hysterese-Leiste, Batterieleistung, das CCU3-Schreibergebnis, den Zeitpunkt der letzten Messung, ein Verlaufsdiagramm und ein Systemregister mit Wechselrichter-Host, Variablennamen, Signal-Gateway und Zeitstempel. Pull-to-Refresh wird auf Mobilgeräten unterstützt; die Aktualität zeigen die Werte selbst und ein Hinweisstreifen bei fehlgeschlagenem Abruf.
 
-- eine übergrosse SoC-Ziffer auf dem ultramarinen SoC-Feld, der Ladezustand als flaches Statusfeld,
-- eine feine Hysterese-Leiste mit quadratischem SoC-Marker und fetten Beschriftungen für Reset und Trigger,
-- ein 2×2-Raster für Ladezustand, Batterieleistung, CCU3-Schreibergebnis und Zeitpunkt der letzten Messung,
-- ein nüchternes Zweifarben-Verlaufsdiagramm aus den gespeicherten Messpunkten,
-- ein Systemregister mit Wechselrichter-Host, Variablennamen, Signal-Gateway und Zeitstempel,
-- Pull-to-Refresh auf Mobilgeräten; auf Punkt-Abzeichen und Alterstimer wird verzichtet, die Aktualität zeigen die Werte selbst und ein schlichter Hinweisstreifen bei fehlgeschlagenem Abruf.
+![Mobiles Dashboard: 100dvh-Container, Pull-to-Refresh, 48-px-Ziele und einspaltiges Layout](docs/assets/feature-card-mobile-touch.png)
 
-`status.json` wird atomar geschrieben und enthält keine Geheimnisse. Das Schema ist in [README.md](README.md#dashboard) und in `web/status.example.json` dokumentiert.
+`status.json` wird atomar geschrieben und enthält keine Geheimnisse:
 
-Für eine lokale Vorschau ohne CCU3 `web/status.example.json` nach `web/status.json` kopieren und `web/` mit einem beliebigen statischen Server ausliefern, oder die Seite mit `?demo=1` öffnen. Der Hinweis „Sentinella Preview Data“ macht deutlich, dass die Werte nicht live sind.
+```json
+{
+  "schema": 1,
+  "generated_at": "2026-11-06T16:30:00Z",
+  "generated_epoch": 1762446600,
+  "host": "192.168.178.123",
+  "soc": 91,
+  "previous_soc": 92,
+  "delta": -1,
+  "charging": "discharging",
+  "charge_power_w": 0,
+  "discharge_power_w": 620,
+  "signal": true,
+  "signal_state": "held",
+  "signal_notifications": true,
+  "thresholds": { "trigger": 95, "reset": 90 },
+  "variables": { "soc": "SV_Batterie_SoC", "signal": "SV_Batterie_95_Signal" },
+  "ccu_status": "ok",
+  "history": [{ "t": 1762446600, "soc": 91 }]
+}
+```
+
+Für eine lokale Vorschau ohne CCU3 `web/status.example.json` nach `web/status.json` kopieren und `web/` mit einem beliebigen statischen Server ausliefern, oder die Seite mit `?demo=1` öffnen.
 
 Wird kein Dashboard benötigt: `WEB_ENABLED="false"`. Der Monitor schreibt weiterhin einen privaten Snapshot nach `<addon>/state/status.json`.
 
@@ -400,7 +367,7 @@ curl -k -sS -X POST -H 'Content-Type: application/json' \
   'https://192.168.178.123/dyn/logout.json?sid=<sid>'
 ```
 
-`6100_00295A00` ist der Standardschlüssel für den Batterie-SoC bei Sunny Tripower / Sunny Boy Storage. Je nach Firmware kann er abweichen; siehe Protokollnotizen. Die optionalen Leistungsschlüssel `6100_00417800` und `6100_00417900` verbessern die Anzeige von Laden/Entladen, sind aber nicht erforderlich - das Dashboard fällt auf den SoC-Verlauf zurück.
+`6100_00295A00` ist der Standardschlüssel für den Batterie-SoC bei Sunny Tripower und Sunny Boy Storage. Je nach Firmware kann er abweichen; siehe Protokollnotizen. Die optionalen Leistungsschlüssel `6100_00417800` und `6100_00417900` verbessern die Anzeige von Laden und Entladen, sind aber nicht erforderlich. Ohne sie leitet das Dashboard den Zustand aus dem SoC-Verlauf ab.
 
 ## Signal-Benachrichtigungen
 
@@ -413,14 +380,16 @@ SIGNAL_PHONE="+491701234567"
 SIGNAL_APIKEY="123456"
 ```
 
-3. `./deploy.sh` erneut ausführen oder die aktualisierte `.env` kopieren und `chmod 600` setzen. Ein erneutes Deployment behält die vorhandene `.env` auf der CCU, überschreibt also keine Zugangsdaten.
-4. Zugangsdaten und Zustellung testen, ohne einen falschen Batteriezustand zu erzeugen:
+3. `./deploy.sh` erneut ausführen oder die aktualisierte `.env` kopieren und auf Modus `600` setzen. Ein erneutes Deployment behält die vorhandene `.env` auf der CCU und überschreibt keine Zugangsdaten.
+4. Zugangsdaten und Zustellung testen, ohne einen Batteriezustand zu erzeugen:
 
 ```sh
 /usr/local/addons/sma_battery/lib/notify_signal.sh --test; echo "exit=$?"
 ```
 
 `--test` sendet eine klar gekennzeichnete Testnachricht und liest oder schreibt `state/signal` nicht. `deploy.sh` startet denselben Test automatisch, wenn `SIGNAL_ENABLED="true"` gesetzt ist und `--skip-test` fehlt.
+
+![CallMeBot-Signal-Testnachricht und Exit-Status 0](docs/assets/feature-card-signal.png)
 
 Der Notifier schreibt in dasselbe Log und in syslog mit Tag `sma_battery_notify`.
 
@@ -455,11 +424,14 @@ Häufige Ursachen:
 | Variablen fehlen | `setup_variables.sh` ausführen; Namen sind groß-/kleinschreibungssensitiv |
 | Dashboard zeigt „Warte auf erste Messung“ | erster Cron-Lauf noch nicht fertig oder `WEB_STATUS_FILE` liegt außerhalb des lighttpd-Verzeichnisses |
 | Dashboard zeigt „Showing last recorded state“ | letzter Abruf fehlgeschlagen; Cron und Log prüfen |
+| Wechselrichter nachts nicht erreichbar | Gerät kann bei leerer Batterie in den Standby wechseln; der letzte CCU3-Wert bleibt unverändert |
+| keine Signal-Nachricht | Telefonnummer nicht im E.164-Format (`+49…`), falscher API-Schlüssel oder CallMeBot-Ratenlimit; `notify_signal.sh --test` ausführen und Log prüfen |
+| keine Logdatei | `LOG_FILE` ist leer oder zeigt außerhalb von `/usr/local/`; Standard ist `<addon>/state/check_soc.log`, syslog-Tag `sma_battery` |
 
 ### BusyBox- und CCU3-Besonderheiten
 
 - `#!/bin/sh` verwenden, nicht bash. Keine `local`, Arrays, `[[ ]]`, Prozess-Substitution, `set -u`-Annahmen oder `date -d`.
-- Das `curl` der CCU3 kann älter sein; die Skripte nutzen nur `-sS`, `-k`, `-m`, `--connect-timeout`, `--data-binary` und `--data-urlencode`.
+- Das `curl` der CCU3 kann älter sein. Die Skripte nutzen nur `-sS`, `-k`, `-m`, `--connect-timeout`, `--data-binary` und `--data-urlencode`.
 - `/` ist auf der CCU3 schreibgeschützt. Dauerhafte Daten gehören unter `/usr/local/`.
 - Cron startet mit minimaler Umgebung. `check_soc.sh` setzt seinen `PATH` selbst.
 - Manuell geöffnete SMA-WebUI-Sitzungen abmelden. Der Wechselrichter erlaubt nur wenige parallele Sitzungen und kann neue Logins vorübergehend ablehnen.
@@ -467,10 +439,10 @@ Häufige Ursachen:
 
 ## Sicherheit
 
-- `.env` enthält das Wechselrichter-Passwort und den CallMeBot-API-Schlüssel. Die Datei ist in Git ignoriert, wird mit Modus `600` installiert und bei falschem Modus verwarnt.
-- Das SMA-Zertifikat ist standardmäßig selbstsigniert; `SMA_TLS_VERIFY="false"` ist daher die funktionierende Voreinstellung. `"true"` erst nach Installation eines vertrauenswürdigen Zertifikats am Wechselrichter.
+- `.env` enthält das Wechselrichter-Passwort und den CallMeBot-API-Schlüssel. Die Datei ist in Git ignoriert, wird mit Modus `600` installiert und bei falschem Modus gemeldet.
+- SMA-Geräte verwenden standardmäßig ein selbstsigniertes Zertifikat; `SMA_TLS_VERIFY="false"` ist daher die funktionierende Voreinstellung. `"true"` erst nach Installation eines vertrauenswürdigen Zertifikats am Wechselrichter setzen.
 - ReGaHSS wird lokal über HTTP angesprochen. Port `8181` nicht ins Internet freigeben.
-- `status.json` enthält nur SoC, Schwellen, Variablennamen und Hostadresse. Kein Passwort, keine SID und kein API-Schlüssel.
+- `status.json` enthält nur SoC, Schwellen, Variablennamen und die Wechselrichter-Adresse. Kein Passwort, keine Sitzungs-ID und kein API-Schlüssel.
 - Sperr- und Zustandsdateien haben Modus `700`/`600`.
 - Das Skript meldet sich pro Lauf an, liest und meldet sich wieder ab. Zwischen Cron-Läufen bleibt keine Sitzung offen.
 
@@ -495,9 +467,26 @@ node --check web/app.js
 python3 tests/integration.py
 ```
 
-Der Integrationstest startet einen selbstsignierten HTTPS-SMA-Mock und einen HTTP-ReGa-Mock und prüft erfolgreiche Läufe, Hysterese-Wechsel, das Halten bei unbekanntem Zustand, `null`/außerhalb des Bereichs, Login-Fehler, die Sperre, Logout bei `SIGTERM`, abgekoppelte Benachrichtigungen und das ReGa-Setup.
+Der Integrationstest startet einen selbstsignierten HTTPS-SMA-Mock und einen HTTP-ReGa-Mock und prüft erfolgreiche Läufe, Hysterese-Wechsel, das Halten bei unbekanntem Zustand, `null`- und außerhalb-des-Bereichs-Werte, Login-Fehler, die Sperre, Logout bei `SIGTERM`, abgekoppelte Benachrichtigungen und das ReGa-Setup.
 
-Siehe [CONTRIBUTING.md](CONTRIBUTING.md) für die Coderegeln.
+### Bildmaterial
+
+Die Bilder in [`docs/assets/`](docs/assets) folgen dem Raster des Dashboards: warmes Papier, Ultramarin-Flächen, signalrote Quadrate und Helvetica-Schrift. Die Dateien werden einmalig mit Headless Chrome in 2× gerendert und herunterskaliert. Das Dashboard lädt sie zur Laufzeit nicht.
+
+| Datei | Größe | Verwendung |
+|---|---|---|
+| `readme-hero-banner.png` | 1280 × 420 | Kopf des Repositorys |
+| `sentinella-icon.png` | 512 × 512 | App-Symbol und Avatar |
+| `favicon.ico` | 16–64 | Browser-Favicon |
+| `feature-diagram-hysteresis.png` | 960 × 320 | Erklärung der zwei Schwellen |
+| `feature-card-signal.png` | 960 × 320 | CallMeBot-Signal-Vorschau |
+| `feature-card-native-ccu.png` | 960 × 320 | Laufzeit ohne Abhängigkeiten |
+| `feature-card-mobile-touch.png` | 960 × 320 | mobiles Dashboard |
+| `feature-diagram-telemetry.png` | 960 × 280 | Weg von Cron zu Signal |
+| `readme-divider-quote.png` | 1280 × 200 | Abschnittstrenner |
+| `social-preview-og.png` | 1280 × 640 | GitHub-Social-Preview |
+
+`social-preview-og.png` in den GitHub-Einstellungen als Social-Preview-Bild hinterlegen. Coderegeln stehen in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Migration vom alten `sma_soc`-Add-on
 
@@ -519,7 +508,7 @@ Das Standardverzeichnis ist jetzt `/usr/local/addons/sma_battery`; mit `deploy.s
 
 ## Optionales Diagnosewerkzeug
 
-`tools/speedwire_sniffer.py` hört auf SMA-Speedwire-Multicast-Telegramme auf `239.12.255.254:9524`. Es wird für den Monitor nicht benötigt, hilft aber zu prüfen, ob der Wechselrichter im Netz ist und ob herstellerspezifische Batteriekanäle vorhanden sind. Es benötigt Python auf dem Arbeitsplatz, nicht auf der CCU3.
+`tools/speedwire_sniffer.py` hört auf SMA-Speedwire-Multicast-Telegramme auf `239.12.255.254:9524`. Der Monitor benötigt es nicht, es hilft aber zu prüfen, ob der Wechselrichter im Netz ist und ob herstellerspezifische Batteriekanäle vorhanden sind. Es benötigt Python auf dem Arbeitsplatz, nicht auf der CCU3.
 
 ```sh
 python3 tools/speedwire_sniffer.py --interface 192.168.178.10 --count 5
@@ -527,4 +516,4 @@ python3 tools/speedwire_sniffer.py --interface 192.168.178.10 --count 5
 
 ## Lizenz
 
-MIT - siehe [LICENSE](LICENSE).
+MIT — siehe [LICENSE](LICENSE).
