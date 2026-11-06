@@ -228,7 +228,7 @@ The page was opened with `?demo=1`, or via `file://`. Open the normal CCU URL wi
 
 ## Settings panel and CGI
 
-The gear icon reads and writes `api/config.cgi` and `api/test_signal.cgi` below the dashboard directory. The browser never needs SSH or `.env` access.
+The settings button in the dashboard masthead reads and writes `api/config.cgi` and `api/test_signal.cgi` below the dashboard directory. The browser never needs SSH or `.env` access.
 
 ### The drawer says "Settings are not available"
 

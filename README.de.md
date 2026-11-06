@@ -7,7 +7,7 @@ Das Projekt bleibt bewusst klein: POSIX `/bin/sh`, BusyBox `ash`, `curl` und `se
 - **Zuverlässig** - jede SMA-Sitzung wird abgemeldet, auch bei `SIGTERM`; ein Sperrverzeichnis verhindert überlappende Cron-Läufe.
 - **Sicher** - ein fehlender, ungültiger oder außerhalb des Bereichs liegender SoC überschreibt niemals den letzten guten CCU3-Wert.
 - **Konfigurierbar** - alle Einstellungen liegen in einer typisierten `.env`-Datei und werden beim Start validiert.
-- **Beobachtbar** - strukturierter `status.json`-Snapshot und ein eigenständiges Dark-Dashboard.
+- **Beobachtbar** - strukturierter `status.json`-Snapshot und ein eigenständiges Swiss-Poster-Dashboard.
 - **Dokumentiert** - deutsche und englische Anleitung, Protokollnotizen und Fehlerbehebung.
 
 ## Funktionen
@@ -21,7 +21,7 @@ Das Projekt bleibt bewusst klein: POSIX `/bin/sh`, BusyBox `ash`, `curl` und `se
 | Sitzungssicherheit | `EXIT`-, `INT`-, `TERM`- und `HUP`-Traps rufen immer `logout.json` auf |
 | Nebenläufigkeit | PID-Sperrverzeichnis mit Bereinigung verwaister Sperren |
 | Benachrichtigungen | optionaler, abgekoppelter CallMeBot-Signal-Hook ohne Cron-Blockade |
-| Dashboard | reines HTML/CSS/JS mit grosser SoC-Anzeige, Hysterese-Leiste und Verlaufsdiagramm |
+| Dashboard | reines HTML/CSS/JS im Stil der Internationalen Typografie: farbiger SoC-Block, Hysterese-Leiste, nüchternes Verlaufsdiagramm |
 | Weboberfläche | Schwellen, Signal-Telefon/UUID, API-Schlüssel und Wechselrichter-Zugang im Browser bearbeiten |
 | Installation | `deploy.sh` über SSH, idempotenter Cron und Systemvariablen |
 
@@ -81,8 +81,8 @@ flowchart LR
 ├── lib/
 │   └── notify_signal.sh      abgekoppelter Signal-Hook
 ├── web/
-│   ├── index.html            Dashboard und Einstellungs-Schublade
-│   ├── style.css             dunkles, responsives Design ohne externe Assets
+│   ├── index.html            Swiss-Poster-Markup und Einstellungs-Schublade
+│   ├── style.css             Papier-/Ultramarin-Palette, responsiv, ohne externe Assets
 │   ├── app.js                Dashboard-, Diagramm- und Einstellungs-Client
 │   ├── api/
 │   │   ├── config.cgi        Konfigurations-API (GET/POST)
@@ -244,11 +244,11 @@ Eine vollständige Vorlage liegt in [`examples/crontab.txt`](examples/crontab.tx
 http://<ccu-adresse>/addons/sma_battery/
 ```
 
-Der erste Wert erscheint nach dem nächsten Cron-Lauf (maximal zwei Minuten). Die Seite aktualisiert sich alle 30 Sekunden und zeigt den Zustand „Warte auf erste Messung“, solange `status.json` fehlt. Mit `?demo=1` lässt sich das Layout mit Beispieldaten ansehen.
+Der erste Wert erscheint nach dem nächsten Cron-Lauf (maximal zwei Minuten). Die Seite aktualisiert sich alle 30 Sekunden und zeigt den Hinweis „Warte auf erste Messung“, solange `status.json` fehlt. Mit `?demo=1` lässt sich das Layout mit Beispieldaten ansehen; der Hinweis „Exhibition Preview Data“ kennzeichnet sie als Vorschau.
 
 ### 8. Einstellungen im Browser
 
-Das Zahnrad im Kopfbereich öffnet die Einstellungs-Schublade. Dort lassen sich ohne `.env`-Bearbeitung und ohne Terminal ändern:
+Die Einstellungstaste im Kopfbereich öffnet die Einstellungs-Schublade. Dort lassen sich ohne `.env`-Bearbeitung und ohne Terminal ändern:
 
 - Trigger- und Reset-Schwelle des SoC,
 - der Signal-Schalter,
@@ -364,19 +364,18 @@ Fehlerverhalten:
 
 ## Dashboard
 
-Das Dashboard ist eine statische Single-Page-App. Es liest `status.json` alle 30 Sekunden per `fetch()` und zeigt:
+Das Dashboard ist eine statische Single-Page-App ohne externe Schriften, Skripte oder CDNs. Es folgt der Internationalen Typografie: warmes Papier, ein randabfallendes ultramarines SoC-Feld, Haarlinien und schwere Helvetica-Ziffern. Es liest `status.json` alle 30 Sekunden per `fetch()` und zeigt:
 
-- eine grosse numerische SoC-Anzeige mit Ladezustand,
-- eine feine Hysterese-Leiste mit aktuellem SoC und beiden Schwellen,
-- Ladezustand und optionale Batterieleistung,
-- Signalzustand und Ergebnis des CCU3-Schreibens,
-- ein Verlaufsdiagramm aus den gespeicherten Messpunkten,
-- Verbindungsdaten sowie einen klaren Demo-/Live-/Stale-Hinweis,
-- Pull-to-Refresh auf Mobilgeräten und eine Live-Altersanzeige.
+- eine übergrosse SoC-Ziffer auf dem ultramarinen Posterblock, der Ladezustand als flaches Statusfeld,
+- eine feine Hysterese-Leiste mit quadratischem SoC-Marker und fetten Beschriftungen für Reset und Trigger,
+- ein 2×2-Raster für Ladezustand, Batterieleistung, CCU3-Schreibergebnis und Zeitpunkt der letzten Messung,
+- ein nüchternes Zweifarben-Verlaufsdiagramm aus den gespeicherten Messpunkten,
+- ein Systemregister mit Wechselrichter-Host, Variablennamen, Signal-Gateway und Zeitstempel,
+- Pull-to-Refresh auf Mobilgeräten; auf Punkt-Abzeichen und Alterstimer wird verzichtet, die Aktualität zeigen die Werte selbst und ein schlichter Hinweisstreifen bei fehlgeschlagenem Abruf.
 
 `status.json` wird atomar geschrieben und enthält keine Geheimnisse. Das Schema ist in [README.md](README.md#dashboard) und in `web/status.example.json` dokumentiert.
 
-Für eine lokale Vorschau ohne CCU3 `web/status.example.json` nach `web/status.json` kopieren und `web/` mit einem beliebigen statischen Server ausliefern, oder die Seite mit `?demo=1` öffnen. Das **Demo**-Abzeichen macht deutlich, dass die Werte nicht live sind.
+Für eine lokale Vorschau ohne CCU3 `web/status.example.json` nach `web/status.json` kopieren und `web/` mit einem beliebigen statischen Server ausliefern, oder die Seite mit `?demo=1` öffnen. Der Hinweis „Exhibition Preview Data“ macht deutlich, dass die Werte nicht live sind.
 
 Wird kein Dashboard benötigt: `WEB_ENABLED="false"`. Der Monitor schreibt weiterhin einen privaten Snapshot nach `<addon>/state/status.json`.
 
@@ -454,8 +453,8 @@ Häufige Ursachen:
 | `no numeric value` | Batterie nicht verbunden, falscher `BATTERY_SOC_KEY` oder Firmware bietet den Wert nicht an |
 | `CCU3 ReGa request failed` | ReGaHSS läuft nicht, falscher `CCU_REGA_PORT` oder CCU3 überlastet |
 | Variablen fehlen | `setup_variables.sh` ausführen; Namen sind groß-/kleinschreibungssensitiv |
-| Dashboard zeigt „No data“ | erster Cron-Lauf noch nicht fertig oder `WEB_STATUS_FILE` liegt außerhalb des lighttpd-Verzeichnisses |
-| Dashboard zeigt „Stale“ | letzter Lauf älter als 10 Minuten; Cron und Log prüfen |
+| Dashboard zeigt „Warte auf erste Messung“ | erster Cron-Lauf noch nicht fertig oder `WEB_STATUS_FILE` liegt außerhalb des lighttpd-Verzeichnisses |
+| Dashboard zeigt „Showing last recorded state“ | letzter Abruf fehlgeschlagen; Cron und Log prüfen |
 
 ### BusyBox- und CCU3-Besonderheiten
 

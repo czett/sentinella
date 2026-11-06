@@ -7,7 +7,7 @@ The project is deliberately small: POSIX `/bin/sh`, BusyBox `ash`, `curl`, `sed`
 - **Reliable** - every SMA session is logged out, also on `SIGTERM`, and a lock directory prevents overlapping cron runs.
 - **Safe** - a failed, missing or out-of-range SoC never overwrites the last good CCU3 value.
 - **Configurable** - everything lives in one `.env` file with typed defaults and validation.
-- **Observable** - structured `status.json` snapshot plus a self-contained dark dashboard.
+- **Observable** - structured `status.json` snapshot plus a self-contained Swiss-poster dashboard.
 - **Documented** - English and German guides, protocol notes and a troubleshooting reference.
 
 ## Features
@@ -21,7 +21,7 @@ The project is deliberately small: POSIX `/bin/sh`, BusyBox `ash`, `curl`, `sed`
 | Session safety | `EXIT`, `INT`, `TERM` and `HUP` traps always call `logout.json` |
 | Concurrency | PID lock directory with stale-lock recovery |
 | Notifications | optional detached CallMeBot Signal hook, never blocks cron |
-| Dashboard | vanilla HTML/CSS/JS, oversized SoC display, hysteresis rail, history chart |
+| Dashboard | vanilla HTML/CSS/JS in an International Typographic Style layout: colour-block SoC hero, hysteresis rail, stark history chart |
 | Web settings | thresholds, Signal phone/UUID, API key and inverter credentials editable in the browser |
 | Deployment | `deploy.sh` over SSH, idempotent cron and system-variable setup |
 
@@ -81,8 +81,8 @@ flowchart LR
 ├── lib/
 │   └── notify_signal.sh      detached Signal notification hook
 ├── web/
-│   ├── index.html            dashboard markup and settings drawer
-│   ├── style.css             dark, responsive, no external assets
+│   ├── index.html            Swiss poster markup and settings drawer
+│   ├── style.css             paper/ultramarine palette, responsive, no external assets
 │   ├── app.js                dashboard, chart and settings client
 │   ├── api/
 │   │   ├── config.cgi        settings API (GET/POST config)
@@ -244,11 +244,11 @@ A complete copy is in [`examples/crontab.txt`](examples/crontab.txt). No `rc.loc
 http://<ccu-address>/addons/sma_battery/
 ```
 
-The first value appears after the next cron run (up to two minutes). The page refreshes every 30 seconds and shows a clear "Waiting for the first measurement" state when `status.json` does not exist yet. Add `?demo=1` to preview the layout with generated data.
+The first value appears after the next cron run (up to two minutes). The page refreshes every 30 seconds and shows a clear "Waiting for first measurement" notice when `status.json` does not exist yet. Add `?demo=1` to preview the layout with generated data, labelled "Exhibition Preview Data".
 
 ### 8. Settings in the browser
 
-The gear icon in the dashboard header opens the settings drawer. From there you can change, without touching `.env` or opening a terminal:
+The settings button in the dashboard masthead opens the settings drawer. From there you can change, without touching `.env` or opening a terminal:
 
 - trigger and reset SoC levels,
 - the Signal on/off switch,
@@ -364,15 +364,14 @@ Fault behaviour is intentionally conservative:
 
 ## Dashboard
 
-The dashboard is a static single-page app. It reads `status.json` with `fetch()` every 30 seconds and renders:
+The dashboard is a static single-page app with no external fonts, scripts or CDNs. It follows a Swiss International Typographic Style: warm paper ground, one full-bleed ultramarine SoC field, hairline rules and heavy Helvetica-set figures. It reads `status.json` with `fetch()` every 30 seconds and renders:
 
-- an oversized numeric state-of-charge display with the charging state,
-- a hairline hysteresis rail with the current SoC marker and the two thresholds,
-- charging state and optional battery power,
-- the signal state and CCU write result,
-- a history chart from the samples kept by the monitor,
-- connection metadata and a clear demo/live/stale indicator,
-- mobile pull-to-refresh and a live age indicator.
+- an oversized state-of-charge figure on the ultramarine poster block, with the charging state as a flat state tag,
+- a hairline hysteresis rail with a square SoC marker and bold labels for the reset and trigger levels,
+- a 2×2 telemetry grid for charging state, battery power, CCU write result and last sample time,
+- a stark two-tone history chart from the samples kept by the monitor,
+- a system register with the inverter host, variable names, Signal gateway and timestamp,
+- mobile pull-to-refresh; there are no dot badges or age timers, freshness is conveyed by the values and by a plain notice strip when a poll fails.
 
 `status.json` is written atomically and contains no secrets:
 
@@ -398,7 +397,7 @@ The dashboard is a static single-page app. It reads `status.json` with `fetch()`
 }
 ```
 
-For a local preview without a CCU3, copy `web/status.example.json` to `web/status.json` and serve the `web/` directory with any static server, or open the page with `?demo=1`. The **Demo** badge makes it unmistakable that the values are not live.
+For a local preview without a CCU3, copy `web/status.example.json` to `web/status.json` and serve the `web/` directory with any static server, or open the page with `?demo=1`. The "Exhibition Preview Data" notice makes it unmistakable that the values are not live.
 
 If you do not want the dashboard, set `WEB_ENABLED="false"`. The monitor still writes a private snapshot to `<addon>/state/status.json`.
 
@@ -476,8 +475,8 @@ Common causes:
 | `no numeric value` | battery not connected, wrong `BATTERY_SOC_KEY`, or firmware does not expose it |
 | `CCU3 ReGa request failed` | ReGaHSS not running, wrong `CCU_REGA_PORT`, or CCU3 is overloaded |
 | variables do not exist | run `setup_variables.sh`; names are case-sensitive |
-| dashboard shows "No data" | first cron run has not completed, or `WEB_STATUS_FILE` is outside the lighttpd directory |
-| dashboard shows "Stale" | last run older than 10 minutes; check cron and the log |
+| dashboard shows "Waiting for first measurement" | first cron run has not completed, or `WEB_STATUS_FILE` is outside the lighttpd directory |
+| dashboard shows "Showing last recorded state" | the latest poll failed; check cron and the log |
 
 ### BusyBox and CCU3 caveats
 

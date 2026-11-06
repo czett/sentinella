@@ -27,10 +27,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
-- Dashboard redesign: zinc field, hairline grid, oversized Swiss SoC type,
-  thin hysteresis rail, crisp history line, 100dvh shell, mobile
-  pull-to-refresh and an explicit live-age indicator. Settings drawer and
-  API contract are unchanged.
+- Dashboard redesign in the Swiss International Typographic Style: warm paper
+  field, full-bleed ultramarine SoC hero, heavy Helvetica figures, hairline
+  hysteresis rail with bold threshold labels, stark two-tone history chart and
+  a 2×2 telemetry grid. Flat colour blocks replace dot badges, glow effects and
+  the live-age indicator; freshness is carried by the values and a plain notice
+  strip. The mobile layout stacks the colour blocks, keeps 48 px touch targets
+  and pull-to-refresh. The demo mode is labelled "Exhibition Preview Data".
+  Settings drawer and API contract are unchanged.
 - Notification hook is launched with `setsid`/`nohup`, fully detached from the
   cron polling loop.
 - Redeployments keep the existing remote `.env` instead of overwriting live
