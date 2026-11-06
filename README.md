@@ -187,6 +187,17 @@ SoC
 
 ### Signal Notifications
 
+#### CallMeBot setup
+
+Sentinella uses the [CallMeBot Signal API](https://www.callmebot.com/blog/free-api-signal-send-messages/) to deliver alerts. Activation takes two steps:
+
+1. Send `I allow callmebot to send me messages` to CallMeBot on Signal. The bot replies with your credentials.
+2. Copy the entire reply into the **Quick Setup** textarea in Sentinella's Settings drawer and click **Extract & Apply**.
+
+Sentinella parses the Signal Account UUID (or phone number) and the API key from that text and fills both fields automatically, so nothing has to be retyped. The values are written to `SIGNAL_PHONE` and `SIGNAL_APIKEY` when the settings are saved.
+
+#### Configuration
+
 | Key | Default | Description |
 |---|---|---|
 | `SIGNAL_ENABLED` | `false` | Enable Signal alerts via CallMeBot |

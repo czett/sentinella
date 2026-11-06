@@ -187,6 +187,17 @@ SoC
 
 ### Signal-Benachrichtigungen
 
+#### CallMeBot einrichten
+
+Sentinella versendet Meldungen über die [CallMeBot-Signal-API](https://www.callmebot.com/blog/free-api-signal-send-messages/). Die Einrichtung besteht aus zwei Schritten:
+
+1. `I allow callmebot to send me messages` per Signal an CallMeBot senden. Der Bot antwortet mit den Zugangsdaten.
+2. Die vollständige Antwort in das Feld **Schnelleinrichtung** im Einstellungs-Menü von Sentinella einfügen und **Extrahieren & Übernehmen** anklicken.
+
+Sentinella liest die Signal-Account-UUID (oder Telefonnummer) und den API-Schlüssel aus dem Text und trägt beide Felder automatisch ein. Beim Speichern werden sie in `SIGNAL_PHONE` und `SIGNAL_APIKEY` geschrieben.
+
+#### Konfiguration
+
 | Schlüssel | Standard | Beschreibung |
 |---|---|---|
 | `SIGNAL_ENABLED` | `false` | Signal-Nachrichten über CallMeBot aktivieren |
