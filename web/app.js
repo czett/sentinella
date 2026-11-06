@@ -39,6 +39,12 @@
     var languageSynced = false;
     var configLanguageTried = false;
 
+    var THEME_KEY = "sentinella_theme";
+    var currentTheme = "light";
+    var themeMedia = window.matchMedia
+        ? window.matchMedia("(prefers-color-scheme: dark)")
+        : null;
+
     var I18N = {
         en: {
             pageTitle: "Sentinella — SMA / CCU3 Battery Monitor",
@@ -46,6 +52,9 @@
             retryNow: "Retry now",
             brandSub: "Battery Monitor & Hysteresis Sentinel",
             languageLabel: "Language",
+            themeLabel: "Color theme",
+            lightTheme: "Light theme",
+            darkTheme: "Dark theme",
             openSettings: "Open settings",
             settings: "Settings",
             close: "Close",
@@ -178,6 +187,9 @@
             retryNow: "Jetzt erneut versuchen",
             brandSub: "Batteriemonitor & Hysterese-Wächter",
             languageLabel: "Sprache",
+            themeLabel: "Farbschema",
+            lightTheme: "Helles Design",
+            darkTheme: "Dunkles Design",
             openSettings: "Einstellungen öffnen",
             settings: "Einstellungen",
             close: "Schließen",
@@ -429,6 +441,9 @@
         document.querySelectorAll("[data-i18n-placeholder]").forEach(function (node) {
             node.setAttribute("placeholder", t(node.getAttribute("data-i18n-placeholder")));
         });
+        document.querySelectorAll("[data-i18n-title]").forEach(function (node) {
+            node.setAttribute("title", t(node.getAttribute("data-i18n-title")));
+        });
         document.querySelectorAll(".lang-option").forEach(function (button) {
             var active = button.getAttribute("data-lang") === currentLanguage;
             button.setAttribute("aria-pressed", active ? "true" : "false");
@@ -502,6 +517,62 @@
         }).catch(function () {
             showToast("error", t("languageSaveFailed"));
         });
+    }
+
+    /* ----------------------------------------------------------------------
+       Theme
+       ---------------------------------------------------------------------- */
+
+    function normalizeTheme(value) {
+        return value === "dark" ? "dark" : "light";
+    }
+
+    function readStoredTheme() {
+        try {
+            var value = window.localStorage.getItem(THEME_KEY);
+            return value === "light" || value === "dark" ? value : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function storeTheme(theme) {
+        try {
+            window.localStorage.setItem(THEME_KEY, theme);
+        } catch (error) {
+            /* Private mode or disabled storage: keep the theme for this visit. */
+        }
+    }
+
+    function systemTheme() {
+        return themeMedia && themeMedia.matches ? "dark" : "light";
+    }
+
+    function applyTheme(theme) {
+        currentTheme = normalizeTheme(theme);
+        document.documentElement.setAttribute("data-theme", currentTheme);
+
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) {
+            meta.setAttribute("content", currentTheme === "dark" ? "#09090b" : "#f8f8f9");
+        }
+
+        document.querySelectorAll(".theme-option").forEach(function (button) {
+            var active = button.getAttribute("data-theme-value") === currentTheme;
+            button.setAttribute("aria-pressed", active ? "true" : "false");
+        });
+    }
+
+    function setTheme(theme) {
+        applyTheme(theme);
+        storeTheme(currentTheme);
+    }
+
+    function syncSystemTheme(event) {
+        if (readStoredTheme()) {
+            return;
+        }
+        applyTheme(event.matches ? "dark" : "light");
     }
 
     /* ----------------------------------------------------------------------
@@ -1491,6 +1562,24 @@
         });
     });
 
+    document.querySelectorAll(".theme-option").forEach(function (button) {
+        button.addEventListener("click", function () {
+            var theme = normalizeTheme(button.getAttribute("data-theme-value"));
+            if (theme === currentTheme) {
+                return;
+            }
+            setTheme(theme);
+        });
+    });
+
+    if (themeMedia) {
+        if (themeMedia.addEventListener) {
+            themeMedia.addEventListener("change", syncSystemTheme);
+        } else if (themeMedia.addListener) {
+            themeMedia.addListener(syncSystemTheme);
+        }
+    }
+
     el.settingsOpen.addEventListener("click", openSettings);
     el.settingsClose.addEventListener("click", closeSettings);
     el.settingsBackdrop.addEventListener("click", closeSettings);
@@ -1548,6 +1637,10 @@
             load();
         }
     });
+
+    applyTheme(readStoredTheme() ||
+        document.documentElement.getAttribute("data-theme") ||
+        systemTheme());
 
     setLanguage(readStoredLanguage(), { persist: false });
 

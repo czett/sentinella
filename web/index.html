@@ -1,12 +1,32 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="color-scheme" content="light">
+    <meta name="color-scheme" content="light dark">
     <meta name="theme-color" content="#f8f8f9">
     <meta name="description" content="Sentinella — high-precision battery state of charge and hysteresis telemetry for SMA inverters and the Homematic CCU3.">
     <title>Sentinella — SMA / CCU3 Battery Monitor</title>
+    <script>
+        (function () {
+            var theme;
+            try {
+                theme = window.localStorage.getItem("sentinella_theme");
+            } catch (error) {
+                theme = null;
+            }
+            if (theme !== "light" && theme !== "dark") {
+                theme = window.matchMedia &&
+                    window.matchMedia("(prefers-color-scheme: dark)").matches
+                    ? "dark" : "light";
+            }
+            document.documentElement.setAttribute("data-theme", theme);
+            var meta = document.querySelector('meta[name="theme-color"]');
+            if (meta) {
+                meta.setAttribute("content", theme === "dark" ? "#09090b" : "#f8f8f9");
+            }
+        })();
+    </script>
     <link rel="stylesheet" href="./style.css">
 </head>
 <body data-state="loading">
@@ -30,10 +50,28 @@
                 <button class="lang-option" type="button" data-lang="de"
                         aria-pressed="false">DE</button>
             </div>
+            <div class="theme-toggle" id="theme-toggle" role="group"
+                 aria-label="Color theme" data-i18n-aria="themeLabel">
+                <button class="theme-option" type="button" data-theme-value="light"
+                        aria-pressed="true" aria-label="Light theme" title="Light theme"
+                        data-i18n-aria="lightTheme" data-i18n-title="lightTheme">
+                    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                        <circle cx="8" cy="8" r="3.25"></circle>
+                        <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.42 1.42M11.53 11.53l1.42 1.42M12.95 3.05l-1.42 1.42M4.47 11.53l-1.42 1.42"></path>
+                    </svg>
+                </button>
+                <button class="theme-option" type="button" data-theme-value="dark"
+                        aria-pressed="false" aria-label="Dark theme" title="Dark theme"
+                        data-i18n-aria="darkTheme" data-i18n-title="darkTheme">
+                    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                        <path d="M13.25 9.4A5.5 5.5 0 0 1 6.6 2.75a5.75 5.75 0 1 0 6.65 6.65Z"></path>
+                    </svg>
+                </button>
+            </div>
             <button class="settings-trigger" id="settings-open" type="button"
-                    aria-label="Open settings" aria-haspopup="dialog"
+                    aria-label="Open settings" title="Open settings" aria-haspopup="dialog"
                     aria-expanded="false" aria-controls="settings-drawer"
-                    data-i18n-aria="openSettings">
+                    data-i18n-aria="openSettings" data-i18n-title="openSettings">
                 <span class="settings-trigger-text" data-i18n="settings">Settings</span>
                 <span class="settings-trigger-mark" aria-hidden="true">+</span>
             </button>
