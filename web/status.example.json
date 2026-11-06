@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "generated_at": "2026-11-06T16:30:00Z",
+  "generated_epoch": 1762446600,
+  "host": "192.168.178.123",
+  "soc": 91,
+  "previous_soc": 92,
+  "delta": -1,
+  "charging": "discharging",
+  "charge_power_w": 0,
+  "discharge_power_w": 620,
+  "signal": true,
+  "signal_state": "held",
+  "signal_notifications": true,
+  "thresholds": {
+    "trigger": 95,
+    "reset": 90
+  },
+  "variables": {
+    "soc": "SV_Batterie_SoC",
+    "signal": "SV_Batterie_95_Signal"
+  },
+  "ccu_status": "ok",
+  "history": [
+    { "t": 1762443000, "soc": 82 },
+    { "t": 1762443720, "soc": 84 },
+    { "t": 1762444440, "soc": 86 },
+    { "t": 1762445160, "soc": 88 },
+    { "t": 1762445880, "soc": 90 },
+    { "t": 1762446600, "soc": 91 }
+  ]
+}

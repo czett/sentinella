@@ -1,0 +1,8 @@
+# /etc/crontabs/root (CCU3 / RaspberryMatic)
+# Run the monitor every two minutes. The script sets its own PATH.
+# Replace the add-on directory if you used deploy.sh --dir.
+
+*/2 * * * * /usr/local/addons/sma_battery/bin/check_soc.sh >/dev/null 2>&1
+
+# After editing, restart the BusyBox cron daemon:
+#   /etc/init.d/S71crond restart

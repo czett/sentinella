@@ -1,0 +1,36 @@
+# Raw ReGa script for the CCU3 script editor.
+# setup_variables.sh posts the same payload automatically.
+# Change the two names here if you changed SV_SOC_NAME / SV_SIGNAL_NAME.
+
+var hmsbSoc = dom.GetObject("SV_Batterie_SoC");
+if (!hmsbSoc) {
+    hmsbSoc = dom.CreateObject(OT_VARDP);
+    hmsbSoc.Name("SV_Batterie_SoC");
+    hmsbSoc.ValueType(ivtFloat);
+    hmsbSoc.ValueSubType(istGeneric);
+    hmsbSoc.ValueMin(0);
+    hmsbSoc.ValueMax(100);
+    hmsbSoc.ValueUnit("%");
+    hmsbSoc.Internal(false);
+    hmsbSoc.Visible(true);
+    hmsbSoc.Channel(dom.GetObject(ID_SYSTEM_VARIABLES));
+    WriteLine("SMA_VAR_SOC_CREATED");
+} else {
+    WriteLine("SMA_VAR_SOC_EXISTS");
+}
+
+var hmsbSig = dom.GetObject("SV_Batterie_95_Signal");
+if (!hmsbSig) {
+    hmsbSig = dom.CreateObject(OT_VARDP);
+    hmsbSig.Name("SV_Batterie_95_Signal");
+    hmsbSig.ValueType(ivtBinary);
+    hmsbSig.ValueSubType(istBool);
+    hmsbSig.Internal(false);
+    hmsbSig.Visible(true);
+    hmsbSig.Channel(dom.GetObject(ID_SYSTEM_VARIABLES));
+    WriteLine("SMA_VAR_SIGNAL_CREATED");
+} else {
+    WriteLine("SMA_VAR_SIGNAL_EXISTS");
+}
+
+WriteLine("SMA_SETUP_OK");
