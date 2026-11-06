@@ -13,7 +13,13 @@ All notable changes to this project are documented here. The format follows
 - `notify_signal.sh --test` for credential/delivery checks without touching
   the battery state; `deploy.sh` runs it when notifications are enabled.
 - Per-event `SIGNAL_COOLDOWN` (default 3600 s) suppresses duplicate alerts.
-- Integration coverage for cooldown, `--test` and UTF-8 URL encoding.
+- Browser settings drawer for thresholds, Signal phone/UUID, API key and
+  inverter address/password. No `.env` editing after the first deployment.
+- `web/api/config.cgi` and `web/api/test_signal.cgi` with validation, atomic
+  `.env` writes, masked secrets and a same-origin POST check.
+- Background test notification from the drawer with an async result toast.
+- Integration coverage for cooldown, `--test`, UTF-8 URL encoding, config
+  reading, validation rejection, atomic save and test dispatch.
 
 ### Changed
 
@@ -21,8 +27,17 @@ All notable changes to this project are documented here. The format follows
   cron polling loop.
 - Redeployments keep the existing remote `.env` instead of overwriting live
   credentials.
+- `deploy.sh` installs the CGI endpoints with mode `755` and probes the
+  settings API through lighttpd after copying.
 - Legacy `SIGNAL_TEXT_*` variables and `%SOC%`-style placeholders remain
   supported.
+
+### Security
+
+- The settings API never returns `SIGNAL_APIKEY` or `SMA_PASS`; it reports
+  only whether a secret is stored. Empty secret fields keep the old value.
+- Every value is validated in POSIX shell before it reaches `.env`; the file is
+  replaced atomically and stays mode `600`.
 
 ## [1.0.0] - 2026-11-06
 

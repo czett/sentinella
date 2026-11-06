@@ -283,6 +283,37 @@ def run_notify(addon: Path, *args: str, timeout: float = 20) -> subprocess.Compl
     )
 
 
+def run_cgi(addon: Path, method: str = "GET", action: str = "config",
+            body: str = "", timeout: float = 20) -> subprocess.CompletedProcess:
+    env = os.environ.copy()
+    env.update(
+        {
+            "REQUEST_METHOD": method,
+            "SCRIPT_NAME": f"/addons/sma_battery/api/{action}.cgi",
+            "PATH_INFO": "",
+            "CONTENT_LENGTH": str(len(body.encode())),
+            "CONTENT_TYPE": "application/json",
+            "SMA_MONITOR_ADDON_DIR": str(addon),
+            "SMA_MONITOR_ENV": str(addon / ".env"),
+        }
+    )
+    return subprocess.run(
+        ["sh", str(ROOT / "web" / "api" / "config.cgi")],
+        input=body,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
+def parse_cgi(result: subprocess.CompletedProcess) -> tuple[str, dict]:
+    head, _, payload = result.stdout.partition("\n\n")
+    first = head.splitlines()[0] if head else ""
+    status = first.split(" ", 1)[1] if first.startswith("Status: ") else first
+    return status, json.loads(payload)
+
+
 def check(condition: bool, label: str, failures: list[str]) -> None:
     if condition:
         print(f"  ok   {label}")
@@ -567,6 +598,99 @@ def main() -> int:
         }
         check(required.issubset(status.keys()), "all required fields present", failures)
         check(isinstance(status["history"], list) and status["history"], "history present", failures)
+
+        print("\n13. settings API returns the current configuration")
+        result = run_cgi(addon2, "GET")
+        status_code, config = parse_cgi(result)
+        check(status_code == "200 OK", f"GET config returns 200 (got {status_code})", failures)
+        check(config.get("trigger_soc") == 95, "trigger level returned", failures)
+        check(config.get("reset_soc") == 90, "reset level returned", failures)
+        check(config.get("signal_phone") == "+491701234567", "phone returned", failures)
+        check(config.get("signal_apikey_set") is True, "API key presence reported", failures)
+        check(config.get("sma_password_set") is True, "inverter password presence reported", failures)
+        check("test-key" not in result.stdout, "API key is never returned", failures)
+        check("test-secret" not in result.stdout, "inverter password is never returned", failures)
+
+        print("\n14. invalid settings are rejected before writing")
+        env_path = addon2 / ".env"
+        env_before = env_path.read_text()
+        invalid_cases = [
+            ({"trigger_soc": 150}, "trigger_soc"),
+            ({"reset_soc": -1}, "reset_soc"),
+            ({"trigger_soc": 80, "reset_soc": 90}, "trigger_soc"),
+            ({"signal_phone": "not-a-phone"}, "signal_phone"),
+            ({"sma_ip": "192.168.1.1/24"}, "sma_ip"),
+            ({"sma_port": 70000}, "sma_port"),
+        ]
+        for payload, field in invalid_cases:
+            result = run_cgi(addon2, "POST", body=json.dumps(payload))
+            status_code, error = parse_cgi(result)
+            check(
+                status_code.startswith("400") and error.get("field") == field,
+                f"rejects {field}={payload.get(field)!r}",
+                failures,
+            )
+        check(env_path.read_text() == env_before, "rejected input leaves .env unchanged", failures)
+
+        print("\n15. valid settings are written atomically")
+        env_path.write_text("# preserved comment\n" + env_path.read_text())
+        env_path.chmod(0o600)
+        payload = {
+            "trigger_soc": 96,
+            "reset_soc": 91,
+            "signal_enabled": True,
+            "signal_phone": "+491709876543",
+            "sma_ip": "10.1.2.3",
+            "sma_port": 8443,
+        }
+        result = run_cgi(addon2, "POST", body=json.dumps(payload))
+        status_code, saved = parse_cgi(result)
+        env_text = env_path.read_text()
+        check(status_code == "200 OK", f"POST config returns 200 (got {status_code})", failures)
+        check(saved.get("trigger_soc") == 96 and saved.get("reset_soc") == 91, "new thresholds returned", failures)
+        check(saved.get("signal_apikey_set") is True, "API key kept when field omitted", failures)
+        check(saved.get("sma_password_set") is True, "password kept when field omitted", failures)
+        check("THRESHOLD_TRIGGER='96'" in env_text, "threshold written to .env", failures)
+        check("SIGNAL_PHONE='+491709876543'" in env_text, "phone written to .env", failures)
+        check("# preserved comment" in env_text, "comments preserved during rewrite", failures)
+        check("SMA_PASS='test-secret'" in env_text, "existing secret preserved", failures)
+        check("SIGNAL_APIKEY=\"test-key\"" in env_text, "existing API key preserved", failures)
+        check((env_path.stat().st_mode & 0o777) == 0o600, ".env stays mode 600", failures)
+        check(not list(addon2.glob(".env.tmp*")), "no temporary files left behind", failures)
+        check(not (addon2 / "state" / ".config.lock").exists(), "config lock released", failures)
+
+        print("\n16. test notification is dispatched in the background")
+        signal_before = (addon2 / "state" / "signal").read_text()
+        signal_state.reset_requests()
+        result = run_cgi(addon2, "POST", "test_signal", body="{}")
+        status_code, started = parse_cgi(result)
+        check(status_code.startswith("202"), f"test queued (got {status_code})", failures)
+        check(started.get("status") == "queued", "test endpoint reports queued", failures)
+        check(
+            wait_until(lambda: bool(signal_state.signal_requests)),
+            "test notification reached the gateway",
+            failures,
+        )
+        if signal_state.signal_requests:
+            query = parse_qs(urlparse(signal_state.signal_requests[0]).query)
+            text = query.get("text", [""])[0]
+            check("Testnachricht" in text, "test message is clearly marked", failures)
+            check(query.get("phone", [""])[0] == "+491709876543", "test uses the saved phone", failures)
+
+        deadline = time.time() + 8
+        test_status = ""
+        while time.time() < deadline:
+            status_code, reported = parse_cgi(run_cgi(addon2, "GET", "test_signal"))
+            test_status = reported.get("status", "")
+            if test_status in {"sent", "failed"}:
+                break
+            time.sleep(0.1)
+        check(test_status == "sent", f"test result reported as sent (got {test_status})", failures)
+        check(
+            (addon2 / "state" / "signal").read_text() == signal_before,
+            "test does not change the battery signal state",
+            failures,
+        )
     finally:
         sma.shutdown()
         rega.shutdown()

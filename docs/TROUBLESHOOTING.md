@@ -226,6 +226,50 @@ The last successful run is older than 10 minutes. This is a real monitoring prob
 
 The page was opened with `?demo=1`, or via `file://`. Open the normal CCU URL without the query string.
 
+## Settings panel and CGI
+
+The gear icon reads and writes `api/config.cgi` and `api/test_signal.cgi` below the dashboard directory. The browser never needs SSH or `.env` access.
+
+### The drawer says "Settings are not available"
+
+Check the endpoint from the CCU itself:
+
+```sh
+curl -i http://127.0.0.1/addons/sma_battery/api/config.cgi
+```
+
+Expected: `HTTP/1.1 200 OK` and a JSON object. If the response is `403`, `404` or the file is offered as a download, lighttpd is not executing CGI:
+
+```sh
+ls -l /usr/local/etc/config/addons/www/sma_battery/api/
+```
+
+Both `.cgi` files must be mode `755`, and `addon_dir` must contain the add-on path (mode `644`). `deploy.sh` sets this automatically.
+
+CCU3 and RaspberryMatic normally ship lighttpd with `mod_cgi` and a `.cgi` mapping. If yours does not, back up `/etc/lighttpd/lighttpd.conf`, add:
+
+```conf
+server.modules += ( "mod_cgi" )
+cgi.assign = ( ".cgi" => "" )
+```
+
+then restart lighttpd (find the init script with `ls /etc/init.d/*lighttpd*`, usually `S50lighttpd`). Keep the setting when a firmware update replaces the file, or re-apply it through your add-on.
+
+### Saving fails with "not writable"
+
+The CGI must be able to read and replace `/usr/local/addons/sma_battery/.env`. On a stock CCU3 lighttpd and its CGI handlers run as root. If you hardened lighttpd to drop privileges, the settings API cannot read a `600` root-owned `.env`; either run the CGI as root or adjust ownership, but do not make `.env` world-readable.
+
+### A test notification fails
+
+- Save the phone/UUID and API key first. The test button saves the form before it runs.
+- Empty secret fields intentionally keep the stored value; type a new value to replace it.
+- Check `state/notify_test.log` on the CCU and the `sma_battery_notify` syslog tag.
+- Verify that the CCU can reach `SIGNAL_API_URL` (HTTPS, port 443).
+
+### After saving, the dashboard still shows the old thresholds for a moment
+
+The dashboard applies saved values immediately, but `status.json` is only rewritten by the next cron run (up to two minutes). No restart is required.
+
 ## Signal notifications
 
 ### No message arrives

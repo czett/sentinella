@@ -22,6 +22,7 @@ Das Projekt bleibt bewusst klein: POSIX `/bin/sh`, BusyBox `ash`, `curl` und `se
 | Nebenläufigkeit | PID-Sperrverzeichnis mit Bereinigung verwaister Sperren |
 | Benachrichtigungen | optionaler, abgekoppelter CallMeBot-Signal-Hook ohne Cron-Blockade |
 | Dashboard | reines HTML/CSS/JS mit Rundanzeige, Hysterese-Leiste und Verlaufsdiagramm |
+| Weboberfläche | Schwellen, Signal-Telefon/UUID, API-Schlüssel und Wechselrichter-Zugang im Browser bearbeiten |
 | Installation | `deploy.sh` über SSH, idempotenter Cron und Systemvariablen |
 
 ## Architektur
@@ -80,9 +81,12 @@ flowchart LR
 ├── lib/
 │   └── notify_signal.sh      abgekoppelter Signal-Hook
 ├── web/
-│   ├── index.html            Dashboard-Markup
+│   ├── index.html            Dashboard und Einstellungs-Schublade
 │   ├── style.css             dunkles, responsives Design ohne externe Assets
-│   ├── app.js                Rundanzeige, Hysterese-Leiste, Verlaufsdiagramm
+│   ├── app.js                Rundanzeige, Diagramm und Einstellungs-Client
+│   ├── api/
+│   │   ├── config.cgi        Konfigurations-API (GET/POST)
+│   │   └── test_signal.cgi   Testnachricht im Hintergrund
 │   └── status.example.json   Beispiel-Payload / lokale Vorschau
 ├── docs/
 │   ├── PROTOCOL.md           Notizen zur SMA-WebConnect-API
@@ -103,7 +107,7 @@ flowchart LR
 - Aktuelle CCU3- oder RaspberryMatic-Firmware mit ReGaHSS auf Port `8181`.
 - `curl`, `sed`, `tr`, `cut`, `head`, `tail`, `date`, `logger` (im Standardimage enthalten).
 - Root-SSH-Zugang für die Installation.
-- Etwa 100 KB dauerhafter Speicher unter `/usr/local/`.
+- Etwa 250 KB dauerhafter Speicher unter `/usr/local/`.
 
 **SMA-Wechselrichter**
 
@@ -154,8 +158,8 @@ Mindestens setzen:
 
 1. SSH-Verbindung prüfen.
 2. `bin/`, `lib/`, `web/`, `setup_variables.sh` und `.env` per `tar` über SSH nach `/usr/local/addons/sma_battery` übertragen (kein `rsync` auf der CCU nötig).
-3. Rechte setzen: `700` für Skripte und Verzeichnisse, `600` für `.env`, `644` für Dashboard-Dateien.
-4. Dashboard nach `/usr/local/etc/config/addons/www/sma_battery/` kopieren.
+3. Rechte setzen: `700` für Skripte und Verzeichnisse, `600` für `.env`, `644` für Dashboard-Dateien, `755` für die CGI-Endpunkte.
+4. Dashboard und Einstellungs-API nach `/usr/local/etc/config/addons/www/sma_battery/` kopieren und den CGI-Endpunkt über lighttpd prüfen.
 5. `*/2 * * * * /usr/local/addons/sma_battery/bin/check_soc.sh` in die Root-Crontab eintragen und `S71crond` neu starten.
 6. `setup_variables.sh` ausführen und die beiden Systemvariablen anlegen.
 7. Einen ersten Lauf ausführen und die Dashboard-URL ausgeben.
@@ -190,8 +194,14 @@ Auf der CCU3:
 cd /usr/local/addons/sma_battery
 chmod 700 bin/check_soc.sh lib/notify_signal.sh setup_variables.sh
 chmod 600 .env
+mkdir -p /usr/local/etc/config/addons/www/sma_battery/api
 cp web/index.html web/style.css web/app.js \
    /usr/local/etc/config/addons/www/sma_battery/
+cp web/api/config.cgi web/api/test_signal.cgi \
+   /usr/local/etc/config/addons/www/sma_battery/api/
+chmod 755 /usr/local/etc/config/addons/www/sma_battery/api/*.cgi
+printf '%s\n' /usr/local/addons/sma_battery \
+   > /usr/local/etc/config/addons/www/sma_battery/api/addon_dir
 ```
 
 ### 5. Systemvariablen anlegen
@@ -236,9 +246,24 @@ http://<ccu-adresse>/addons/sma_battery/
 
 Der erste Wert erscheint nach dem nächsten Cron-Lauf (maximal zwei Minuten). Die Seite aktualisiert sich alle 30 Sekunden und zeigt den Zustand „Warte auf erste Messung“, solange `status.json` fehlt. Mit `?demo=1` lässt sich das Layout mit Beispieldaten ansehen.
 
+### 8. Einstellungen im Browser
+
+Das Zahnrad im Kopfbereich öffnet die Einstellungs-Schublade. Dort lassen sich ohne `.env`-Bearbeitung und ohne Terminal ändern:
+
+- Trigger- und Reset-Schwelle des SoC,
+- der Signal-Schalter,
+- Telefonnummer oder Signal-UUID und CallMeBot-API-Schlüssel,
+- SMA-Adresse, HTTPS-Port und WebUI-Passwort.
+
+**Test notification** speichert zuerst das Formular und startet dann `lib/notify_signal.sh --test` im Hintergrund auf der CCU. Die Schublade fragt das Ergebnis ab und zeigt Erfolg oder Fehler als Toast. Ein Test ändert weder `state/signal` noch den Cooldown.
+
+**Save configuration** schreibt die Werte atomar in `.env`: Eine private Kopie wird bearbeitet und mit `mv` über die Originaldatei gelegt. Ein Cron-Lauf liest dadurch immer entweder die vollständige alte oder die vollständige neue Datei. Die Datei bleibt `chmod 600`. Geheimnisse werden nie an den Browser zurückgegeben - die API liefert nur `signal_apikey_set` und `sma_password_set`; ein leeres Geheimnisfeld bedeutet „gespeicherten Wert behalten“.
+
+Die API akzeptiert nur Same-Origin-Anfragen und validiert jeden Wert (SoC `0..100`, Trigger über Reset, E.164-Nummer oder Signal-UUID, Hostname, Portbereich). Sie wird über `api/config.cgi` und `api/test_signal.cgi` unter der Dashboard-URL ausgeliefert. Falls die Firmware `.cgi`-Dateien unter `/addons/` nicht ausführt, siehe [den CGI-Abschnitt in der Fehlerbehebung](docs/TROUBLESHOOTING.md#settings-panel-and-cgi).
+
 ## Konfiguration
 
-Alle Schlüssel stehen in `.env`. Die Datei wird von `/bin/sh` eingelesen; Werte quoten und für Geheimnisse einfache Anführungszeichen verwenden.
+Alle Schlüssel stehen in `.env`. Die Datei wird von `/bin/sh` eingelesen; Werte quoten und für Geheimnisse einfache Anführungszeichen verwenden. Nach der Erstinstallation lassen sich die häufigen Einstellungen auch über die Einstellungs-Schublade im Dashboard ändern.
 
 ### Wechselrichter
 

@@ -167,7 +167,8 @@ for tool in ssh tar; do
 done
 
 for file in .env bin/check_soc.sh lib/notify_signal.sh setup_variables.sh \
-            web/index.html web/style.css web/app.js; do
+            web/index.html web/style.css web/app.js \
+            web/api/config.cgi web/api/test_signal.cgi; do
     [ -f "$ROOT/$file" ] || die "missing required file: $file"
 done
 
@@ -192,6 +193,7 @@ Dry run - nothing will be changed.
   Cron          : $([ "$SKIP_CRON" -eq 1 ] && echo skipped || echo "*/2 * * * * ${ADDON_DIR}/bin/check_soc.sh")
   Variables     : $([ "$SKIP_VARS" -eq 1 ] && echo skipped || echo "create via ReGa")
   Dashboard     : $([ "$SKIP_WEB" -eq 1 ] && echo skipped || echo "install")
+  Settings API  : $([ "$SKIP_WEB" -eq 1 ] && echo skipped || echo "install + probe via lighttpd")
   First check   : $([ "$SKIP_TEST" -eq 1 ] && echo skipped || echo "run")
   Signal test   : $([ "$SKIP_TEST" -eq 1 ] && echo skipped || echo "run when SIGNAL_ENABLED=true")
   Remote .env   : keep existing credentials, install only when missing
@@ -205,7 +207,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-mkdir -p "$STAGE/bin" "$STAGE/lib" "$STAGE/web"
+mkdir -p "$STAGE/bin" "$STAGE/lib" "$STAGE/web/api"
 install -m 700 "$ROOT/bin/check_soc.sh"      "$STAGE/bin/check_soc.sh"
 install -m 700 "$ROOT/lib/notify_signal.sh"  "$STAGE/lib/notify_signal.sh"
 install -m 700 "$ROOT/setup_variables.sh"    "$STAGE/setup_variables.sh"
@@ -214,6 +216,8 @@ install -m 600 "$ROOT/.env"                  "$STAGE/.env.new"
 install -m 644 "$ROOT/web/index.html"        "$STAGE/web/index.html"
 install -m 644 "$ROOT/web/style.css"         "$STAGE/web/style.css"
 install -m 644 "$ROOT/web/app.js"            "$STAGE/web/app.js"
+install -m 755 "$ROOT/web/api/config.cgi"     "$STAGE/web/api/config.cgi"
+install -m 755 "$ROOT/web/api/test_signal.cgi" "$STAGE/web/api/test_signal.cgi"
 
 SSH_OPTS=(-o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
 
@@ -265,13 +269,41 @@ fi
 )
 
 if [ "$SKIP_WEB" != "1" ]; then
-    mkdir -p "$WEB_DIR"
-    chmod 755 "$WEB_DIR"
+    mkdir -p "$WEB_DIR/api"
+    chmod 755 "$WEB_DIR" "$WEB_DIR/api"
     for file in index.html style.css app.js; do
         cp -f "$ADDON_DIR/web/$file" "$WEB_DIR/$file"
         chmod 644 "$WEB_DIR/$file"
     done
+
+    # The CGI needs to find the add-on even though lighttpd serves it from a
+    # different directory. The path is written once at deploy time.
+    for file in config.cgi test_signal.cgi; do
+        cp -f "$ADDON_DIR/web/api/$file" "$WEB_DIR/api/$file"
+        chmod 755 "$WEB_DIR/api/$file"
+    done
+    printf '%s\n' "$ADDON_DIR" > "$WEB_DIR/api/addon_dir"
+    chmod 644 "$WEB_DIR/api/addon_dir"
     printf 'Dashboard installed in %s\n' "$WEB_DIR"
+
+    # Best-effort probe: CGI may need to be enabled in lighttpd on some
+    # firmware versions. Never fail the deployment because of it.
+    WEB_PATH="/addons/$(basename "$WEB_DIR")"
+    if command -v curl >/dev/null 2>&1; then
+        # A static .cgi download would not have the CGI Content-Type header.
+        _content_type=$(curl -fsSL -m 5 -o /dev/null \
+            -w '%{content_type}' \
+            "http://127.0.0.1${WEB_PATH}/api/config.cgi" 2>/dev/null) || _content_type=
+        case "$_content_type" in
+            application/json*)
+                printf 'Settings API reachable at %s/api/\n' "$WEB_PATH"
+                ;;
+            *)
+                printf 'WARNING: settings API not reachable yet. Enable CGI for .cgi in lighttpd\n' >&2
+                printf '         (see docs/TROUBLESHOOTING.md) and open %s again.\n' "$WEB_PATH" >&2
+                ;;
+        esac
+    fi
 fi
 
 if [ "$SKIP_CRON" != "1" ]; then
@@ -335,6 +367,7 @@ Deployment complete.
 
 Next steps:
   1. Open the dashboard after the first cron run (up to 2 minutes).
-  2. Check the variables in CCU3: Status and Control -> System variables.
-  3. Set SIGNAL_ENABLED="true" in .env and re-run ./deploy.sh to enable alerts.
+  2. Use the gear icon to edit thresholds, Signal credentials and the inverter
+     address directly in the browser. No .env editing or terminal needed.
+  3. Check the variables in CCU3: Status and Control -> System variables.
 EOF

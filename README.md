@@ -22,6 +22,7 @@ The project is deliberately small: POSIX `/bin/sh`, BusyBox `ash`, `curl`, `sed`
 | Concurrency | PID lock directory with stale-lock recovery |
 | Notifications | optional detached CallMeBot Signal hook, never blocks cron |
 | Dashboard | vanilla HTML/CSS/JS, circular gauge, hysteresis rail, history chart |
+| Web settings | thresholds, Signal phone/UUID, API key and inverter credentials editable in the browser |
 | Deployment | `deploy.sh` over SSH, idempotent cron and system-variable setup |
 
 ## Architecture
@@ -80,9 +81,12 @@ flowchart LR
 ├── lib/
 │   └── notify_signal.sh      detached Signal notification hook
 ├── web/
-│   ├── index.html            dashboard markup
+│   ├── index.html            dashboard markup and settings drawer
 │   ├── style.css             dark, responsive, no external assets
-│   ├── app.js                gauge, hysteresis rail, history chart
+│   ├── app.js                gauge, chart and settings client
+│   ├── api/
+│   │   ├── config.cgi        settings API (GET/POST config)
+│   │   └── test_signal.cgi   background test-notification endpoint
 │   └── status.example.json   payload example / local preview
 ├── docs/
 │   ├── PROTOCOL.md           SMA WebConnect reverse-engineering notes
@@ -103,7 +107,7 @@ flowchart LR
 - Current CCU3 or RaspberryMatic firmware with ReGaHSS on port `8181`.
 - `curl`, `sed`, `tr`, `cut`, `head`, `tail`, `date`, `logger` (all part of the standard image).
 - Root SSH access for installation.
-- About 100 KB of persistent space under `/usr/local/`.
+- About 250 KB of persistent space under `/usr/local/`.
 
 **SMA inverter**
 
@@ -154,8 +158,8 @@ Keep `.env` at mode `600`. It is already ignored by Git.
 
 1. Checks the SSH connection.
 2. Streams `bin/`, `lib/`, `web/`, `setup_variables.sh` and `.env` to `/usr/local/addons/sma_battery` using `tar` over SSH (no remote `rsync` required).
-3. Sets `700` on scripts and directories, `600` on `.env`, `644` on dashboard files.
-4. Copies the dashboard to `/usr/local/etc/config/addons/www/sma_battery/`.
+3. Sets `700` on scripts and directories, `600` on `.env`, `644` on dashboard files and `755` on the CGI endpoints.
+4. Copies the dashboard and the settings API to `/usr/local/etc/config/addons/www/sma_battery/` and probes the CGI endpoint through lighttpd.
 5. Adds `*/2 * * * * /usr/local/addons/sma_battery/bin/check_soc.sh` to root's crontab and restarts `S71crond`.
 6. Runs `setup_variables.sh` to create the two system variables.
 7. Runs a first check and prints the dashboard URL.
@@ -190,8 +194,14 @@ On the CCU3:
 cd /usr/local/addons/sma_battery
 chmod 700 bin/check_soc.sh lib/notify_signal.sh setup_variables.sh
 chmod 600 .env
+mkdir -p /usr/local/etc/config/addons/www/sma_battery/api
 cp web/index.html web/style.css web/app.js \
    /usr/local/etc/config/addons/www/sma_battery/
+cp web/api/config.cgi web/api/test_signal.cgi \
+   /usr/local/etc/config/addons/www/sma_battery/api/
+chmod 755 /usr/local/etc/config/addons/www/sma_battery/api/*.cgi
+printf '%s\n' /usr/local/addons/sma_battery \
+   > /usr/local/etc/config/addons/www/sma_battery/api/addon_dir
 ```
 
 ### 5. Create the system variables
@@ -236,9 +246,24 @@ http://<ccu-address>/addons/sma_battery/
 
 The first value appears after the next cron run (up to two minutes). The page refreshes every 30 seconds and shows a clear "Waiting for the first measurement" state when `status.json` does not exist yet. Add `?demo=1` to preview the layout with generated data.
 
+### 8. Settings in the browser
+
+The gear icon in the dashboard header opens the settings drawer. From there you can change, without touching `.env` or opening a terminal:
+
+- trigger and reset SoC levels,
+- the Signal on/off switch,
+- the phone number or Signal UUID and the CallMeBot API key,
+- the SMA inverter address, HTTPS port and WebUI password.
+
+**Test notification** saves the current form first and then runs `lib/notify_signal.sh --test` in the background on the CCU. The drawer polls for the result and reports success or failure as a toast. A test never changes `state/signal` or the alert cooldown.
+
+**Save configuration** writes the values atomically to `.env`: a private copy is edited and moved over the original with `mv`, so a cron run always reads either the complete old or the complete new file. The file stays `chmod 600`. Secrets are never sent back to the browser - the API returns only `signal_apikey_set` and `sma_password_set`, and an empty secret field means "keep the stored value".
+
+The API is same-origin only and validates every value (SoC `0..100`, trigger above reset, E.164 phone or Signal UUID, host name, port range). It is served from `api/config.cgi` and `api/test_signal.cgi` under the dashboard URL. If your firmware does not execute `.cgi` files under `/addons/`, see [the CGI section in the troubleshooting guide](docs/TROUBLESHOOTING.md#settings-panel-and-cgi).
+
 ## Configuration reference
 
-All keys live in `.env`. The file is sourced by `/bin/sh`; quote values, and prefer single quotes for secrets.
+All keys live in `.env`. The file is sourced by `/bin/sh`; quote values, and prefer single quotes for secrets. After the initial deployment, the common settings can also be edited in the dashboard's settings drawer.
 
 ### Inverter
 

@@ -7,10 +7,14 @@
     "use strict";
 
     var STATUS_URL = new URL("./status.json", window.location.href);
+    var CONFIG_URL = new URL("./api/config.cgi", window.location.href);
+    var TEST_URL = new URL("./api/test_signal.cgi", window.location.href);
     var POLL_MS = 30000;
     var RELATIVE_MS = 30000;
     var CIRCUMFERENCE = 2 * Math.PI * 100;
     var STALE_AFTER_SECONDS = 600;
+    var TEST_POLL_MS = 1000;
+    var TEST_POLL_LIMIT = 30;
 
     var demoRequested =
         new URLSearchParams(window.location.search).has("demo") ||
@@ -20,6 +24,14 @@
     var pollTimer = null;
     var relativeTimer = null;
     var loading = false;
+
+    var settingsOpen = false;
+    var settingsAvailable = true;
+    var settingsBusy = false;
+    var settingsFocusBefore = null;
+    var thresholdOverride = null;
+    var toastTimer = null;
+    var liveConfig = null;
 
     var el = {
         connection: document.getElementById("connection"),
@@ -59,7 +71,30 @@
         metaSocVar: document.getElementById("meta-soc-var"),
         metaSignalVar: document.getElementById("meta-signal-var"),
         metaNotify: document.getElementById("meta-notify"),
-        metaLast: document.getElementById("meta-last")
+        metaLast: document.getElementById("meta-last"),
+
+        settingsOpen: document.getElementById("settings-open"),
+        settingsLayer: document.getElementById("settings-layer"),
+        settingsBackdrop: document.getElementById("settings-backdrop"),
+        settingsDrawer: document.getElementById("settings-drawer"),
+        settingsClose: document.getElementById("settings-close"),
+        settingsForm: document.getElementById("settings-form"),
+        settingsStatus: document.getElementById("settings-status"),
+        settingsSave: document.getElementById("settings-save"),
+        settingsTest: document.getElementById("settings-test"),
+
+        triggerSoc: document.getElementById("trigger-soc"),
+        resetSoc: document.getElementById("reset-soc"),
+        signalEnabled: document.getElementById("signal-enabled"),
+        signalPhone: document.getElementById("signal-phone"),
+        signalApikey: document.getElementById("signal-apikey"),
+        apikeyHint: document.getElementById("apikey-hint"),
+        smaIp: document.getElementById("sma-ip"),
+        smaPort: document.getElementById("sma-port"),
+        smaPassword: document.getElementById("sma-password"),
+        smaPasswordHint: document.getElementById("sma-password-hint"),
+
+        toast: document.getElementById("toast")
     };
 
     el.gaugeProgress.style.strokeDasharray = CIRCUMFERENCE + " " + CIRCUMFERENCE;
@@ -160,6 +195,12 @@
     }
 
     function normalizeThresholds(data) {
+        if (thresholdOverride && Date.now() < thresholdOverride.until) {
+            return {
+                trigger: thresholdOverride.trigger,
+                reset: thresholdOverride.reset
+            };
+        }
         var trigger = toNumber(data.thresholds && data.thresholds.trigger);
         var reset = toNumber(data.thresholds && data.thresholds.reset);
         if (trigger === null) {
@@ -630,12 +671,401 @@
     }
 
     /* ----------------------------------------------------------------------
+       Settings drawer
+       ---------------------------------------------------------------------- */
+
+    function requestJSON(url, options) {
+        var opts = Object.assign(
+            { cache: "no-store", credentials: "same-origin" },
+            options || {}
+        );
+
+        return fetch(url.toString(), opts).then(function (response) {
+            return response.text().then(function (text) {
+                var data = {};
+                if (text) {
+                    try {
+                        data = JSON.parse(text);
+                    } catch (error) {
+                        data = {};
+                    }
+                }
+                if (!response.ok) {
+                    var failure = new Error(
+                        (data && data.error) ||
+                        ("Request failed (HTTP " + response.status + ").")
+                    );
+                    failure.status = response.status;
+                    failure.data = data;
+                    throw failure;
+                }
+                return data;
+            });
+        });
+    }
+
+    function showToast(tone, text) {
+        el.toast.hidden = false;
+        el.toast.dataset.tone = tone || "success";
+        el.toast.textContent = text;
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () {
+            el.toast.hidden = true;
+        }, 6000);
+    }
+
+    function showSettingsStatus(tone, text) {
+        if (!text) {
+            el.settingsStatus.hidden = true;
+            el.settingsStatus.textContent = "";
+            delete el.settingsStatus.dataset.tone;
+            return;
+        }
+        el.settingsStatus.hidden = false;
+        el.settingsStatus.dataset.tone = tone || "pending";
+        el.settingsStatus.textContent = text;
+    }
+
+    function setSettingsBusy(busy) {
+        settingsBusy = busy;
+        el.settingsSave.disabled = busy;
+        el.settingsTest.disabled = busy;
+        el.settingsForm.setAttribute("aria-busy", busy ? "true" : "false");
+    }
+
+    function fillSettingsForm(data) {
+        el.triggerSoc.value = String(data.trigger_soc);
+        el.resetSoc.value = String(data.reset_soc);
+        el.signalEnabled.checked = data.signal_enabled === true;
+        el.signalPhone.value = data.signal_phone || "";
+        el.signalApikey.value = "";
+        el.signalApikey.placeholder = data.signal_apikey_set
+            ? "Stored · keep"
+            : "Required";
+        el.apikeyHint.hidden = !data.signal_apikey_set;
+
+        el.smaIp.value = data.sma_ip || "";
+        el.smaPort.value = String(data.sma_port || 443);
+        el.smaPassword.value = "";
+        el.smaPassword.placeholder = data.sma_password_set
+            ? "Stored · keep"
+            : "Required";
+        el.smaPasswordHint.hidden = !data.sma_password_set;
+    }
+
+    function adoptConfig(data) {
+        liveConfig = data;
+        if (typeof data.trigger_soc !== "number" || typeof data.reset_soc !== "number") {
+            return;
+        }
+        thresholdOverride = {
+            trigger: data.trigger_soc,
+            reset: data.reset_soc,
+            until: Date.now() + 180000
+        };
+        if (current) {
+            current.thresholds = {
+                trigger: data.trigger_soc,
+                reset: data.reset_soc
+            };
+            current.signal_notifications = data.signal_enabled === true;
+            render(current);
+        }
+    }
+
+    function validateSettings() {
+        var triggerRaw = el.triggerSoc.value.trim();
+        var resetRaw = el.resetSoc.value.trim();
+        var trigger = Number(triggerRaw);
+        var reset = Number(resetRaw);
+
+        if (!triggerRaw || !Number.isInteger(trigger) || trigger < 0 || trigger > 100) {
+            return {
+                field: "trigger-soc",
+                text: "Trigger level must be a whole number between 0 and 100."
+            };
+        }
+        if (!resetRaw || !Number.isInteger(reset) || reset < 0 || reset > 100) {
+            return {
+                field: "reset-soc",
+                text: "Reset level must be a whole number between 0 and 100."
+            };
+        }
+        if (reset >= trigger) {
+            return {
+                field: "reset-soc",
+                text: "Reset level must be lower than the trigger level."
+            };
+        }
+
+        var phone = el.signalPhone.value.trim();
+        if (phone && !/^(\+[1-9]\d{6,14}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.test(phone)) {
+            return {
+                field: "signal-phone",
+                text: "Enter an E.164 phone number (for example +491701234567) or a Signal UUID."
+            };
+        }
+
+        var apikey = el.signalApikey.value.trim();
+        if (el.signalEnabled.checked) {
+            if (!phone) {
+                return {
+                    field: "signal-phone",
+                    text: "A phone number or Signal UUID is required when alerts are enabled."
+                };
+            }
+            if (!apikey && !(liveConfig && liveConfig.signal_apikey_set)) {
+                return {
+                    field: "signal-apikey",
+                    text: "A CallMeBot API key is required when alerts are enabled."
+                };
+            }
+        }
+
+        var ip = el.smaIp.value.trim();
+        if (!ip || !/^[A-Za-z0-9._-]+$/.test(ip) || ip.indexOf("..") >= 0) {
+            return {
+                field: "sma-ip",
+                text: "Enter a valid inverter IPv4 address or hostname."
+            };
+        }
+
+        var portRaw = el.smaPort.value.trim();
+        var port = Number(portRaw);
+        if (!portRaw || !Number.isInteger(port) || port < 1 || port > 65535) {
+            return {
+                field: "sma-port",
+                text: "Inverter port must be a whole number between 1 and 65535."
+            };
+        }
+
+        return null;
+    }
+
+    function buildPayload() {
+        var payload = {
+            trigger_soc: Number(el.triggerSoc.value.trim()),
+            reset_soc: Number(el.resetSoc.value.trim()),
+            signal_enabled: el.signalEnabled.checked,
+            signal_phone: el.signalPhone.value.trim(),
+            sma_ip: el.smaIp.value.trim(),
+            sma_port: Number(el.smaPort.value.trim())
+        };
+
+        var apikey = el.signalApikey.value.trim();
+        if (apikey) {
+            payload.signal_apikey = apikey;
+        }
+        var password = el.smaPassword.value;
+        if (password) {
+            payload.sma_password = password;
+        }
+        return payload;
+    }
+
+    function saveSettings(silent) {
+        if (!settingsAvailable) {
+            return Promise.reject(new Error(
+                "Settings are not available. Open the dashboard through the CCU3."
+            ));
+        }
+
+        var invalid = validateSettings();
+        if (invalid) {
+            var field = document.getElementById(invalid.field);
+            if (field) {
+                field.focus();
+            }
+            return Promise.reject(new Error(invalid.text));
+        }
+
+        if (!silent) {
+            showSettingsStatus("pending", "Saving configuration…");
+        }
+
+        return requestJSON(CONFIG_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(buildPayload())
+        }).then(function (data) {
+            fillSettingsForm(data);
+            adoptConfig(data);
+            if (!silent) {
+                showSettingsStatus(
+                    "success",
+                    "Configuration saved. The monitor applies it on its next run."
+                );
+            }
+            return data;
+        });
+    }
+
+    function pollTestResult(attempt) {
+        return new Promise(function (resolve, reject) {
+            if (attempt > TEST_POLL_LIMIT) {
+                reject(new Error(
+                    "The test is taking too long. Check state/notify_test.log on the CCU."
+                ));
+                return;
+            }
+            requestJSON(TEST_URL).then(function (data) {
+                if (data.status === "sent") {
+                    resolve(data);
+                    return;
+                }
+                if (data.status === "failed") {
+                    reject(new Error(data.error || "Test notification failed."));
+                    return;
+                }
+                if (data.status === "idle" && attempt > 3) {
+                    reject(new Error(
+                        "The test runner did not start. Check state/notify_test.log on the CCU."
+                    ));
+                    return;
+                }
+                setTimeout(function () {
+                    pollTestResult(attempt + 1).then(resolve, reject);
+                }, TEST_POLL_MS);
+            }, reject);
+        });
+    }
+
+    function runTest() {
+        if (settingsBusy) {
+            return;
+        }
+        setSettingsBusy(true);
+        showSettingsStatus("pending", "Saving configuration before the test…");
+
+        saveSettings(true).then(function () {
+            showSettingsStatus("pending", "Sending test notification…");
+            return requestJSON(TEST_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: "{}"
+            });
+        }).then(function (response) {
+            if (response.status === "sent") {
+                return response;
+            }
+            return pollTestResult(0);
+        }).then(function (result) {
+            var message = result.message || "Test notification sent.";
+            showSettingsStatus("success", message);
+            showToast("success", message);
+        }).catch(function (error) {
+            showSettingsStatus("error", error.message);
+            showToast("error", error.message);
+        }).finally(function () {
+            setSettingsBusy(false);
+        });
+    }
+
+    function loadSettings() {
+        settingsAvailable = true;
+        setSettingsBusy(false);
+        showSettingsStatus("pending", "Loading settings…");
+
+        requestJSON(CONFIG_URL).then(function (data) {
+            liveConfig = data;
+            fillSettingsForm(data);
+            showSettingsStatus("", "");
+        }).catch(function () {
+            settingsAvailable = false;
+            el.settingsSave.disabled = true;
+            el.settingsTest.disabled = true;
+            showSettingsStatus(
+                "error",
+                "Settings are not available. Open the dashboard through the CCU3 and " +
+                "make sure CGI is enabled for the add-on directory."
+            );
+        });
+    }
+
+    function openSettings() {
+        if (settingsOpen) {
+            return;
+        }
+        settingsOpen = true;
+        settingsFocusBefore = document.activeElement;
+        el.settingsLayer.hidden = false;
+        el.settingsOpen.setAttribute("aria-expanded", "true");
+        document.body.classList.add("drawer-open");
+        window.setTimeout(function () {
+            el.settingsDrawer.focus();
+        }, 30);
+        loadSettings();
+    }
+
+    function closeSettings() {
+        if (!settingsOpen) {
+            return;
+        }
+        settingsOpen = false;
+        el.settingsLayer.hidden = true;
+        el.settingsOpen.setAttribute("aria-expanded", "false");
+        document.body.classList.remove("drawer-open");
+        showSettingsStatus("", "");
+        if (settingsFocusBefore && typeof settingsFocusBefore.focus === "function") {
+            settingsFocusBefore.focus();
+        }
+    }
+
+    /* ----------------------------------------------------------------------
        Startup
        ---------------------------------------------------------------------- */
 
     el.retry.addEventListener("click", function () {
         clearTimeout(pollTimer);
         load();
+    });
+
+    el.settingsOpen.addEventListener("click", openSettings);
+    el.settingsClose.addEventListener("click", closeSettings);
+    el.settingsBackdrop.addEventListener("click", closeSettings);
+    el.settingsTest.addEventListener("click", runTest);
+
+    el.settingsForm.addEventListener("submit", function (event) {
+        event.preventDefault();
+        if (settingsBusy) {
+            return;
+        }
+        setSettingsBusy(true);
+        saveSettings(false).then(function () {
+            showToast("success", "Configuration saved.");
+        }).catch(function (error) {
+            showSettingsStatus("error", error.message);
+            showToast("error", error.message);
+        }).finally(function () {
+            setSettingsBusy(false);
+        });
+    });
+
+    el.settingsLayer.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+            event.preventDefault();
+            closeSettings();
+            return;
+        }
+        if (event.key !== "Tab") {
+            return;
+        }
+        var focusable = el.settingsDrawer.querySelectorAll(
+            'button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
+            'textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+        );
+        if (!focusable.length) {
+            return;
+        }
+        var first = focusable[0];
+        var last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+        }
     });
 
     document.addEventListener("visibilitychange", function () {

@@ -26,6 +26,10 @@ The add-on handles two secrets:
 
 Both live in `.env`, which is ignored by Git and installed with mode `600`.
 The dashboard's `status.json` contains no credentials, session ids or API keys.
+The settings API reads `.env` on the CCU, but never returns `SIGNAL_APIKEY` or
+`SMA_PASS`; it reports only whether a value is stored, and an empty secret field
+keeps the existing value. Values are validated in POSIX shell, written to a
+private copy and moved into place atomically, and the file stays mode `600`.
 If you believe a secret was committed, rotate it immediately and remove it from
 the Git history, not only from the working tree.
 
@@ -36,5 +40,7 @@ the Git history, not only from the working tree.
   trade-off for a local device.
 - ReGaHSS is contacted over HTTP on the CCU3. Do not expose port `8181` to the
   internet.
-- The dashboard is read-only and exposes only the fields documented in the
-  README.
+- The dashboard is served by the CCU3 web server on the local network. Its
+  settings API accepts only same-origin POSTs and writes only the documented
+  fields. Do not expose the CCU3 web interface to the internet; use a VPN for
+  remote access.
