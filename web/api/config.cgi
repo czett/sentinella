@@ -1,6 +1,6 @@
 #!/bin/sh
 # =============================================================================
-#  homematic-sma-battery-monitor - settings API (CGI)
+#  Sentinella - settings API (CGI)
 # =============================================================================
 #  Runs behind lighttpd on the CCU3 / RaspberryMatic. BusyBox ash only:
 #  no jq, no python, no external JSON library.
@@ -623,7 +623,7 @@ report_test() {
     if read_test_result; then
         if [ "$TEST_RC" = "0" ]; then
             emit_json "200 OK" \
-                '{"ok":true,"status":"sent","message":"Test notification sent."}'
+                '{"ok":true,"status":"sent","message":"Sentinella: Connection verified. Ready for alerts."}'
         fi
         emit_json "200 OK" \
             '{"ok":false,"status":"failed","error":"Test notification failed. Check the phone number, API key and the CCU internet connection."}'

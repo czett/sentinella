@@ -1,4 +1,4 @@
-# Security policy
+# Sentinella security policy
 
 ## Supported versions
 

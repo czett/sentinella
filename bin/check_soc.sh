@@ -1,6 +1,6 @@
 #!/bin/sh
 # =============================================================================
-#  homematic-sma-battery-monitor - core engine
+#  Sentinella - core engine
 # =============================================================================
 #  Reads the battery state of charge (SoC) from an SMA Sunny Tripower /
 #  Sunny Boy Storage inverter through its local WebConnect JSON API, maps it

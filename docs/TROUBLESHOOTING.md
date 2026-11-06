@@ -1,4 +1,4 @@
-# Troubleshooting
+# Sentinella troubleshooting
 
 Start with the foreground run. It shows the real error and does not depend on cron:
 

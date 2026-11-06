@@ -1,6 +1,6 @@
 #!/bin/sh
 # =============================================================================
-#  homematic-sma-battery-monitor - CCU3 system variable setup
+#  Sentinella - CCU3 system variable setup
 # =============================================================================
 #  Creates the two ReGaHSS system variables if they do not exist yet:
 #

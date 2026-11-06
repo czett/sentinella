@@ -1,13 +1,13 @@
-# homematic-sma-battery-monitor
+# Sentinella — Hochpräziser SMA-Batteriemonitor für CCU3
 
-Batterieüberwachung für eine **Homematic CCU3 / RaspberryMatic** und einen **SMA Sunny Tripower / Sunny Boy Storage** mit BYD- oder vergleichbarem Speicher. Das Add-on liest den Ladezustand (State of Charge, SoC) über die lokale WebConnect-JSON-API des Wechselrichters, schreibt ihn in eine CCU3-Systemvariable und steuert daraus ein 95-%-Signal mit Hysterese für Programme und Automationen.
+**Sentinella** ist ein eigenständiger, hochpräziser Batteriemonitor für eine **Homematic CCU3 / RaspberryMatic** und einen **SMA Sunny Tripower / Sunny Boy Storage** mit BYD- oder vergleichbarem Speicher. Sentinella liest den Ladezustand (State of Charge, SoC) über die lokale WebConnect-JSON-API des Wechselrichters, schreibt ihn in eine CCU3-Systemvariable und steuert daraus ein 95-%-Signal mit Hysterese für Programme und Automationen.
 
 Das Projekt bleibt bewusst klein: POSIX `/bin/sh`, BusyBox `ash`, `curl` und `sed`. Kein Python, kein Node.js und kein Build-Schritt auf der CCU.
 
 - **Zuverlässig** - jede SMA-Sitzung wird abgemeldet, auch bei `SIGTERM`; ein Sperrverzeichnis verhindert überlappende Cron-Läufe.
 - **Sicher** - ein fehlender, ungültiger oder außerhalb des Bereichs liegender SoC überschreibt niemals den letzten guten CCU3-Wert.
 - **Konfigurierbar** - alle Einstellungen liegen in einer typisierten `.env`-Datei und werden beim Start validiert.
-- **Beobachtbar** - strukturierter `status.json`-Snapshot und ein eigenständiges Swiss-Poster-Dashboard.
+- **Beobachtbar** - strukturierter `status.json`-Snapshot und ein eigenständiges Sentinella-Telemetrie-Dashboard.
 - **Dokumentiert** - deutsche und englische Anleitung, Protokollnotizen und Fehlerbehebung.
 
 ## Funktionen
@@ -21,7 +21,7 @@ Das Projekt bleibt bewusst klein: POSIX `/bin/sh`, BusyBox `ash`, `curl` und `se
 | Sitzungssicherheit | `EXIT`-, `INT`-, `TERM`- und `HUP`-Traps rufen immer `logout.json` auf |
 | Nebenläufigkeit | PID-Sperrverzeichnis mit Bereinigung verwaister Sperren |
 | Benachrichtigungen | optionaler, abgekoppelter CallMeBot-Signal-Hook ohne Cron-Blockade |
-| Dashboard | reines HTML/CSS/JS im Stil der Internationalen Typografie: farbiger SoC-Block, Hysterese-Leiste, nüchternes Verlaufsdiagramm |
+| Dashboard | reines HTML/CSS/JS als Telemetriekonsole: farbiger SoC-Block, Hysterese-Leiste, nüchternes Verlaufsdiagramm |
 | Weboberfläche | Schwellen, Signal-Telefon/UUID, API-Schlüssel und Wechselrichter-Zugang im Browser bearbeiten |
 | Installation | `deploy.sh` über SSH, idempotenter Cron und Systemvariablen |
 
@@ -81,7 +81,7 @@ flowchart LR
 ├── lib/
 │   └── notify_signal.sh      abgekoppelter Signal-Hook
 ├── web/
-│   ├── index.html            Swiss-Poster-Markup und Einstellungs-Schublade
+│   ├── index.html            Sentinella-Telemetrie-Markup und Einstellungs-Schublade
 │   ├── style.css             Papier-/Ultramarin-Palette, responsiv, ohne externe Assets
 │   ├── app.js                Dashboard-, Diagramm- und Einstellungs-Client
 │   ├── api/
@@ -125,8 +125,8 @@ flowchart LR
 ### 1. Quellcode holen
 
 ```sh
-git clone https://github.com/<dein-konto>/homematic-sma-battery-monitor.git
-cd homematic-sma-battery-monitor
+git clone https://github.com/<dein-konto>/sentinella.git
+cd sentinella
 ```
 
 ### 2. Konfigurieren
@@ -244,7 +244,7 @@ Eine vollständige Vorlage liegt in [`examples/crontab.txt`](examples/crontab.tx
 http://<ccu-adresse>/addons/sma_battery/
 ```
 
-Der erste Wert erscheint nach dem nächsten Cron-Lauf (maximal zwei Minuten). Die Seite aktualisiert sich alle 30 Sekunden und zeigt den Hinweis „Warte auf erste Messung“, solange `status.json` fehlt. Mit `?demo=1` lässt sich das Layout mit Beispieldaten ansehen; der Hinweis „Exhibition Preview Data“ kennzeichnet sie als Vorschau.
+Der erste Wert erscheint nach dem nächsten Cron-Lauf (maximal zwei Minuten). Die Seite aktualisiert sich alle 30 Sekunden und zeigt den Hinweis „Warte auf erste Messung“, solange `status.json` fehlt. Mit `?demo=1` lässt sich das Layout mit Beispieldaten ansehen; der Hinweis „Sentinella Preview Data“ kennzeichnet sie als Vorschau.
 
 ### 8. Einstellungen im Browser
 
@@ -364,9 +364,9 @@ Fehlerverhalten:
 
 ## Dashboard
 
-Das Dashboard ist eine statische Single-Page-App ohne externe Schriften, Skripte oder CDNs. Es folgt der Internationalen Typografie: warmes Papier, ein randabfallendes ultramarines SoC-Feld, Haarlinien und schwere Helvetica-Ziffern. Es liest `status.json` alle 30 Sekunden per `fetch()` und zeigt:
+Das Sentinella-Dashboard ist eine statische Single-Page-App ohne externe Schriften, Skripte oder CDNs. Es nutzt warmes Papier, ein randabfallendes ultramarines SoC-Feld, Haarlinien und schwere Helvetica-Ziffern; das signalrote Quadrat ist die einzige Marke. Es liest `status.json` alle 30 Sekunden per `fetch()` und zeigt:
 
-- eine übergrosse SoC-Ziffer auf dem ultramarinen Posterblock, der Ladezustand als flaches Statusfeld,
+- eine übergrosse SoC-Ziffer auf dem ultramarinen SoC-Feld, der Ladezustand als flaches Statusfeld,
 - eine feine Hysterese-Leiste mit quadratischem SoC-Marker und fetten Beschriftungen für Reset und Trigger,
 - ein 2×2-Raster für Ladezustand, Batterieleistung, CCU3-Schreibergebnis und Zeitpunkt der letzten Messung,
 - ein nüchternes Zweifarben-Verlaufsdiagramm aus den gespeicherten Messpunkten,
@@ -375,7 +375,7 @@ Das Dashboard ist eine statische Single-Page-App ohne externe Schriften, Skripte
 
 `status.json` wird atomar geschrieben und enthält keine Geheimnisse. Das Schema ist in [README.md](README.md#dashboard) und in `web/status.example.json` dokumentiert.
 
-Für eine lokale Vorschau ohne CCU3 `web/status.example.json` nach `web/status.json` kopieren und `web/` mit einem beliebigen statischen Server ausliefern, oder die Seite mit `?demo=1` öffnen. Der Hinweis „Exhibition Preview Data“ macht deutlich, dass die Werte nicht live sind.
+Für eine lokale Vorschau ohne CCU3 `web/status.example.json` nach `web/status.json` kopieren und `web/` mit einem beliebigen statischen Server ausliefern, oder die Seite mit `?demo=1` öffnen. Der Hinweis „Sentinella Preview Data“ macht deutlich, dass die Werte nicht live sind.
 
 Wird kein Dashboard benötigt: `WEB_ENABLED="false"`. Der Monitor schreibt weiterhin einen privaten Snapshot nach `<addon>/state/status.json`.
 

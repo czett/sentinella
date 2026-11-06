@@ -1,5 +1,5 @@
 /* ==========================================================================
-   homematic-sma-battery-monitor — dashboard logic
+   Sentinella — SMA / CCU3 battery monitor dashboard logic
    Vanilla ES6, no dependencies. Reads ./status.json.
    ========================================================================== */
 
@@ -353,7 +353,7 @@
     }
 
     /* ----------------------------------------------------------------------
-       History chart (Stark Two-Tone Swiss Sparkline)
+       History chart (Stark Two-Tone Sparkline)
        ---------------------------------------------------------------------- */
 
     function svgNode(tag, attributes, text) {
@@ -597,7 +597,7 @@
         render(demoData());
         showNotice(
             "warning",
-            "Exhibition Preview Data",
+            "Sentinella Preview Data",
             "status.json is not reachable. Showing synthesized telemetry; " +
             "open the dashboard via the CCU3 for live inverter measurements.",
             false
@@ -881,7 +881,7 @@
         showToast("pending", "Configuration saved. Testing Signal…");
 
         sendTestNotification().then(function () {
-            var success = "Settings saved. Test message sent to your Signal app!";
+            var success = "Sentinella: Connection verified. Ready for alerts.";
             showSettingsStatus("success", success);
             showToast("success", success);
         }).catch(function (error) {
@@ -902,8 +902,8 @@
         saveSettings(true).then(function () {
             showSettingsStatus("pending", "Sending test notification…");
             return sendTestNotification();
-        }).then(function (result) {
-            var message = result.message || "Test notification sent.";
+        }).then(function () {
+            var message = "Sentinella: Connection verified. Ready for alerts.";
             showSettingsStatus("success", message);
             showToast("success", message);
         }).catch(function (error) {

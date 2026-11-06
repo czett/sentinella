@@ -1,6 +1,6 @@
 #!/bin/sh
 # =============================================================================
-#  homematic-sma-battery-monitor - test notification endpoint
+#  Sentinella - test notification endpoint
 # =============================================================================
 #  lighttpd maps CGI by suffix, so this small wrapper exposes the
 #  POST/GET /api/test_signal action while sharing all logic in config.cgi.

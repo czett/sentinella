@@ -27,14 +27,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
-- Dashboard redesign in the Swiss International Typographic Style: warm paper
-  field, full-bleed ultramarine SoC hero, heavy Helvetica figures, hairline
-  hysteresis rail with bold threshold labels, stark two-tone history chart and
-  a 2×2 telemetry grid. Flat colour blocks replace dot badges, glow effects and
-  the live-age indicator; freshness is carried by the values and a plain notice
-  strip. The mobile layout stacks the colour blocks, keeps 48 px touch targets
-  and pull-to-refresh. The demo mode is labelled "Exhibition Preview Data".
-  Settings drawer and API contract are unchanged.
+- Project rebrand to **Sentinella**, with the dashboard title, masthead,
+  footer, settings feedback and documentation carrying the new identity. The
+  Signal Red square remains the visual mark, and all backend paths, CGI
+  contracts and `status.json` polling are unchanged.
+- Dashboard redesign: warm paper field, full-bleed ultramarine SoC hero, heavy
+  Helvetica figures, hairline hysteresis rail with bold threshold labels, stark
+  two-tone history chart and a 2×2 telemetry grid. Flat colour blocks replace
+  dot badges, glow effects and the live-age indicator; freshness is carried by
+  the values and a plain notice strip. The mobile layout stacks the colour
+  blocks, keeps 48 px touch targets and pull-to-refresh. The demo mode is
+  labelled "Sentinella Preview Data". Settings drawer and API contract are
+  unchanged.
 - Notification hook is launched with `setsid`/`nohup`, fully detached from the
   cron polling loop.
 - Redeployments keep the existing remote `.env` instead of overwriting live

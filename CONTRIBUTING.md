@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve `homematic-sma-battery-monitor`. The project targets a very small environment, so the review bar is mostly about portability and failure behaviour.
+Thanks for helping improve **Sentinella**, the high-precision SMA battery monitor for the Homematic CCU3. The project targets a very small environment, so the review bar is mostly about portability and failure behaviour.
 
 ## Before you start
 

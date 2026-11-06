@@ -1,7 +1,7 @@
 /* ==========================================================================
-   homematic-sma-battery-monitor
-   Swiss International Typographic Style · Kessler Archive / Exhibition Poster
-   Exhibition Paper (#f8f8f9), Crisp White (#ffffff), International Ultramarine
+   Sentinella — SMA / CCU3 Battery Monitor
+   High-precision telemetry dashboard with a restrained editorial layout.
+   Warm Paper (#f8f8f9), Crisp White (#ffffff), International Ultramarine
    (#183adb), Signal Red (#e1261c), Deep Stark Ink (#0a0a0c).
    Zero external dependencies or fonts.
    ========================================================================== */
@@ -352,7 +352,7 @@ a {
 }
 
 /* --------------------------------------------------------------------------
-   Poster Grid — Asymmetric Swiss Split
+   Poster Grid — Asymmetric Split
    -------------------------------------------------------------------------- */
 
 .poster-grid {
@@ -487,7 +487,7 @@ body[data-state="loading"] .soc-value {
     line-height: 1.45;
 }
 
-/* Right Column: Exhibition Paper & Stark Ink Field */
+/* Right Column: Warm Paper & Stark Ink Field */
 .poster-paper {
     display: flex;
     flex-direction: column;
@@ -563,7 +563,7 @@ body[data-state="loading"] .soc-value {
 }
 
 /* --------------------------------------------------------------------------
-   Swiss Hysteresis Slider Rail
+   Hysteresis Slider Rail
    -------------------------------------------------------------------------- */
 
 .rail-panel {
@@ -749,7 +749,7 @@ body[data-state="loading"] .rail-marker {
 }
 
 /* --------------------------------------------------------------------------
-   Telemetry Strip (2x2 Swiss Grid inside Right Column)
+   Telemetry Strip (2x2 Grid inside Right Column)
    -------------------------------------------------------------------------- */
 
 .metrics {
@@ -805,7 +805,7 @@ body[data-state="loading"] .rail-marker {
 }
 
 /* --------------------------------------------------------------------------
-   Lower Exhibition Split: History Sparkline & System Register
+   Lower Split: History Sparkline & System Register
    -------------------------------------------------------------------------- */
 
 .lower-grid {
@@ -873,7 +873,7 @@ body[data-state="loading"] .rail-marker {
     white-space: nowrap;
 }
 
-/* Stark Two-Tone Swiss Sparkline */
+/* Stark Two-Tone Sparkline */
 .chart-wrap {
     position: relative;
     margin-top: 20px;
@@ -1093,7 +1093,7 @@ body[data-state="loading"] .rail-marker {
 }
 
 /* --------------------------------------------------------------------------
-   Settings Drawer — Clean Stark Swiss Sheet (No Dark Blur)
+   Settings Drawer — Clean Stark Sheet (No Dark Blur)
    -------------------------------------------------------------------------- */
 
 body.drawer-open {

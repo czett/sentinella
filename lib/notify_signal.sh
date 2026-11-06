@@ -1,6 +1,6 @@
 #!/bin/sh
 # =============================================================================
-#  homematic-sma-battery-monitor - Signal notification hook
+#  Sentinella - Signal notification hook
 # =============================================================================
 #  Called by bin/check_soc.sh, detached, once per signal transition:
 #
@@ -133,7 +133,7 @@ load_config() {
     # New names take precedence; legacy SIGNAL_TEXT_* values still work.
     SIGNAL_MESSAGE_OVERFLOW=${SIGNAL_MESSAGE_OVERFLOW:-${SIGNAL_TEXT_TRIGGER:-"Achtung: Batteriespeicher hat {SOC}% erreicht! Überschuss verfügbar."}}
     SIGNAL_MESSAGE_RESET=${SIGNAL_MESSAGE_RESET:-${SIGNAL_TEXT_RESET:-"Batteriespeicher wieder unter {RESET_SOC}% ({SOC}%). Überschuss beendet."}}
-    SIGNAL_MESSAGE_TEST=${SIGNAL_MESSAGE_TEST:-"Testnachricht von homematic-sma-battery-monitor auf {HOST}. Signal-Benachrichtigungen funktionieren."}
+    SIGNAL_MESSAGE_TEST=${SIGNAL_MESSAGE_TEST:-"Testnachricht von Sentinella auf {HOST}. Signal-Benachrichtigungen funktionieren."}
 
     STATE_DIR=${STATE_DIR:-$APP_DIR/state}
     NOTIFY_LOCK_DIR=$STATE_DIR/.notify.lock

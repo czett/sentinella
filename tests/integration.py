@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Integration tests for homematic-sma-battery-monitor.
+"""Integration tests for Sentinella.
 
 Runs the real POSIX scripts against a local mock of the SMA WebConnect API
 (HTTPS, self-signed) and the CCU3 ReGa endpoint (HTTP). No CCU or inverter is

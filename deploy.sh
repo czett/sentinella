@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  homematic-sma-battery-monitor - deployment helper (runs on your workstation)
+#  Sentinella - deployment helper (runs on your workstation)
 # =============================================================================
 #  Copies the add-on to a CCU3 / RaspberryMatic over SSH, sets permissions,
 #  installs the dashboard into the lighttpd add-on directory, registers the
@@ -19,9 +19,13 @@
 #  workstation file. With SIGNAL_ENABLED="true", a Signal --test is run.
 # =============================================================================
 
-set -euo pipefail
+set -eu
+# Enable pipefail when the shell supports it (bash); harmless under POSIX sh.
+if (set -o pipefail) 2>/dev/null; then
+    set -o pipefail
+fi
 
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+ROOT=$(cd "$(dirname "$0")" && pwd)
 ADDON_DIR=
 WEB_DIR=
 HOST=
@@ -190,7 +194,8 @@ Dry run - nothing will be changed.
   Dashboard dir : ${WEB_DIR}
   Dashboard URL : ${DASHBOARD_URL}
   Log file      : ${LOG_FILE_REMOTE}
-  Cron          : $([ "$SKIP_CRON" -eq 1 ] && echo skipped || echo "*/2 * * * * ${ADDON_DIR}/bin/check_soc.sh")
+  Cron          : $([ "$SKIP_CRON" -eq 1 ] && echo skipped || echo "ensure */2 * * * * ${ADDON_DIR}/bin/check_soc.sh")
+  Ownership     : root:root for the add-on and dashboard trees
   Variables     : $([ "$SKIP_VARS" -eq 1 ] && echo skipped || echo "create via ReGa")
   Dashboard     : $([ "$SKIP_WEB" -eq 1 ] && echo skipped || echo "install")
   Settings API  : $([ "$SKIP_WEB" -eq 1 ] && echo skipped || echo "install + probe via lighttpd")
@@ -219,27 +224,31 @@ install -m 644 "$ROOT/web/app.js"            "$STAGE/web/app.js"
 install -m 755 "$ROOT/web/api/config.cgi"     "$STAGE/web/api/config.cgi"
 install -m 755 "$ROOT/web/api/test_signal.cgi" "$STAGE/web/api/test_signal.cgi"
 
-SSH_OPTS=(-o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+ssh_ccu() {
+    ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
+        -p "$SSH_PORT" "$@"
+}
 
 info "checking SSH connection to $REMOTE"
-ssh "${SSH_OPTS[@]}" "$REMOTE" 'true' \
+ssh_ccu "$REMOTE" 'true' \
     || die "cannot connect to $REMOTE (check host, key and root login)"
 
 info "copying add-on to $ADDON_DIR"
 # shellcheck disable=SC2029  # the paths are intentionally expanded locally
 tar -cf - -C "$STAGE" . \
-    | ssh "${SSH_OPTS[@]}" "$REMOTE" "mkdir -p '$ADDON_DIR' && tar -xf - -C '$ADDON_DIR'" \
+    | ssh_ccu "$REMOTE" "mkdir -p '$ADDON_DIR' && tar -xf - -C '$ADDON_DIR'" \
     || die "file transfer failed"
 
 info "configuring permissions, dashboard, cron and system variables"
 # shellcheck disable=SC2029  # the paths are intentionally expanded locally
-ssh "${SSH_OPTS[@]}" "$REMOTE" \
+ssh_ccu "$REMOTE" \
     "ADDON_DIR='$ADDON_DIR' WEB_DIR='$WEB_DIR' SKIP_CRON='$SKIP_CRON' SKIP_VARS='$SKIP_VARS' SKIP_WEB='$SKIP_WEB' SKIP_TEST='$SKIP_TEST' sh -s" <<'REMOTE_SCRIPT'
 set -e
 
 mkdir -p "$ADDON_DIR/state"
-chmod 700 "$ADDON_DIR" "$ADDON_DIR/bin" "$ADDON_DIR/lib" "$ADDON_DIR/state"
-chmod 700 "$ADDON_DIR/bin/check_soc.sh" "$ADDON_DIR/lib/notify_signal.sh" "$ADDON_DIR/setup_variables.sh"
+chown -R root:root "$ADDON_DIR"
+chmod 755 "$ADDON_DIR" "$ADDON_DIR/bin" "$ADDON_DIR/lib" "$ADDON_DIR/state"
+chmod 755 "$ADDON_DIR/bin/check_soc.sh" "$ADDON_DIR/lib/notify_signal.sh" "$ADDON_DIR/setup_variables.sh"
 
 # Redeployments must never overwrite live credentials. Only the first install
 # (or an intentionally removed .env) receives the workstation copy.
@@ -255,6 +264,7 @@ else
     fi
 fi
 chmod 600 "$ADDON_DIR/.env" 2>/dev/null || true
+chown root:root "$ADDON_DIR/.env" 2>/dev/null || true
 if [ -d "$ADDON_DIR/web" ]; then
     chmod 755 "$ADDON_DIR/web"
 fi
@@ -314,6 +324,7 @@ if [ "$SKIP_WEB" != "1" ]; then
     patch_lighttpd_cgi
 
     mkdir -p "$WEB_DIR/api"
+    chown -R root:root "$WEB_DIR"
     chmod 755 "$WEB_DIR" "$WEB_DIR/api"
     for file in index.html style.css app.js; do
         cp -f "$ADDON_DIR/web/$file" "$WEB_DIR/$file"
@@ -328,6 +339,7 @@ if [ "$SKIP_WEB" != "1" ]; then
     done
     printf '%s\n' "$ADDON_DIR" > "$WEB_DIR/api/addon_dir"
     chmod 644 "$WEB_DIR/api/addon_dir"
+    chown -R root:root "$WEB_DIR"
     printf 'Dashboard installed in %s\n' "$WEB_DIR"
 
     # Best-effort probe: CGI may need to be enabled in lighttpd on some
@@ -351,26 +363,38 @@ if [ "$SKIP_WEB" != "1" ]; then
 fi
 
 if [ "$SKIP_CRON" != "1" ]; then
-    CRON_LINE="*/2 * * * * $ADDON_DIR/bin/check_soc.sh >/dev/null 2>&1"
+    CRON_TARGET="$ADDON_DIR/bin/check_soc.sh"
+    CRON_LINE="*/2 * * * * $CRON_TARGET >/dev/null 2>&1"
     if command -v crontab >/dev/null 2>&1; then
-        CRON_TMP=/tmp/sma_battery_cron.$$
-        crontab -l 2>/dev/null | grep -vF "$ADDON_DIR/bin/check_soc.sh" > "$CRON_TMP" || true
-        printf '%s\n' "$CRON_LINE" >> "$CRON_TMP"
-        crontab "$CRON_TMP"
-        rm -f "$CRON_TMP"
+        CRON_LIST=$(crontab -l 2>/dev/null || true)
+        if printf '%s\n' "$CRON_LIST" | grep -qF "$CRON_TARGET"; then
+            printf 'Cron entry already present; crontab left untouched.\n'
+        else
+            CRON_TMP=/tmp/sma_battery_cron.$$
+            if [ -n "$CRON_LIST" ]; then
+                printf '%s\n' "$CRON_LIST" > "$CRON_TMP"
+            else
+                : > "$CRON_TMP"
+            fi
+            printf '%s\n' "$CRON_LINE" >> "$CRON_TMP"
+            crontab "$CRON_TMP"
+            rm -f "$CRON_TMP"
+            printf 'Cron installed: %s\n' "$CRON_LINE"
+        fi
     else
         CRON_FILE=/etc/crontabs/root
         mkdir -p /etc/crontabs
         touch "$CRON_FILE"
-        CRON_TMP=$CRON_FILE.tmp.$$
-        grep -vF "$ADDON_DIR/bin/check_soc.sh" "$CRON_FILE" > "$CRON_TMP" || true
-        printf '%s\n' "$CRON_LINE" >> "$CRON_TMP"
-        mv -f "$CRON_TMP" "$CRON_FILE"
+        if grep -qF "$CRON_TARGET" "$CRON_FILE" 2>/dev/null; then
+            printf 'Cron entry already present in %s; left untouched.\n' "$CRON_FILE"
+        else
+            printf '%s\n' "$CRON_LINE" >> "$CRON_FILE"
+            printf 'Cron installed in %s: %s\n' "$CRON_FILE" "$CRON_LINE"
+        fi
     fi
     /etc/init.d/S71crond restart >/dev/null 2>&1 \
         || /etc/init.d/S98crond restart >/dev/null 2>&1 \
         || true
-    printf 'Cron installed: %s\n' "$CRON_LINE"
 fi
 
 if [ "$SKIP_VARS" != "1" ]; then

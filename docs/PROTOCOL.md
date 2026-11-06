@@ -1,6 +1,6 @@
 # SMA WebConnect JSON API - reverse-engineering notes
 
-These notes describe the small part of the local SMA WebUI API used by this add-on. The interface is undocumented, differs between firmware generations and can change without notice. Treat every observation as firmware-specific and verify on your own device.
+These notes describe the small part of the local SMA WebUI API used by Sentinella. The interface is undocumented, differs between firmware generations and can change without notice. Treat every observation as firmware-specific and verify on your own device.
 
 Tested against a **SMA Sunny Tripower STP 10.0** with a **BYD Battery-Box** on a current firmware. The same flow is reported on Sunny Boy Storage devices.
 

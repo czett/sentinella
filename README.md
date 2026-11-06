@@ -1,13 +1,13 @@
-# homematic-sma-battery-monitor
+# Sentinella — High-Precision SMA Battery Monitor for CCU3
 
-Battery monitoring for a **Homematic CCU3 / RaspberryMatic** and an **SMA Sunny Tripower / Sunny Boy Storage** with a BYD or similar battery. The add-on reads the state of charge (SoC) from the inverter's local WebConnect JSON API, writes it to a CCU3 system variable, and drives a 95 % hysteresis signal for charging or automation programs.
+**Sentinella** is an independent, high-precision battery monitor for a **Homematic CCU3 / RaspberryMatic** and an **SMA Sunny Tripower / Sunny Boy Storage** with a BYD or similar battery. It reads the state of charge (SoC) from the inverter's local WebConnect JSON API, writes it to a CCU3 system variable, and drives a 95 % hysteresis signal for charging or automation programs.
 
 The project is deliberately small: POSIX `/bin/sh`, BusyBox `ash`, `curl`, `sed` and nothing else. No Python, no Node.js, no build step on the CCU.
 
 - **Reliable** - every SMA session is logged out, also on `SIGTERM`, and a lock directory prevents overlapping cron runs.
 - **Safe** - a failed, missing or out-of-range SoC never overwrites the last good CCU3 value.
 - **Configurable** - everything lives in one `.env` file with typed defaults and validation.
-- **Observable** - structured `status.json` snapshot plus a self-contained Swiss-poster dashboard.
+- **Observable** - structured `status.json` snapshot plus a self-contained Sentinella telemetry dashboard.
 - **Documented** - English and German guides, protocol notes and a troubleshooting reference.
 
 ## Features
@@ -21,7 +21,7 @@ The project is deliberately small: POSIX `/bin/sh`, BusyBox `ash`, `curl`, `sed`
 | Session safety | `EXIT`, `INT`, `TERM` and `HUP` traps always call `logout.json` |
 | Concurrency | PID lock directory with stale-lock recovery |
 | Notifications | optional detached CallMeBot Signal hook, never blocks cron |
-| Dashboard | vanilla HTML/CSS/JS in an International Typographic Style layout: colour-block SoC hero, hysteresis rail, stark history chart |
+| Dashboard | vanilla HTML/CSS/JS telemetry console: colour-block SoC hero, hysteresis rail, stark history chart |
 | Web settings | thresholds, Signal phone/UUID, API key and inverter credentials editable in the browser |
 | Deployment | `deploy.sh` over SSH, idempotent cron and system-variable setup |
 
@@ -81,7 +81,7 @@ flowchart LR
 ├── lib/
 │   └── notify_signal.sh      detached Signal notification hook
 ├── web/
-│   ├── index.html            Swiss poster markup and settings drawer
+│   ├── index.html            Sentinella telemetry markup and settings drawer
 │   ├── style.css             paper/ultramarine palette, responsive, no external assets
 │   ├── app.js                dashboard, chart and settings client
 │   ├── api/
@@ -125,8 +125,8 @@ flowchart LR
 ### 1. Get the code
 
 ```sh
-git clone https://github.com/<your-account>/homematic-sma-battery-monitor.git
-cd homematic-sma-battery-monitor
+git clone https://github.com/<your-account>/sentinella.git
+cd sentinella
 ```
 
 ### 2. Configure
@@ -244,7 +244,7 @@ A complete copy is in [`examples/crontab.txt`](examples/crontab.txt). No `rc.loc
 http://<ccu-address>/addons/sma_battery/
 ```
 
-The first value appears after the next cron run (up to two minutes). The page refreshes every 30 seconds and shows a clear "Waiting for first measurement" notice when `status.json` does not exist yet. Add `?demo=1` to preview the layout with generated data, labelled "Exhibition Preview Data".
+The first value appears after the next cron run (up to two minutes). The page refreshes every 30 seconds and shows a clear "Waiting for first measurement" notice when `status.json` does not exist yet. Add `?demo=1` to preview the layout with generated data, labelled "Sentinella Preview Data".
 
 ### 8. Settings in the browser
 
@@ -364,9 +364,9 @@ Fault behaviour is intentionally conservative:
 
 ## Dashboard
 
-The dashboard is a static single-page app with no external fonts, scripts or CDNs. It follows a Swiss International Typographic Style: warm paper ground, one full-bleed ultramarine SoC field, hairline rules and heavy Helvetica-set figures. It reads `status.json` with `fetch()` every 30 seconds and renders:
+The Sentinella dashboard is a static single-page app with no external fonts, scripts or CDNs. It uses a warm paper ground, one full-bleed ultramarine SoC field, hairline rules and heavy Helvetica-set figures, with the Signal Red square as its only brand mark. It reads `status.json` with `fetch()` every 30 seconds and renders:
 
-- an oversized state-of-charge figure on the ultramarine poster block, with the charging state as a flat state tag,
+- an oversized state-of-charge figure on the ultramarine SoC field, with the charging state as a flat state tag,
 - a hairline hysteresis rail with a square SoC marker and bold labels for the reset and trigger levels,
 - a 2×2 telemetry grid for charging state, battery power, CCU write result and last sample time,
 - a stark two-tone history chart from the samples kept by the monitor,
@@ -397,7 +397,7 @@ The dashboard is a static single-page app with no external fonts, scripts or CDN
 }
 ```
 
-For a local preview without a CCU3, copy `web/status.example.json` to `web/status.json` and serve the `web/` directory with any static server, or open the page with `?demo=1`. The "Exhibition Preview Data" notice makes it unmistakable that the values are not live.
+For a local preview without a CCU3, copy `web/status.example.json` to `web/status.json` and serve the `web/` directory with any static server, or open the page with `?demo=1`. The "Sentinella Preview Data" notice makes it unmistakable that the values are not live.
 
 If you do not want the dashboard, set `WEB_ENABLED="false"`. The monitor still writes a private snapshot to `<addon>/state/status.json`.
 
