@@ -278,13 +278,15 @@ Alle Schlüssel stehen in `.env`. Die Datei wird von `/bin/sh` eingelesen; Werte
 | `SIGNAL_PHONE` | String | - | E.164-Nummer mit `+` |
 | `SIGNAL_APIKEY` | Geheimnis | - | CallMeBot-API-Schlüssel |
 | `SIGNAL_API_URL` | URL | CallMeBot-Signal | kompatibles Gateway |
-| `SIGNAL_TEXT_TRIGGER` | String | siehe `.env.example` | Platzhalter `%SOC%`, `%TRIGGER%`, `%RESET%`, `%HOST%`, `%%` |
-| `SIGNAL_TEXT_RESET` | String | siehe `.env.example` | gleiche Platzhalter |
+| `SIGNAL_MESSAGE_OVERFLOW` | String | siehe `.env.example` | Überschuss-Meldung; Platzhalter `{SOC}`, `{TRIGGER_SOC}`, `{RESET_SOC}`, `{HOST}` |
+| `SIGNAL_MESSAGE_RESET` | String | siehe `.env.example` | Reset-Meldung; gleiche Platzhalter |
+| `SIGNAL_MESSAGE_TEST` | String | siehe `.env.example` | Text für `notify_signal.sh --test` |
 | `SIGNAL_NOTIFY_ON_START` | bool | `false` | beim ersten Lauf melden, wenn das Signal bereits aktiv ist |
 | `SIGNAL_TIMEOUT` | int | `15` | Timeout der Meldung |
 | `SIGNAL_RETRIES` | int | `2` | Versuche der Meldung |
+| `SIGNAL_COOLDOWN` | int | `3600` | gleiche Trigger-/Reset-Meldung innerhalb dieser Sekunden unterdrücken |
 
-Meldungen werden nur bei einem Hysterese-Wechsel (`false → true` und `true → false`) und erst nach erfolgreichem CCU3-Schreiben gesendet. Der Hook läuft abgekoppelt und verzögert den Cron-Lauf nicht.
+Meldungen werden nur bei einem Hysterese-Wechsel (`false → true` und `true → false`) und erst nach erfolgreichem CCU3-Schreiben gesendet. Der Hook läuft mit `setsid`/`nohup` abgekoppelt und verzögert den Cron-Lauf nicht. Eine Sperrzeit pro Ereignis verhindert Doppelmeldungen bei einem Zwei-Minuten-Cron oder einem verlorenen Zustand. Der Text wird von `curl --data-urlencode` kodiert, damit Leerzeichen, Umlaute und `ß` ohne python/jq auf BusyBox funktionieren. Die alten Variablen `SIGNAL_TEXT_TRIGGER`/`SIGNAL_TEXT_RESET` und `%SOC%`-Platzhalter bleiben gültig.
 
 ### Dashboard und Logging
 
@@ -386,12 +388,14 @@ SIGNAL_PHONE="+491701234567"
 SIGNAL_APIKEY="123456"
 ```
 
-3. `./deploy.sh` erneut ausführen oder die aktualisierte `.env` kopieren und `chmod 600` setzen.
-4. Testweise `THRESHOLD_TRIGGER` unter den aktuellen SoC senken oder den Notifier direkt starten:
+3. `./deploy.sh` erneut ausführen oder die aktualisierte `.env` kopieren und `chmod 600` setzen. Ein erneutes Deployment behält die vorhandene `.env` auf der CCU, überschreibt also keine Zugangsdaten.
+4. Zugangsdaten und Zustellung testen, ohne einen falschen Batteriezustand zu erzeugen:
 
 ```sh
-/usr/local/addons/sma_battery/lib/notify_signal.sh trigger 96
+/usr/local/addons/sma_battery/lib/notify_signal.sh --test; echo "exit=$?"
 ```
+
+`--test` sendet eine klar gekennzeichnete Testnachricht und liest oder schreibt `state/signal` nicht. `deploy.sh` startet denselben Test automatisch, wenn `SIGNAL_ENABLED="true"` gesetzt ist und `--skip-test` fehlt.
 
 Der Notifier schreibt in dasselbe Log und in syslog mit Tag `sma_battery_notify`.
 

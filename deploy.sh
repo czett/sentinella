@@ -15,6 +15,8 @@
 #
 #  Configuration is read from .env in this directory. DEPLOY_HOST,
 #  DEPLOY_USER and DEPLOY_PORT can be overridden on the command line.
+#  An existing remote .env is preserved; only a first install copies the
+#  workstation file. With SIGNAL_ENABLED="true", a Signal --test is run.
 # =============================================================================
 
 set -euo pipefail
@@ -141,7 +143,9 @@ WEB_DIR=${WEB_DIR:-${DEPLOY_WEB_DIR:-/usr/local/etc/config/addons/www/sma_batter
 case "$SSH_PORT" in
     ''|*[!0-9]*) die "SSH port must be numeric" ;;
 esac
-[ "$SSH_PORT" -ge 1 ] && [ "$SSH_PORT" -le 65535 ] || die "SSH port out of range"
+if [ "$SSH_PORT" -lt 1 ] || [ "$SSH_PORT" -gt 65535 ]; then
+    die "SSH port out of range"
+fi
 
 case "$ADDON_DIR" in
     /?*) ;;
@@ -189,6 +193,8 @@ Dry run - nothing will be changed.
   Variables     : $([ "$SKIP_VARS" -eq 1 ] && echo skipped || echo "create via ReGa")
   Dashboard     : $([ "$SKIP_WEB" -eq 1 ] && echo skipped || echo "install")
   First check   : $([ "$SKIP_TEST" -eq 1 ] && echo skipped || echo "run")
+  Signal test   : $([ "$SKIP_TEST" -eq 1 ] && echo skipped || echo "run when SIGNAL_ENABLED=true")
+  Remote .env   : keep existing credentials, install only when missing
 EOF
     exit 0
 fi
@@ -203,7 +209,8 @@ mkdir -p "$STAGE/bin" "$STAGE/lib" "$STAGE/web"
 install -m 700 "$ROOT/bin/check_soc.sh"      "$STAGE/bin/check_soc.sh"
 install -m 700 "$ROOT/lib/notify_signal.sh"  "$STAGE/lib/notify_signal.sh"
 install -m 700 "$ROOT/setup_variables.sh"    "$STAGE/setup_variables.sh"
-install -m 600 "$ROOT/.env"                  "$STAGE/.env"
+# Staged separately: an existing remote .env keeps its credentials.
+install -m 600 "$ROOT/.env"                  "$STAGE/.env.new"
 install -m 644 "$ROOT/web/index.html"        "$STAGE/web/index.html"
 install -m 644 "$ROOT/web/style.css"         "$STAGE/web/style.css"
 install -m 644 "$ROOT/web/app.js"            "$STAGE/web/app.js"
@@ -229,7 +236,21 @@ set -e
 mkdir -p "$ADDON_DIR/state"
 chmod 700 "$ADDON_DIR" "$ADDON_DIR/bin" "$ADDON_DIR/lib" "$ADDON_DIR/state"
 chmod 700 "$ADDON_DIR/bin/check_soc.sh" "$ADDON_DIR/lib/notify_signal.sh" "$ADDON_DIR/setup_variables.sh"
-chmod 600 "$ADDON_DIR/.env"
+
+# Redeployments must never overwrite live credentials. Only the first install
+# (or an intentionally removed .env) receives the workstation copy.
+if [ -f "$ADDON_DIR/.env" ]; then
+    rm -f "$ADDON_DIR/.env.new"
+    printf 'Keeping existing %s/.env (credentials preserved).\n' "$ADDON_DIR"
+else
+    if [ ! -f "$ADDON_DIR/.env.new" ]; then
+        printf 'WARNING: neither .env nor .env.new present in %s\n' "$ADDON_DIR" >&2
+    else
+        mv -f "$ADDON_DIR/.env.new" "$ADDON_DIR/.env"
+        printf 'Installed new %s/.env from workstation.\n' "$ADDON_DIR"
+    fi
+fi
+chmod 600 "$ADDON_DIR/.env" 2>/dev/null || true
 if [ -d "$ADDON_DIR/web" ]; then
     chmod 755 "$ADDON_DIR/web"
 fi
@@ -285,6 +306,20 @@ if [ "$SKIP_TEST" != "1" ]; then
         printf 'First check completed successfully.\n'
     else
         printf 'WARNING: first check failed; see log or run the script manually.\n' >&2
+    fi
+
+    # A --test message validates phone/apikey without touching state/signal.
+    SIGNAL_TEST_ENABLED=$(
+        . "$ADDON_DIR/.env" 2>/dev/null || exit 1
+        [ "${SIGNAL_ENABLED:-false}" = "true" ] && printf 'yes' || printf 'no'
+    ) || SIGNAL_TEST_ENABLED=no
+    if [ "$SIGNAL_TEST_ENABLED" = "yes" ]; then
+        printf 'Validating Signal credentials with a test message...\n'
+        if "$ADDON_DIR/lib/notify_signal.sh" --test; then
+            printf 'Signal test message sent successfully.\n'
+        else
+            printf 'WARNING: Signal test failed; check SIGNAL_PHONE/SIGNAL_APIKEY.\n' >&2
+        fi
     fi
 fi
 REMOTE_SCRIPT

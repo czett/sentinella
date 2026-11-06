@@ -262,6 +262,27 @@ def read_status(addon: Path) -> dict:
     return json.loads((addon / "www" / "status.json").read_text())
 
 
+def wait_until(predicate, timeout: float = 8.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def run_notify(addon: Path, *args: str, timeout: float = 20) -> subprocess.CompletedProcess:
+    env = os.environ.copy()
+    env["SMA_MONITOR_ENV"] = str(addon / ".env")
+    return subprocess.run(
+        [str(addon / "lib" / "notify_signal.sh"), *args],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
 def check(condition: bool, label: str, failures: list[str]) -> None:
     if condition:
         print(f"  ok   {label}")
@@ -440,6 +461,84 @@ def main() -> int:
             check("96" in text, "message contains the SoC", failures)
             check(query.get("phone", [""])[0] == "+491701234567", "phone passed", failures)
             check(query.get("apikey", [""])[0] == "test-key", "api key passed", failures)
+
+        print("\n10a. duplicate trigger inside the 60 minute window is suppressed")
+        notify_state = addon2 / "state" / "notify_trigger"
+        check(wait_until(notify_state.exists), "cooldown timestamp written", failures)
+        first_timestamp = notify_state.read_text().strip() if notify_state.exists() else ""
+        (addon2 / "state" / "signal").write_text("0\n")
+        signal_state.reset_requests()
+        result = run_check(addon2)
+        time.sleep(1.5)
+        check(result.returncode == 0, "main run exits 0", failures)
+        check(not signal_state.signal_requests, "duplicate request suppressed", failures)
+        check(
+            notify_state.read_text().strip() == first_timestamp,
+            "cooldown timestamp unchanged",
+            failures,
+        )
+
+        print("\n10b. --test validates credentials without touching state")
+        signal_before = (addon2 / "state" / "signal").read_text()
+        signal_state.reset_requests()
+        result = run_notify(addon2, "--test")
+        check(result.returncode == 0, f"--test exits 0 (got {result.returncode})", failures)
+        check(
+            wait_until(lambda: bool(signal_state.signal_requests)),
+            "test request received",
+            failures,
+        )
+        if signal_state.signal_requests:
+            query = parse_qs(urlparse(signal_state.signal_requests[0]).query)
+            text = query.get("text", [""])[0]
+            check("Testnachricht" in text, "test message is clearly marked", failures)
+            check("Überschuss" not in text, "test is not an overflow alert", failures)
+        check(
+            (addon2 / "state" / "signal").read_text() == signal_before,
+            "state/signal unchanged by --test",
+            failures,
+        )
+        check(
+            notify_state.read_text().strip() == first_timestamp,
+            "cooldown timestamp unchanged by --test",
+            failures,
+        )
+
+        print("\n10c. German umlauts and spaces are URL-encoded")
+        addon3 = make_addon(tmp, sma_port, rega_port, signal_port, True, name="addon3")
+        reset_state(addon3)
+        (addon3 / "state").mkdir(parents=True)
+        (addon3 / "state" / "signal").write_text("0\n")
+        with (addon3 / ".env").open("a") as env_file:
+            env_file.write(
+                'SIGNAL_MESSAGE_OVERFLOW="Achtung: Batteriespeicher hat {SOC}% '
+                'erreicht! Überschuss verfügbar. Größe ß."\n'
+            )
+        sma_state.soc = 96
+        sma_state.reset_requests()
+        signal_state.reset_requests()
+        result = run_check(addon3)
+        check(result.returncode == 0, "main run exits 0", failures)
+        check(
+            wait_until(lambda: bool(signal_state.signal_requests)),
+            "encoded request received",
+            failures,
+        )
+        if signal_state.signal_requests:
+            raw = signal_state.signal_requests[0]
+            query = parse_qs(urlparse(raw).query)
+            text = query.get("text", [""])[0]
+            raw_lower = raw.lower()
+            check(" " not in raw, "no literal spaces in URL", failures)
+            check("%c3%9c" in raw_lower, "Ü is percent-encoded UTF-8", failures)
+            check("%c3%9f" in raw_lower, "ß is percent-encoded UTF-8", failures)
+            check(
+                text
+                == "Achtung: Batteriespeicher hat 96% erreicht! "
+                "Überschuss verfügbar. Größe ß.",
+                "decoded German message matches",
+                failures,
+            )
 
         print("\n11. setup_variables.sh builds the ReGa payload")
         rega_state.reset_requests()

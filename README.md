@@ -278,13 +278,15 @@ All keys live in `.env`. The file is sourced by `/bin/sh`; quote values, and pre
 | `SIGNAL_PHONE` | string | - | E.164 number, including `+` |
 | `SIGNAL_APIKEY` | secret | - | CallMeBot API key for that number |
 | `SIGNAL_API_URL` | url | CallMeBot Signal endpoint | compatible gateway |
-| `SIGNAL_TEXT_TRIGGER` | string | see `.env.example` | placeholders `%SOC%`, `%TRIGGER%`, `%RESET%`, `%HOST%`, `%%` |
-| `SIGNAL_TEXT_RESET` | string | see `.env.example` | same placeholders |
+| `SIGNAL_MESSAGE_OVERFLOW` | string | see `.env.example` | overflow message; placeholders `{SOC}`, `{TRIGGER_SOC}`, `{RESET_SOC}`, `{HOST}` |
+| `SIGNAL_MESSAGE_RESET` | string | see `.env.example` | recovery message; same placeholders |
+| `SIGNAL_MESSAGE_TEST` | string | see `.env.example` | text sent by `notify_signal.sh --test` |
 | `SIGNAL_NOTIFY_ON_START` | bool | `false` | notify on first run if the signal is already active |
 | `SIGNAL_TIMEOUT` | int | `15` | notification request timeout |
 | `SIGNAL_RETRIES` | int | `2` | notification attempts |
+| `SIGNAL_COOLDOWN` | int | `3600` | suppress duplicate trigger/reset messages inside this many seconds |
 
-Notifications are sent only on a hysteresis transition (`false → true` and `true → false`), after the CCU3 write succeeded. The hook is detached and never delays the cron job.
+Notifications are sent only on a hysteresis transition (`false → true` and `true → false`), after the CCU3 write succeeded. The hook is detached with `setsid`/`nohup` and never delays the cron job. A per-event cooldown prevents duplicate messages when cron runs every two minutes or a state file is lost. Message text is URL-encoded by `curl --data-urlencode`, so spaces, umlauts and `ß` work on BusyBox without python or jq. Legacy `SIGNAL_TEXT_TRIGGER`/`SIGNAL_TEXT_RESET` and `%SOC%`-style placeholders remain supported.
 
 ### Dashboard and logging
 
@@ -408,12 +410,14 @@ SIGNAL_PHONE="+491701234567"
 SIGNAL_APIKEY="123456"
 ```
 
-3. Re-run `./deploy.sh` or copy the updated `.env` and `chmod 600` it.
-4. Trigger a test by temporarily lowering `THRESHOLD_TRIGGER` below the current SoC, or run the notifier manually:
+3. Re-run `./deploy.sh` or copy the updated `.env` and `chmod 600` it. Redeploying keeps the existing remote `.env`, so live credentials are not overwritten.
+4. Validate credentials and end-to-end delivery without faking a battery event:
 
 ```sh
-/usr/local/addons/sma_battery/lib/notify_signal.sh trigger 96
+/usr/local/addons/sma_battery/lib/notify_signal.sh --test; echo "exit=$?"
 ```
+
+`--test` sends a clearly marked test message and does not read or write `state/signal`. `deploy.sh` runs the same test automatically when `SIGNAL_ENABLED="true"` and `--skip-test` was not given.
 
 The notifier writes to the same log and to syslog tag `sma_battery_notify`.
 

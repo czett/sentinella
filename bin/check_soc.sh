@@ -176,7 +176,7 @@ json_bool_or_null() {
 # ---------------------------------------------------------------------------
 # Cleanup: always release the SMA session and the lock, also on signals.
 # ---------------------------------------------------------------------------
-# shellcheck disable=SC2329  # invoked indirectly through trap
+# shellcheck disable=SC2317,SC2329  # invoked indirectly through trap
 cleanup() {
     _rc=$?
     trap - EXIT INT TERM HUP
@@ -250,11 +250,14 @@ load_config() {
     SIGNAL_PHONE=${SIGNAL_PHONE:-}
     SIGNAL_APIKEY=${SIGNAL_APIKEY:-}
     SIGNAL_API_URL=${SIGNAL_API_URL:-https://signal.callmebot.com/signal/send.php}
+    SIGNAL_MESSAGE_OVERFLOW=${SIGNAL_MESSAGE_OVERFLOW:-}
+    SIGNAL_MESSAGE_RESET=${SIGNAL_MESSAGE_RESET:-}
     SIGNAL_TEXT_TRIGGER=${SIGNAL_TEXT_TRIGGER:-}
     SIGNAL_TEXT_RESET=${SIGNAL_TEXT_RESET:-}
     SIGNAL_NOTIFY_ON_START=${SIGNAL_NOTIFY_ON_START:-false}
     SIGNAL_TIMEOUT=${SIGNAL_TIMEOUT:-15}
     SIGNAL_RETRIES=${SIGNAL_RETRIES:-2}
+    SIGNAL_COOLDOWN=${SIGNAL_COOLDOWN:-3600}
 
     # Dashboard
     WEB_ENABLED=${WEB_ENABLED:-true}
@@ -390,6 +393,9 @@ load_config() {
     fi
     if ! is_uint "$SIGNAL_RETRIES" || [ "$SIGNAL_RETRIES" -lt 1 ]; then
         SIGNAL_RETRIES=2
+    fi
+    if ! is_uint "$SIGNAL_COOLDOWN"; then
+        SIGNAL_COOLDOWN=3600
     fi
     if ! is_uint "$LOG_MAX_BYTES" || [ "$LOG_MAX_BYTES" -lt 1024 ]; then
         LOG_MAX_BYTES=262144
@@ -704,8 +710,9 @@ append_history() {
     fi
     _lines=$(wc -l < "$HISTORY_FILE" 2>/dev/null | tr -d ' ')
     if is_uint "$_lines" && [ "$_lines" -gt "$WEB_HISTORY_POINTS" ]; then
-        tail -n "$WEB_HISTORY_POINTS" "$HISTORY_FILE" > "$HISTORY_FILE.tmp" 2>/dev/null \
-            && mv -f "$HISTORY_FILE.tmp" "$HISTORY_FILE" 2>/dev/null || true
+        if tail -n "$WEB_HISTORY_POINTS" "$HISTORY_FILE" > "$HISTORY_FILE.tmp" 2>/dev/null; then
+            mv -f "$HISTORY_FILE.tmp" "$HISTORY_FILE" 2>/dev/null || true
+        fi
     fi
 }
 
@@ -837,13 +844,19 @@ notify_event() {
         _out=$LOG_FILE
     fi
 
-    if command -v setsid >/dev/null 2>&1; then
-        SMA_MONITOR_ENV="$ENV_FILE" setsid "$NOTIFY_SCRIPT" "$_event" "$_soc" >>"$_out" 2>&1 &
+    # The notification runs in its own subshell. setsid/nohup detach it from
+    # the cron process group, so curl retries and timeouts can never delay the
+    # next measurement. The cooldown itself is enforced in notify_signal.sh.
+    if command -v setsid >/dev/null 2>&1 && command -v nohup >/dev/null 2>&1; then
+        ( SMA_MONITOR_ENV="$ENV_FILE" setsid nohup "$NOTIFY_SCRIPT" "$_event" "$_soc" >>"$_out" 2>&1 & )
     elif command -v nohup >/dev/null 2>&1; then
-        SMA_MONITOR_ENV="$ENV_FILE" nohup "$NOTIFY_SCRIPT" "$_event" "$_soc" >>"$_out" 2>&1 &
+        ( SMA_MONITOR_ENV="$ENV_FILE" nohup "$NOTIFY_SCRIPT" "$_event" "$_soc" >>"$_out" 2>&1 & )
+    elif command -v setsid >/dev/null 2>&1; then
+        ( SMA_MONITOR_ENV="$ENV_FILE" setsid "$NOTIFY_SCRIPT" "$_event" "$_soc" >>"$_out" 2>&1 & )
     else
         ( SMA_MONITOR_ENV="$ENV_FILE" "$NOTIFY_SCRIPT" "$_event" "$_soc" >>"$_out" 2>&1 & )
     fi
+    log "queued Signal notification ($_event, SoC ${_soc}%)"
     return 0
 }
 

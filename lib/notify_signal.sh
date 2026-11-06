@@ -7,11 +7,23 @@
 #      notify_signal.sh trigger 96
 #      notify_signal.sh reset   89
 #
+#  Verify the configured credentials from a terminal without touching the
+#  battery state (this sends a clearly marked test message):
+#
+#      notify_signal.sh --test
+#
 #  Sends a message through the CallMeBot Signal gateway (or any compatible
 #  endpoint). The main cron job never waits for this script.
 #
-#  Exit codes: 0 = sent (or notifications disabled), 1 = send failed,
-#              2 = invalid call/configuration.
+#  Safety features:
+#    - curl --data-urlencode performs the percent-encoding, so spaces and
+#      German umlauts work without python, jq or iconv on BusyBox.
+#    - A per-event cooldown (SIGNAL_COOLDOWN, default 3600 s) prevents
+#      duplicate alerts when cron runs repeatedly or the state file was lost.
+#    - --test never writes notification or battery state files.
+#
+#  Exit codes: 0 = sent (or notifications disabled/suppressed),
+#              1 = send failed, 2 = invalid call/configuration.
 # =============================================================================
 
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -32,6 +44,10 @@ if [ -z "$ENV_FILE" ]; then
     fi
 fi
 
+STATE_DIR=
+NOTIFY_LOCK_DIR=
+NOTIFY_LOCK_OWNED=0
+
 log() {
     _ts=$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null)
     [ -n "$_ts" ] || _ts=-
@@ -48,30 +64,51 @@ is_uint() {
     return 0
 }
 
+usage() {
+    cat <<'EOF'
+Usage: notify_signal.sh trigger|reset SOC
+       notify_signal.sh --test
+       notify_signal.sh --help
+
+  trigger SOC   send the overflow/trigger message
+  reset SOC     send the recovery/reset message
+  --test        send a test message and validate phone/apikey credentials
+  --help        show this help
+
+The script reads the same .env as bin/check_soc.sh. It is normally started in
+the background by the monitor; curl timeouts therefore never block cron.
+EOF
+}
+
+cleanup() {
+    _rc=$?
+    trap - EXIT HUP INT TERM
+    if [ "$NOTIFY_LOCK_OWNED" = "1" ] && [ -n "$NOTIFY_LOCK_DIR" ]; then
+        rm -rf "$NOTIFY_LOCK_DIR" 2>/dev/null || true
+    fi
+    exit "$_rc"
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 render_template() {
     _tpl=$1
     _out=$(printf '%s' "$_tpl" \
-        | sed -e "s/%SOC%/$SOC/g" \
+        | sed -e "s/{SOC}/$SOC/g" \
+              -e "s/{TRIGGER_SOC}/$THRESHOLD_TRIGGER/g" \
+              -e "s/{RESET_SOC}/$THRESHOLD_RESET/g" \
+              -e "s/{HOST}/$SMA_IP/g" \
+              -e "s/%SOC%/$SOC/g" \
               -e "s/%TRIGGER%/$THRESHOLD_TRIGGER/g" \
               -e "s/%RESET%/$THRESHOLD_RESET/g" \
               -e "s/%HOST%/$SMA_IP/g")
-    # "%%" is an escaped literal percent sign.
+    # "%%" is an escaped literal percent sign (legacy templates).
     printf '%s' "$_out" | sed 's/%%/%/g'
 }
 
-main() {
-    EVENT=${1:-}
-    SOC=${2:-}
-
-    case "$EVENT" in
-        trigger|reset) ;;
-        *) log "ERROR: first argument must be 'trigger' or 'reset'"; return 2 ;;
-    esac
-    if ! is_uint "$SOC" || [ "$SOC" -lt 0 ] || [ "$SOC" -gt 100 ]; then
-        log "ERROR: second argument must be a SoC integer between 0 and 100"
-        return 2
-    fi
-
+load_config() {
     if [ ! -r "$ENV_FILE" ]; then
         log "ERROR: configuration file $ENV_FILE is missing or unreadable"
         return 2
@@ -88,17 +125,19 @@ main() {
     SIGNAL_API_URL=${SIGNAL_API_URL:-https://signal.callmebot.com/signal/send.php}
     SIGNAL_TIMEOUT=${SIGNAL_TIMEOUT:-15}
     SIGNAL_RETRIES=${SIGNAL_RETRIES:-2}
+    SIGNAL_COOLDOWN=${SIGNAL_COOLDOWN:-3600}
     THRESHOLD_TRIGGER=${THRESHOLD_TRIGGER:-95}
     THRESHOLD_RESET=${THRESHOLD_RESET:-90}
     SMA_IP=${SMA_IP:-}
 
-    if [ "$SIGNAL_ENABLED" != "true" ]; then
-        return 0
-    fi
-    if [ -z "$SIGNAL_PHONE" ] || [ -z "$SIGNAL_APIKEY" ]; then
-        log "ERROR: SIGNAL_PHONE and SIGNAL_APIKEY must be set when notifications are enabled"
-        return 2
-    fi
+    # New names take precedence; legacy SIGNAL_TEXT_* values still work.
+    SIGNAL_MESSAGE_OVERFLOW=${SIGNAL_MESSAGE_OVERFLOW:-${SIGNAL_TEXT_TRIGGER:-"Achtung: Batteriespeicher hat {SOC}% erreicht! Überschuss verfügbar."}}
+    SIGNAL_MESSAGE_RESET=${SIGNAL_MESSAGE_RESET:-${SIGNAL_TEXT_RESET:-"Batteriespeicher wieder unter {RESET_SOC}% ({SOC}%). Überschuss beendet."}}
+    SIGNAL_MESSAGE_TEST=${SIGNAL_MESSAGE_TEST:-"Testnachricht von homematic-sma-battery-monitor auf {HOST}. Signal-Benachrichtigungen funktionieren."}
+
+    STATE_DIR=${STATE_DIR:-$APP_DIR/state}
+    NOTIFY_LOCK_DIR=$STATE_DIR/.notify.lock
+
     case "$SIGNAL_API_URL" in
         http://*|https://*) ;;
         *) log "ERROR: SIGNAL_API_URL must start with http:// or https://"; return 2 ;;
@@ -109,24 +148,95 @@ main() {
     if ! is_uint "$SIGNAL_RETRIES" || [ "$SIGNAL_RETRIES" -lt 1 ]; then
         SIGNAL_RETRIES=2
     fi
-
-    if [ "$EVENT" = "trigger" ]; then
-        TEXT=${SIGNAL_TEXT_TRIGGER:-"Battery full: SoC %SOC% (trigger at %TRIGGER%) on %HOST%"}
-    else
-        TEXT=${SIGNAL_TEXT_RESET:-"Battery OK: SoC %SOC% (reset at %RESET%) on %HOST%"}
+    if ! is_uint "$SIGNAL_COOLDOWN"; then
+        SIGNAL_COOLDOWN=3600
     fi
-    TEXT=$(render_template "$TEXT")
+    case "$SIGNAL_PHONE" in
+        +*) ;;
+        '') ;;
+        *) log "WARNING: SIGNAL_PHONE should use E.164 format, e.g. +491701234567" ;;
+    esac
+    return 0
+}
 
+notify_state_file() {
+    printf '%s/notify_%s' "$STATE_DIR" "$1"
+}
+
+already_sent_recently() {
+    _event=$1
+    _file=$(notify_state_file "$_event")
+    [ -r "$_file" ] || return 1
+
+    _last=$(cat "$_file" 2>/dev/null)
+    is_uint "$_last" || return 1
+    _now=$(date +%s 2>/dev/null)
+    is_uint "$_now" || return 1
+
+    if [ "$_now" -ge "$_last" ]; then
+        _age=$((_now - _last))
+    else
+        # The clock moved backwards; conservatively treat the alert as recent.
+        _age=0
+    fi
+    [ "$_age" -lt "$SIGNAL_COOLDOWN" ]
+}
+
+record_sent() {
+    _event=$1
+    _file=$(notify_state_file "$_event")
+    _now=$(date +%s 2>/dev/null)
+    is_uint "$_now" || _now=0
+
+    if mkdir -p "$STATE_DIR" 2>/dev/null \
+        && printf '%s\n' "$_now" > "$_file.tmp" 2>/dev/null \
+        && mv -f "$_file.tmp" "$_file" 2>/dev/null; then
+        chmod 600 "$_file" 2>/dev/null || true
+        return 0
+    fi
+    log "WARNING: cannot persist notification cooldown in $STATE_DIR"
+    return 1
+}
+
+acquire_lock() {
+    mkdir -p "$STATE_DIR" 2>/dev/null || return 1
+
+    if mkdir "$NOTIFY_LOCK_DIR" 2>/dev/null; then
+        printf '%s\n' "$$" > "$NOTIFY_LOCK_DIR/pid" 2>/dev/null || true
+        NOTIFY_LOCK_OWNED=1
+        return 0
+    fi
+
+    _oldpid=$(cat "$NOTIFY_LOCK_DIR/pid" 2>/dev/null)
+    if [ -n "$_oldpid" ] && is_uint "$_oldpid" && kill -0 "$_oldpid" 2>/dev/null; then
+        return 1
+    fi
+
+    # Stale lock left behind by a killed notification process.
+    rm -rf "$NOTIFY_LOCK_DIR" 2>/dev/null || true
+    if mkdir "$NOTIFY_LOCK_DIR" 2>/dev/null; then
+        printf '%s\n' "$$" > "$NOTIFY_LOCK_DIR/pid" 2>/dev/null || true
+        NOTIFY_LOCK_OWNED=1
+        return 0
+    fi
+    return 1
+}
+
+send_message() {
+    _text=$1
     _attempt=1
+    _resp=
+
     while [ "$_attempt" -le "$SIGNAL_RETRIES" ]; do
+        # --get + --data-urlencode percent-encodes spaces, umlauts and the
+        # phone's leading '+' as raw UTF-8, entirely inside curl.
         _resp=$(curl -fsS --connect-timeout 5 -m "$SIGNAL_TIMEOUT" --get \
             --data-urlencode "phone=$SIGNAL_PHONE" \
             --data-urlencode "apikey=$SIGNAL_APIKEY" \
-            --data-urlencode "text=$TEXT" \
+            --data-urlencode "text=$_text" \
             "$SIGNAL_API_URL" 2>&1)
         _rc=$?
         if [ "$_rc" -eq 0 ]; then
-            log "notification sent ($EVENT, SoC ${SOC}%)"
             return 0
         fi
 
@@ -137,6 +247,100 @@ main() {
     done
 
     log "ERROR: notification failed ($EVENT, SoC ${SOC}%): $(printf '%s' "$_resp" | tr -d '\r\n' | cut -c1-160)"
+    return 1
+}
+
+main() {
+    EVENT=
+    SOC=
+    TEST=0
+
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --test)
+                TEST=1
+                shift
+                ;;
+            --help|-h)
+                usage
+                return 0
+                ;;
+            -*)
+                log "ERROR: unknown option $1"
+                usage >&2
+                return 2
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+
+    if [ "$TEST" = "1" ]; then
+        EVENT="test"
+        SOC=0
+    else
+        EVENT=${1:-}
+        SOC=${2:-}
+
+        case "$EVENT" in
+            trigger|reset) ;;
+            *) log "ERROR: first argument must be 'trigger' or 'reset'"; return 2 ;;
+        esac
+        if ! is_uint "$SOC" || [ "$SOC" -lt 0 ] || [ "$SOC" -gt 100 ]; then
+            log "ERROR: second argument must be a SoC integer between 0 and 100"
+            return 2
+        fi
+    fi
+
+    load_config || return $?
+
+    if [ "$TEST" = "1" ]; then
+        if [ -z "$SIGNAL_PHONE" ] || [ -z "$SIGNAL_APIKEY" ]; then
+            log "ERROR: SIGNAL_PHONE and SIGNAL_APIKEY must be set"
+            return 2
+        fi
+        if [ "$SIGNAL_ENABLED" != "true" ]; then
+            log "WARNING: SIGNAL_ENABLED is not 'true'; sending the explicit --test message anyway"
+        fi
+        TEXT=$(render_template "$SIGNAL_MESSAGE_TEST")
+        if send_message "$TEXT"; then
+            log "test notification sent successfully"
+            return 0
+        fi
+        return 1
+    fi
+
+    if [ "$SIGNAL_ENABLED" != "true" ]; then
+        return 0
+    fi
+    if [ -z "$SIGNAL_PHONE" ] || [ -z "$SIGNAL_APIKEY" ]; then
+        log "ERROR: SIGNAL_PHONE and SIGNAL_APIKEY must be set"
+        return 2
+    fi
+
+    if ! acquire_lock; then
+        log "notification already in progress; skipping duplicate ($EVENT, SoC ${SOC}%)"
+        return 0
+    fi
+
+    if already_sent_recently "$EVENT"; then
+        log "notification suppressed: duplicate $EVENT within ${SIGNAL_COOLDOWN}s (SoC ${SOC}%)"
+        return 0
+    fi
+
+    if [ "$EVENT" = "trigger" ]; then
+        TEXT=$SIGNAL_MESSAGE_OVERFLOW
+    else
+        TEXT=$SIGNAL_MESSAGE_RESET
+    fi
+    TEXT=$(render_template "$TEXT")
+
+    if send_message "$TEXT"; then
+        record_sent "$EVENT" || true
+        log "notification sent ($EVENT, SoC ${SOC}%)"
+        return 0
+    fi
     return 1
 }
 

@@ -239,28 +239,29 @@ The page was opened with `?demo=1`, or via `file://`. Open the normal CCU URL wi
 ls -l /usr/local/addons/sma_battery/lib/notify_signal.sh
 ```
 
-- Test it directly:
+- Test credentials and delivery without changing `state/signal`:
 
 ```sh
-/usr/local/addons/sma_battery/lib/notify_signal.sh trigger 96; echo "exit=$?"
+/usr/local/addons/sma_battery/lib/notify_signal.sh --test; echo "exit=$?"
 ```
 
 - Check the log and syslog tag `sma_battery_notify`.
 - Messages are only sent on a transition after a successful CCU3 write. Lower `THRESHOLD_TRIGGER` temporarily to force a `false → true` transition, or set `SIGNAL_NOTIFY_ON_START="true"` for one run if the signal is already active.
+- The same event is suppressed for `SIGNAL_COOLDOWN` seconds (default 3600). A "notification suppressed" log line means this protection fired. Remove `state/notify_trigger` or `state/notify_reset` only if you intentionally want to resend immediately.
 
 ### Message text is wrong
 
-Templates use `%SOC%`, `%TRIGGER%`, `%RESET%`, `%HOST%` and `%%` for a literal percent sign. Quote templates that contain spaces. Example:
+Templates use `{SOC}`, `{TRIGGER_SOC}`, `{RESET_SOC}` and `{HOST}`. The legacy spellings `%SOC%`, `%TRIGGER%`, `%RESET%`, `%HOST%` and `%%` are still accepted. Quote templates that contain spaces. Example:
 
 ```sh
-SIGNAL_TEXT_TRIGGER="Speicher voll: %SOC% % (Schwelle %TRIGGER% %)"
+SIGNAL_MESSAGE_OVERFLOW="Speicher voll: {SOC}% (Schwelle {TRIGGER_SOC}%)"
 ```
 
-After editing `.env`, no service restart is needed; the next run reads the file.
+Umlauts and `ß` are sent as UTF-8 and percent-encoded by `curl --data-urlencode`; no python or jq is required. After editing `.env`, no service restart is needed; the next run reads the file.
 
 ### CallMeBot rate limit
 
-CallMeBot may throttle repeated messages. The monitor sends only on transitions, so a normal day produces at most a few messages. Do not use the notifier as a periodic heartbeat.
+CallMeBot may throttle repeated messages. The monitor sends only on transitions and enforces a 60-minute duplicate guard per event, so a normal day produces at most a few messages. Do not use the notifier as a periodic heartbeat.
 
 ## Deployment
 
