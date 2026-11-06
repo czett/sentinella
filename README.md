@@ -1,5 +1,7 @@
 # Sentinella — High-Precision SMA Battery Monitor for CCU3
 
+![Sentinella — high-precision SMA battery telemetry for CCU3](docs/assets/readme-hero-banner.png)
+
 **Sentinella** is an independent, high-precision battery monitor for a **Homematic CCU3 / RaspberryMatic** and an **SMA Sunny Tripower / Sunny Boy Storage** with a BYD or similar battery. It reads the state of charge (SoC) from the inverter's local WebConnect JSON API, writes it to a CCU3 system variable, and drives a 95 % hysteresis signal for charging or automation programs.
 
 The project is deliberately small: POSIX `/bin/sh`, BusyBox `ash`, `curl`, `sed` and nothing else. No Python, no Node.js, no build step on the CCU.
@@ -51,6 +53,8 @@ flowchart LR
                                         CallMeBot Signal API
 ```
 
+![Telemetry bridge: SMA inverter over HTTPS, a 2-minute cron engine, the CCU3 system variable and the Signal alert](docs/assets/feature-diagram-telemetry.png)
+
 ### Runtime flow
 
 1. `check_soc.sh` loads `.env` and validates every value.
@@ -61,6 +65,8 @@ flowchart LR
 6. The CCU3 variables are written through ReGaHSS with one `tclrega.exe` request.
 7. `state/status.json` is updated atomically and, if enabled, copied to the lighttpd directory as `status.json`.
 8. On a state transition, `lib/notify_signal.sh` is started in the background. Cron never waits for the phone notification.
+
+![Zero runtime dependencies: BusyBox ash, under 60 KB, no external CDNs, served by the native lighttpd](docs/assets/feature-card-native-ccu.png)
 
 ## Repository layout
 
@@ -89,6 +95,17 @@ flowchart LR
 │   │   └── test_signal.cgi   background test-notification endpoint
 │   └── status.example.json   payload example / local preview
 ├── docs/
+│   ├── assets/               README, icon and social-preview imagery
+│   │   ├── favicon.ico
+│   │   ├── feature-card-mobile-touch.png
+│   │   ├── feature-card-native-ccu.png
+│   │   ├── feature-card-signal.png
+│   │   ├── feature-diagram-hysteresis.png
+│   │   ├── feature-diagram-telemetry.png
+│   │   ├── readme-divider-quote.png
+│   │   ├── readme-hero-banner.png
+│   │   ├── sentinella-icon.png
+│   │   └── social-preview-og.png
 │   ├── PROTOCOL.md           SMA WebConnect reverse-engineering notes
 │   └── TROUBLESHOOTING.md    extended fault guide
 ├── examples/
@@ -333,9 +350,13 @@ Notifications are sent only on a hysteresis transition (`false → true` and `tr
 | `DEPLOY_ADDON_DIR` | path | `/usr/local/addons/sma_battery` | remote add-on directory |
 | `DEPLOY_WEB_DIR` | path | `/usr/local/etc/config/addons/www/sma_battery` | remote dashboard directory |
 
+![A silent watch over every kilowatt-hour](docs/assets/readme-divider-quote.png)
+
 ## How the signal works
 
 The boolean is a classic Schmitt trigger:
+
+![Dual-threshold hysteresis corridor: reset at 90%, trigger at 95%, previous state held in between](docs/assets/feature-diagram-hysteresis.png)
 
 ```
 SoC
@@ -372,6 +393,8 @@ The Sentinella dashboard is a static single-page app with no external fonts, scr
 - a stark two-tone history chart from the samples kept by the monitor,
 - a system register with the inverter host, variable names, Signal gateway and timestamp,
 - mobile pull-to-refresh; there are no dot badges or age timers, freshness is conveyed by the values and by a plain notice strip when a poll fails.
+
+![Mobile dashboard: 100dvh container, pull-to-refresh, 48px tactile targets and seamless column collapse](docs/assets/feature-card-mobile-touch.png)
 
 `status.json` is written atomically and contains no secrets:
 
@@ -443,6 +466,8 @@ SIGNAL_APIKEY="123456"
 ```
 
 `--test` sends a clearly marked test message and does not read or write `state/signal`. `deploy.sh` runs the same test automatically when `SIGNAL_ENABLED="true"` and `--skip-test` was not given.
+
+![CallMeBot Signal preview: the verified test message and a zero exit status](docs/assets/feature-card-signal.png)
 
 The notifier writes to the same log and to syslog tag `sma_battery_notify`.
 
@@ -518,6 +543,25 @@ python3 tests/integration.py
 ```
 
 The integration test starts a self-signed HTTPS SMA mock and an HTTP ReGa mock, then exercises successful reads, hysteresis transitions, the unknown-state hold, null/out-of-range values, login failure, the lock, `SIGTERM` logout, detached notifications and the ReGa setup payload.
+
+### Brand assets
+
+The static imagery in [`docs/assets/`](docs/assets) follows the dashboard's Swiss grid: warm paper, ultramarine fields, signal-red squares and Helvetica-set type. The files are rendered once with headless Chrome at 2× and downsampled; the dashboard never loads them at runtime.
+
+| File | Size | Use |
+|---|---|---|
+| `readme-hero-banner.png` | 1280 × 420 | repository header |
+| `sentinella-icon.png` | 512 × 512 | app icon and avatar |
+| `favicon.ico` | 16–64 | browser shortcut |
+| `feature-diagram-hysteresis.png` | 960 × 320 | dual-threshold explanation |
+| `feature-card-signal.png` | 960 × 320 | CallMeBot Signal preview |
+| `feature-card-native-ccu.png` | 960 × 320 | zero-dependency runtime |
+| `feature-card-mobile-touch.png` | 960 × 320 | mobile dashboard behaviour |
+| `feature-diagram-telemetry.png` | 960 × 280 | cron-to-Signal integration flow |
+| `readme-divider-quote.png` | 1280 × 200 | section divider |
+| `social-preview-og.png` | 1280 × 640 | GitHub social preview |
+
+Use `social-preview-og.png` as the repository's social preview image in the GitHub settings.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for coding rules.
 
