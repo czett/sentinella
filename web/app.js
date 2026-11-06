@@ -930,6 +930,37 @@
         });
     }
 
+    function sendTestNotification() {
+        return requestJSON(TEST_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: "{}"
+        }).then(function (response) {
+            if (response.status === "sent") {
+                return response;
+            }
+            return pollTestResult(0);
+        });
+    }
+
+    function verifySignalAfterSave() {
+        // Runs after the save has completed and must not lock the form: the
+        // user can keep editing while the CCU delivers the test message.
+        showSettingsStatus("pending", "Configuration saved. Sending a test message…");
+        showToast("pending", "Configuration saved. Testing Signal…");
+
+        sendTestNotification().then(function () {
+            var success = "Settings saved. Test message sent to your Signal app!";
+            showSettingsStatus("success", success);
+            showToast("success", success);
+        }).catch(function (error) {
+            var warning =
+                "Settings saved, but test message failed. Check phone/UUID and API key.";
+            showSettingsStatus("error", warning + " " + error.message);
+            showToast("error", warning);
+        });
+    }
+
     function runTest() {
         if (settingsBusy) {
             return;
@@ -939,16 +970,7 @@
 
         saveSettings(true).then(function () {
             showSettingsStatus("pending", "Sending test notification…");
-            return requestJSON(TEST_URL, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: "{}"
-            });
-        }).then(function (response) {
-            if (response.status === "sent") {
-                return response;
-            }
-            return pollTestResult(0);
+            return sendTestNotification();
         }).then(function (result) {
             var message = result.message || "Test notification sent.";
             showSettingsStatus("success", message);
@@ -1031,8 +1053,15 @@
             return;
         }
         setSettingsBusy(true);
-        saveSettings(false).then(function () {
+        saveSettings(false).then(function (data) {
+            setSettingsBusy(false);
             showToast("success", "Configuration saved.");
+            // A save that leaves Signal enabled is verified right away, so the
+            // user learns about a wrong phone/UUID or API key immediately
+            // instead of waiting for the battery to reach the trigger level.
+            if (data.signal_enabled === true) {
+                verifySignalAfterSave();
+            }
         }).catch(function (error) {
             showSettingsStatus("error", error.message);
             showToast("error", error.message);

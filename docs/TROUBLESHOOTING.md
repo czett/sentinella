@@ -246,7 +246,7 @@ ls -l /usr/local/etc/config/addons/www/sma_battery/api/
 
 Both `.cgi` files must be mode `755`, and `addon_dir` must contain the add-on path (mode `644`). `deploy.sh` sets this automatically.
 
-CCU3 and RaspberryMatic normally ship lighttpd with `mod_cgi` and a `.cgi` mapping. If yours does not, back up `/etc/lighttpd/lighttpd.conf`, add:
+CCU3 and RaspberryMatic normally ship lighttpd with `mod_cgi` and a `.cgi` mapping. Some images map `.cgi` to `/bin/tclsh`, which cannot execute these shell scripts; `deploy.sh` detects that mapping in `/etc/lighttpd/conf.d/cgi.conf` and switches it to `".cgi" => ""` (remounting `/` read-write only for the edit). If your firmware keeps the mapping elsewhere or does not execute the endpoints, back up the lighttpd configuration, add:
 
 ```conf
 server.modules += ( "mod_cgi" )

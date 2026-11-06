@@ -18,6 +18,10 @@ All notable changes to this project are documented here. The format follows
 - `web/api/config.cgi` and `web/api/test_signal.cgi` with validation, atomic
   `.env` writes, masked secrets and a same-origin POST check.
 - Background test notification from the drawer with an async result toast.
+- Saving the settings with Signal enabled immediately sends a verification
+  message in the background and reports success or a credential warning.
+- `deploy.sh` patches a tclsh-only `.cgi` mapping in
+  `/etc/lighttpd/conf.d/cgi.conf` to the POSIX shebang handler on first install.
 - Integration coverage for cooldown, `--test`, UTF-8 URL encoding, config
   reading, validation rejection, atomic save and test dispatch.
 

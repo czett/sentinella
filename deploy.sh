@@ -269,6 +269,50 @@ fi
 )
 
 if [ "$SKIP_WEB" != "1" ]; then
+    # Some CCU3 / RaspberryMatic firmware maps .cgi to tclsh. Our handlers are
+    # POSIX sh scripts with a shebang and cannot run under tclsh. Switch the
+    # mapping to the shebang handler, but only when the old mapping is present
+    # so redeployments stay idempotent and custom setups are left alone.
+    patch_lighttpd_cgi() {
+        _cgi_conf=/etc/lighttpd/conf.d/cgi.conf
+        [ -f "$_cgi_conf" ] || return 0
+        grep -q '"[.]cgi"[[:space:]]*=>[[:space:]]*"/bin/tclsh"' \
+            "$_cgi_conf" 2>/dev/null || return 0
+
+        _root_was_ro=0
+        case "$(mount 2>/dev/null | grep ' on / type ' | head -n 1)" in
+            *'(ro,'*|*'(ro)'*) _root_was_ro=1 ;;
+        esac
+
+        if ! mount -o remount,rw / 2>/dev/null; then
+            printf 'WARNING: cannot remount / writable; left %s unchanged.\n' \
+                "$_cgi_conf" >&2
+            return 0
+        fi
+
+        _tmp="${_cgi_conf}.sma.$$"
+        if sed 's#"[.]cgi"[[:space:]]*=>[[:space:]]*"/bin/tclsh"#".cgi" => ""#g' \
+            "$_cgi_conf" > "$_tmp" 2>/dev/null &&
+            ! grep -q '"[.]cgi"[[:space:]]*=>[[:space:]]*"/bin/tclsh"' "$_tmp" 2>/dev/null; then
+            cat "$_tmp" > "$_cgi_conf"
+            rm -f "$_tmp"
+            if [ "$_root_was_ro" -eq 1 ]; then
+                mount -o remount,ro / 2>/dev/null \
+                    || printf 'WARNING: could not remount / read-only again.\n' >&2
+            fi
+            /etc/init.d/S50lighttpd restart >/dev/null 2>&1 || true
+            printf 'Enabled POSIX CGI handler for .cgi in %s\n' "$_cgi_conf"
+        else
+            rm -f "$_tmp"
+            if [ "$_root_was_ro" -eq 1 ]; then
+                mount -o remount,ro / 2>/dev/null || true
+            fi
+            printf 'WARNING: could not patch %s; settings API may stay unavailable.\n' \
+                "$_cgi_conf" >&2
+        fi
+    }
+    patch_lighttpd_cgi
+
     mkdir -p "$WEB_DIR/api"
     chmod 755 "$WEB_DIR" "$WEB_DIR/api"
     for file in index.html style.css app.js; do
