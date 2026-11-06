@@ -21,7 +21,7 @@ Das Projekt bleibt bewusst klein: POSIX `/bin/sh`, BusyBox `ash`, `curl` und `se
 | Sitzungssicherheit | `EXIT`-, `INT`-, `TERM`- und `HUP`-Traps rufen immer `logout.json` auf |
 | Nebenläufigkeit | PID-Sperrverzeichnis mit Bereinigung verwaister Sperren |
 | Benachrichtigungen | optionaler, abgekoppelter CallMeBot-Signal-Hook ohne Cron-Blockade |
-| Dashboard | reines HTML/CSS/JS mit Rundanzeige, Hysterese-Leiste und Verlaufsdiagramm |
+| Dashboard | reines HTML/CSS/JS mit grosser SoC-Anzeige, Hysterese-Leiste und Verlaufsdiagramm |
 | Weboberfläche | Schwellen, Signal-Telefon/UUID, API-Schlüssel und Wechselrichter-Zugang im Browser bearbeiten |
 | Installation | `deploy.sh` über SSH, idempotenter Cron und Systemvariablen |
 
@@ -83,7 +83,7 @@ flowchart LR
 ├── web/
 │   ├── index.html            Dashboard und Einstellungs-Schublade
 │   ├── style.css             dunkles, responsives Design ohne externe Assets
-│   ├── app.js                Rundanzeige, Diagramm und Einstellungs-Client
+│   ├── app.js                Dashboard-, Diagramm- und Einstellungs-Client
 │   ├── api/
 │   │   ├── config.cgi        Konfigurations-API (GET/POST)
 │   │   └── test_signal.cgi   Testnachricht im Hintergrund
@@ -366,12 +366,13 @@ Fehlerverhalten:
 
 Das Dashboard ist eine statische Single-Page-App. Es liest `status.json` alle 30 Sekunden per `fetch()` und zeigt:
 
-- eine runde SoC-Anzeige,
-- eine Hysterese-Leiste mit aktuellem SoC und beiden Schwellen,
+- eine grosse numerische SoC-Anzeige mit Ladezustand,
+- eine feine Hysterese-Leiste mit aktuellem SoC und beiden Schwellen,
 - Ladezustand und optionale Batterieleistung,
 - Signalzustand und Ergebnis des CCU3-Schreibens,
 - ein Verlaufsdiagramm aus den gespeicherten Messpunkten,
-- Verbindungsdaten sowie einen klaren Demo-/Live-/Stale-Hinweis.
+- Verbindungsdaten sowie einen klaren Demo-/Live-/Stale-Hinweis,
+- Pull-to-Refresh auf Mobilgeräten und eine Live-Altersanzeige.
 
 `status.json` wird atomar geschrieben und enthält keine Geheimnisse. Das Schema ist in [README.md](README.md#dashboard) und in `web/status.example.json` dokumentiert.
 

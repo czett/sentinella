@@ -27,6 +27,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Dashboard redesign: zinc field, hairline grid, oversized Swiss SoC type,
+  thin hysteresis rail, crisp history line, 100dvh shell, mobile
+  pull-to-refresh and an explicit live-age indicator. Settings drawer and
+  API contract are unchanged.
 - Notification hook is launched with `setsid`/`nohup`, fully detached from the
   cron polling loop.
 - Redeployments keep the existing remote `.env` instead of overwriting live

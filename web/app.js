@@ -1,17 +1,19 @@
 /* ==========================================================================
-   homematic-sma-battery-monitor - dashboard logic
-   Vanilla JavaScript, no dependencies. Reads ./status.json.
+   homematic-sma-battery-monitor — dashboard logic
+   Vanilla ES6, no dependencies. Reads ./status.json.
    ========================================================================== */
 
 (function () {
     "use strict";
 
+    var $ = function (id) { return document.getElementById(id); };
+
     var STATUS_URL = new URL("./status.json", window.location.href);
     var CONFIG_URL = new URL("./api/config.cgi", window.location.href);
     var TEST_URL = new URL("./api/test_signal.cgi", window.location.href);
+
     var POLL_MS = 30000;
-    var RELATIVE_MS = 30000;
-    var CIRCUMFERENCE = 2 * Math.PI * 100;
+    var RELATIVE_MS = 10000;
     var STALE_AFTER_SECONDS = 600;
     var TEST_POLL_MS = 1000;
     var TEST_POLL_LIMIT = 30;
@@ -33,75 +35,83 @@
     var toastTimer = null;
     var liveConfig = null;
 
+    var pullStart = null;
+    var pullDistance = 0;
+    var pullActive = false;
+
     var el = {
-        connection: document.getElementById("connection"),
-        connectionText: document.getElementById("connection-text"),
-        lastUpdate: document.getElementById("last-update"),
+        main: $("main"),
+        mainContent: $("main-content"),
+        pull: $("pull"),
+        pullLabel: $("pull-label"),
 
-        notice: document.getElementById("notice"),
-        noticeTitle: document.getElementById("notice-title"),
-        noticeText: document.getElementById("notice-text"),
-        retry: document.getElementById("retry"),
+        connection: $("connection"),
+        connectionText: $("connection-text"),
+        lastUpdate: $("last-update"),
 
-        gauge: document.getElementById("gauge"),
-        gaugeProgress: document.getElementById("gauge-progress"),
-        socValue: document.getElementById("soc-value"),
-        socState: document.getElementById("soc-state"),
-        socCaption: document.getElementById("soc-caption"),
+        notice: $("notice"),
+        noticeTitle: $("notice-title"),
+        noticeText: $("notice-text"),
+        retry: $("retry"),
 
-        signalChip: document.getElementById("signal-chip"),
-        signalCopy: document.getElementById("signal-copy"),
+        gauge: $("gauge"),
+        socValue: $("soc-value"),
+        socState: $("soc-state"),
+        socCaption: $("soc-caption"),
 
-        rail: document.getElementById("rail"),
-        railMarkerLabel: document.getElementById("rail-marker-label"),
-        railResetValue: document.getElementById("rail-reset-value"),
-        railTriggerValue: document.getElementById("rail-trigger-value"),
+        signalChip: $("signal-chip"),
+        signalCopy: $("signal-copy"),
 
-        chargeState: document.getElementById("charge-state"),
-        powerState: document.getElementById("power-state"),
-        ccuState: document.getElementById("ccu-state"),
+        rail: $("rail"),
+        railMarkerLabel: $("rail-marker-label"),
+        railResetValue: $("rail-reset-value"),
+        railTriggerValue: $("rail-trigger-value"),
 
-        chart: document.getElementById("chart"),
-        chartLayer: document.getElementById("chart-layer"),
-        chartEmpty: document.getElementById("chart-empty"),
-        chartRange: document.getElementById("chart-range"),
-        historyCount: document.getElementById("history-count"),
+        chargeState: $("charge-state"),
+        powerState: $("power-state"),
+        ccuState: $("ccu-state"),
+        metricLast: $("metric-last"),
 
-        metaHost: document.getElementById("meta-host"),
-        metaSocVar: document.getElementById("meta-soc-var"),
-        metaSignalVar: document.getElementById("meta-signal-var"),
-        metaNotify: document.getElementById("meta-notify"),
-        metaLast: document.getElementById("meta-last"),
+        chart: $("chart"),
+        chartLayer: $("chart-layer"),
+        chartEmpty: $("chart-empty"),
+        chartRange: $("chart-range"),
+        historyCount: $("history-count"),
 
-        settingsOpen: document.getElementById("settings-open"),
-        settingsLayer: document.getElementById("settings-layer"),
-        settingsBackdrop: document.getElementById("settings-backdrop"),
-        settingsDrawer: document.getElementById("settings-drawer"),
-        settingsClose: document.getElementById("settings-close"),
-        settingsForm: document.getElementById("settings-form"),
-        settingsStatus: document.getElementById("settings-status"),
-        settingsSave: document.getElementById("settings-save"),
-        settingsTest: document.getElementById("settings-test"),
+        metaHost: $("meta-host"),
+        metaSocVar: $("meta-soc-var"),
+        metaSignalVar: $("meta-signal-var"),
+        metaNotify: $("meta-notify"),
+        metaLast: $("meta-last"),
 
-        triggerSoc: document.getElementById("trigger-soc"),
-        resetSoc: document.getElementById("reset-soc"),
-        signalEnabled: document.getElementById("signal-enabled"),
-        signalPhone: document.getElementById("signal-phone"),
-        signalApikey: document.getElementById("signal-apikey"),
-        apikeyHint: document.getElementById("apikey-hint"),
-        smaIp: document.getElementById("sma-ip"),
-        smaPort: document.getElementById("sma-port"),
-        smaPassword: document.getElementById("sma-password"),
-        smaPasswordHint: document.getElementById("sma-password-hint"),
+        settingsOpen: $("settings-open"),
+        settingsLayer: $("settings-layer"),
+        settingsBackdrop: $("settings-backdrop"),
+        settingsDrawer: $("settings-drawer"),
+        settingsClose: $("settings-close"),
+        settingsForm: $("settings-form"),
+        settingsStatus: $("settings-status"),
+        settingsSave: $("settings-save"),
+        settingsTest: $("settings-test"),
 
-        toast: document.getElementById("toast")
+        triggerSoc: $("trigger-soc"),
+        triggerRange: $("trigger-range"),
+        resetSoc: $("reset-soc"),
+        resetRange: $("reset-range"),
+        signalEnabled: $("signal-enabled"),
+        signalPhone: $("signal-phone"),
+        signalApikey: $("signal-apikey"),
+        apikeyHint: $("apikey-hint"),
+        smaIp: $("sma-ip"),
+        smaPort: $("sma-port"),
+        smaPassword: $("sma-password"),
+        smaPasswordHint: $("sma-password-hint"),
+
+        toast: $("toast")
     };
 
-    el.gaugeProgress.style.strokeDasharray = CIRCUMFERENCE + " " + CIRCUMFERENCE;
-    el.gaugeProgress.style.strokeDashoffset = String(CIRCUMFERENCE);
-
     /* ----------------------------------------------------------------------
-       Small helpers
+       Helpers
        ---------------------------------------------------------------------- */
 
     function clamp(value, min, max) {
@@ -112,32 +122,36 @@
         return typeof value === "number" && Number.isFinite(value) ? value : null;
     }
 
+    function setText(node, value) {
+        if (node) {
+            node.textContent = value;
+        }
+    }
+
     function formatRelative(iso) {
         var date = new Date(iso);
         if (Number.isNaN(date.getTime())) {
-            return "Not available";
+            return "not yet";
         }
-        var seconds = Math.round((Date.now() - date.getTime()) / 1000);
-        var abs = Math.abs(seconds);
-        if (abs < 45) {
-            return "just now";
+        var seconds = Math.max(0, Math.round((Date.now() - date.getTime()) / 1000));
+        if (seconds < 60) {
+            return seconds + "s ago";
         }
-        var minutes = Math.round(abs / 60);
+        var minutes = Math.round(seconds / 60);
         if (minutes < 60) {
-            return minutes + " min " + (seconds > 0 ? "ago" : "from now");
+            return minutes + "m ago";
         }
         var hours = Math.round(minutes / 60);
         if (hours < 24) {
-            return hours + " h " + (seconds > 0 ? "ago" : "from now");
+            return hours + "h ago";
         }
-        var days = Math.round(hours / 24);
-        return days + " d " + (seconds > 0 ? "ago" : "from now");
+        return Math.round(hours / 24) + "d ago";
     }
 
     function formatTime(iso) {
         var date = new Date(iso);
         if (Number.isNaN(date.getTime())) {
-            return "Not available";
+            return "—";
         }
         return date.toLocaleString(undefined, {
             day: "2-digit",
@@ -154,24 +168,17 @@
         return new Date(epochSeconds * 1000).toLocaleTimeString(undefined, options);
     }
 
-    function formatWatts(value) {
-        if (value === null) {
-            return "Not available";
-        }
-        return Math.round(value) + " W";
-    }
-
     function chargeLabel(value) {
         switch (value) {
-            case "charging":
-                return "Charging";
-            case "discharging":
-                return "Discharging";
-            case "idle":
-                return "Idle";
-            default:
-                return "Unknown";
+            case "charging": return "Charging";
+            case "discharging": return "Discharging";
+            case "idle": return "Idle";
+            default: return "Unknown";
         }
+    }
+
+    function chargeTag(value) {
+        return chargeLabel(value).toUpperCase();
     }
 
     function signalLabel(data) {
@@ -218,12 +225,6 @@
         return { trigger: trigger, reset: reset };
     }
 
-    function setText(node, value) {
-        if (node) {
-            node.textContent = value;
-        }
-    }
-
     function setConnection(state, label) {
         el.connection.dataset.state = state;
         el.connectionText.textContent = label;
@@ -241,6 +242,50 @@
         el.notice.hidden = true;
     }
 
+    function powerText(data) {
+        var charge = toNumber(data.charge_power_w);
+        var discharge = toNumber(data.discharge_power_w);
+
+        if (charge !== null && charge > 0 && discharge !== null && discharge > 0) {
+            return Math.round(charge) + " W in / " + Math.round(discharge) + " W out";
+        }
+        if (charge !== null && charge > 0) {
+            return Math.round(charge) + " W charging";
+        }
+        if (discharge !== null && discharge > 0) {
+            return Math.round(discharge) + " W discharging";
+        }
+        if (charge === 0 || discharge === 0) {
+            return "0 W";
+        }
+        return "Not reported";
+    }
+
+    function setCcuState(status) {
+        if (status === "ok") {
+            el.ccuState.textContent = "Written";
+            el.ccuState.dataset.tone = "ok";
+        } else if (status === "error") {
+            el.ccuState.textContent = "Write failed";
+            el.ccuState.dataset.tone = "error";
+        } else {
+            el.ccuState.textContent = "—";
+            delete el.ccuState.dataset.tone;
+        }
+    }
+
+    function updateLastUpdate(iso) {
+        el.lastUpdate.dateTime = iso || "";
+        el.lastUpdate.textContent = formatRelative(iso);
+        el.lastUpdate.title = formatTime(iso);
+    }
+
+    function updateRelativeTime() {
+        if (current && current.generated_at) {
+            el.lastUpdate.textContent = formatRelative(current.generated_at);
+        }
+    }
+
     /* ----------------------------------------------------------------------
        Rendering
        ---------------------------------------------------------------------- */
@@ -249,18 +294,19 @@
         var soc = data.soc;
         var thresholds = normalizeThresholds(data);
         var history = Array.isArray(data.history) ? data.history : [];
-        var chargeState = chargeLabel(data.charging);
+        var charge = data.charging || "unknown";
+        var last = formatTime(data.generated_at);
 
         current = data;
         document.body.dataset.state = "ready";
 
         el.socValue.textContent = String(soc);
-        el.socState.textContent = chargeState;
-        el.gauge.setAttribute("aria-label", "Battery state of charge " + soc + " percent");
-        el.gaugeProgress.style.strokeDashoffset = String(
-            CIRCUMFERENCE * (1 - soc / 100)
+        el.socState.textContent = chargeTag(charge);
+        el.socState.dataset.charge = charge;
+        el.gauge.setAttribute(
+            "aria-label",
+            "Battery state of charge " + soc + " percent, " + chargeLabel(charge).toLowerCase()
         );
-
         el.socCaption.textContent = captionFor(data, thresholds);
 
         el.signalChip.textContent = signalLabel(data);
@@ -270,6 +316,7 @@
         el.rail.style.setProperty("--soc", String(soc));
         el.rail.style.setProperty("--reset", String(thresholds.reset));
         el.rail.style.setProperty("--trigger", String(thresholds.trigger));
+        el.rail.dataset.active = data.signal === true ? "true" : "false";
         el.rail.setAttribute(
             "aria-label",
             "State of charge " + soc + " percent. Reset at " +
@@ -279,19 +326,21 @@
         el.railResetValue.textContent = String(thresholds.reset);
         el.railTriggerValue.textContent = String(thresholds.trigger);
 
-        el.chargeState.textContent = chargeState;
+        el.chargeState.textContent = chargeLabel(charge);
+        el.chargeState.dataset.charge = charge;
         el.powerState.textContent = powerText(data);
         setCcuState(data.ccu_status);
+        el.metricLast.textContent = last;
 
-        el.metaHost.textContent = data.host || "Not available";
+        el.metaHost.textContent = data.host || "—";
         el.metaSocVar.textContent = data.variables && data.variables.soc
             ? data.variables.soc
-            : "Not available";
+            : "—";
         el.metaSignalVar.textContent = data.variables && data.variables.signal
             ? data.variables.signal
-            : "Not available";
+            : "—";
         el.metaNotify.textContent = data.signal_notifications ? "Enabled" : "Disabled";
-        el.metaLast.textContent = formatTime(data.generated_at);
+        el.metaLast.textContent = last;
 
         el.historyCount.textContent = history.length
             ? history.length + (history.length === 1 ? " sample" : " samples")
@@ -318,68 +367,24 @@
     function signalCopyFor(data, thresholds) {
         if (data.signal === true) {
             if (data.signal_state === "triggered") {
-                return "Triggered at " + data.soc + " %. It stays active until the SoC falls to " +
+                return "Triggered at " + data.soc + " %. Active until the state of charge falls to " +
                     thresholds.reset + " % or below.";
             }
             if (data.signal_state === "held") {
-                return "Held active inside the hysteresis band. It resets at " +
+                return "Held active inside the hysteresis band. Resets at " +
                     thresholds.reset + " % or below.";
             }
-            return "Active. It resets at " + thresholds.reset + " % or below.";
+            return "Active. Resets at " + thresholds.reset + " % or below.";
         }
         if (data.signal === false) {
             if (data.signal_state === "reset") {
-                return "Reset at " + data.soc + " %. It triggers again at " +
+                return "Reset at " + data.soc + " %. Triggers again at " +
                     thresholds.trigger + " % or above.";
             }
-            return "Inactive. It triggers at " + thresholds.trigger + " % or above.";
+            return "Inactive. Triggers at " + thresholds.trigger + " % or above.";
         }
-        return "The monitor holds the boolean between " + thresholds.reset +
+        return "The boolean is held between " + thresholds.reset +
             " % and " + thresholds.trigger + " % when no previous state is known.";
-    }
-
-    function powerText(data) {
-        var charge = toNumber(data.charge_power_w);
-        var discharge = toNumber(data.discharge_power_w);
-
-        if (charge !== null && charge > 0 && discharge !== null && discharge > 0) {
-            return formatWatts(charge) + " in / " + formatWatts(discharge) + " out";
-        }
-        if (charge !== null && charge > 0) {
-            return formatWatts(charge) + " charging";
-        }
-        if (discharge !== null && discharge > 0) {
-            return formatWatts(discharge) + " discharging";
-        }
-        if (charge === 0 || discharge === 0) {
-            return "0 W";
-        }
-        return "Not reported";
-    }
-
-    function setCcuState(status) {
-        if (status === "ok") {
-            el.ccuState.textContent = "Written";
-            el.ccuState.dataset.tone = "ok";
-        } else if (status === "error") {
-            el.ccuState.textContent = "Write failed";
-            el.ccuState.dataset.tone = "error";
-        } else {
-            el.ccuState.textContent = "Not available";
-            delete el.ccuState.dataset.tone;
-        }
-    }
-
-    function updateLastUpdate(iso) {
-        el.lastUpdate.dateTime = iso || "";
-        el.lastUpdate.textContent = formatRelative(iso);
-        el.lastUpdate.title = formatTime(iso);
-    }
-
-    function updateRelativeTime() {
-        if (current && current.generated_at) {
-            el.lastUpdate.textContent = formatRelative(current.generated_at);
-        }
     }
 
     /* ----------------------------------------------------------------------
@@ -399,8 +404,8 @@
 
     function renderChart(history, thresholds) {
         var width = 760;
-        var height = 240;
-        var pad = { top: 18, right: 14, bottom: 28, left: 36 };
+        var height = 220;
+        var pad = { top: 14, right: 10, bottom: 28, left: 30 };
         var plotWidth = width - pad.left - pad.right;
         var plotHeight = height - pad.top - pad.bottom;
         var points = [];
@@ -417,9 +422,7 @@
             }
         });
 
-        points.sort(function (a, b) {
-            return a.t - b.t;
-        });
+        points.sort(function (a, b) { return a.t - b.t; });
 
         if (!points.length) {
             el.chartEmpty.hidden = false;
@@ -456,7 +459,7 @@
             }));
             el.chartLayer.appendChild(svgNode("text", {
                 x: pad.left - 8,
-                y: lineY + 4,
+                y: lineY + 3,
                 "class": "chart-label",
                 "text-anchor": "end"
             }, String(value)));
@@ -484,31 +487,25 @@
             }).join(" ") +
             " L" + x(last.t).toFixed(1) + "," + baseY.toFixed(1) + " Z";
 
-        el.chartLayer.appendChild(svgNode("path", {
-            d: areaPath,
-            "class": "chart-area"
-        }));
-        el.chartLayer.appendChild(svgNode("path", {
-            d: linePath,
-            "class": "chart-line"
-        }));
+        el.chartLayer.appendChild(svgNode("path", { d: areaPath, "class": "chart-area" }));
+        el.chartLayer.appendChild(svgNode("path", { d: linePath, "class": "chart-line" }));
         el.chartLayer.appendChild(svgNode("circle", {
             cx: x(last.t),
             cy: y(last.soc),
-            r: 4,
+            r: 3.5,
             "class": "chart-dot"
         }));
 
         var spanSeconds = last.t - first.t;
         el.chartLayer.appendChild(svgNode("text", {
             x: pad.left,
-            y: height - 8,
+            y: height - 6,
             "class": "chart-label",
             "text-anchor": "start"
         }, formatTimeShort(first.t, spanSeconds)));
         el.chartLayer.appendChild(svgNode("text", {
             x: width - pad.right,
-            y: height - 8,
+            y: height - 6,
             "class": "chart-label",
             "text-anchor": "end"
         }, formatTimeShort(last.t, spanSeconds)));
@@ -524,7 +521,7 @@
     }
 
     /* ----------------------------------------------------------------------
-       Data loading and states
+       Loading and connection states
        ---------------------------------------------------------------------- */
 
     function validatePayload(data) {
@@ -597,9 +594,9 @@
                     showNotice(
                         "empty",
                         "Waiting for the first measurement",
-                        "The dashboard reads status.json, which the monitor writes " +
-                        "after its first successful inverter read. This can take up " +
-                        "to two minutes after installation.",
+                        "The dashboard reads status.json, which the monitor writes after " +
+                        "its first successful inverter read. This can take up to two " +
+                        "minutes after installation.",
                         true
                     );
                 } else {
@@ -608,8 +605,8 @@
                         "error",
                         "Cannot read status.json",
                         "The dashboard could not load its data (" + error.message +
-                        "). Check that the monitor has run and that lighttpd serves " +
-                        "the add-on directory.",
+                        "). Check that the monitor has run and that lighttpd serves the " +
+                        "add-on directory.",
                         true
                     );
                 }
@@ -627,10 +624,7 @@
             94, 93, 91, 89, 88, 87, 86, 85, 84, 83, 82, 81
         ];
         var history = values.map(function (soc, index) {
-            return {
-                t: now - (values.length - 1 - index) * 600,
-                soc: soc
-            };
+            return { t: now - (values.length - 1 - index) * 600, soc: soc };
         });
 
         return {
@@ -648,10 +642,7 @@
             signal_state: "reset",
             signal_notifications: false,
             thresholds: { trigger: 95, reset: 90 },
-            variables: {
-                soc: "SV_Batterie_SoC",
-                signal: "SV_Batterie_95_Signal"
-            },
+            variables: { soc: "SV_Batterie_SoC", signal: "SV_Batterie_95_Signal" },
             ccu_status: "ok",
             history: history
         };
@@ -664,8 +655,8 @@
         showNotice(
             "warning",
             "Demo data",
-            "status.json is not reachable. These values are generated for preview " +
-            "only; open the dashboard through the CCU3 to see live measurements.",
+            "status.json is not reachable. These values are generated for preview only; " +
+            "open the dashboard through the CCU3 to see live measurements.",
             false
         );
     }
@@ -736,20 +727,19 @@
     function fillSettingsForm(data) {
         el.triggerSoc.value = String(data.trigger_soc);
         el.resetSoc.value = String(data.reset_soc);
+        el.triggerRange.value = String(data.trigger_soc);
+        el.resetRange.value = String(data.reset_soc);
+
         el.signalEnabled.checked = data.signal_enabled === true;
         el.signalPhone.value = data.signal_phone || "";
         el.signalApikey.value = "";
-        el.signalApikey.placeholder = data.signal_apikey_set
-            ? "Stored · keep"
-            : "Required";
+        el.signalApikey.placeholder = data.signal_apikey_set ? "Stored · keep" : "Required";
         el.apikeyHint.hidden = !data.signal_apikey_set;
 
         el.smaIp.value = data.sma_ip || "";
         el.smaPort.value = String(data.sma_port || 443);
         el.smaPassword.value = "";
-        el.smaPassword.placeholder = data.sma_password_set
-            ? "Stored · keep"
-            : "Required";
+        el.smaPassword.placeholder = data.sma_password_set ? "Stored · keep" : "Required";
         el.smaPasswordHint.hidden = !data.sma_password_set;
     }
 
@@ -872,7 +862,7 @@
 
         var invalid = validateSettings();
         if (invalid) {
-            var field = document.getElementById(invalid.field);
+            var field = $(invalid.field);
             if (field) {
                 field.focus();
             }
@@ -1034,8 +1024,105 @@
     }
 
     /* ----------------------------------------------------------------------
-       Startup
+       Pull to refresh (mobile)
        ---------------------------------------------------------------------- */
+
+    function setPull(distance) {
+        pullDistance = distance;
+        el.mainContent.style.transition = "none";
+        el.mainContent.style.transform = "translate3d(0," + distance.toFixed(1) + "px,0)";
+        el.pull.dataset.active = distance > 4 ? "true" : "false";
+        el.pull.dataset.ready = distance >= 52 ? "true" : "false";
+        el.pullLabel.textContent = distance >= 52 ? "Release to refresh" : "Pull to refresh";
+    }
+
+    function resetPull() {
+        pullDistance = 0;
+        pullActive = false;
+        el.pull.dataset.active = "false";
+        el.pull.dataset.ready = "false";
+        el.mainContent.style.transition = "transform 220ms cubic-bezier(0.2, 0.7, 0.2, 1)";
+        el.mainContent.style.transform = "";
+        setTimeout(function () {
+            el.mainContent.style.transition = "";
+        }, 240);
+    }
+
+    el.main.addEventListener("touchstart", function (event) {
+        if (settingsOpen || event.touches.length !== 1 || el.main.scrollTop > 0) {
+            return;
+        }
+        pullStart = event.touches[0].clientY;
+        pullDistance = 0;
+    }, { passive: true });
+
+    el.main.addEventListener("touchmove", function (event) {
+        if (pullStart === null) {
+            return;
+        }
+        var dy = event.touches[0].clientY - pullStart;
+        if (dy <= 0 || el.main.scrollTop > 0) {
+            if (pullDistance) {
+                resetPull();
+            }
+            pullStart = null;
+            return;
+        }
+        if (dy < 6) {
+            return;
+        }
+        if (event.cancelable) {
+            event.preventDefault();
+        }
+        pullActive = true;
+        setPull(Math.min(84, (dy - 6) * 0.45));
+    }, { passive: false });
+
+    el.main.addEventListener("touchend", function () {
+        if (pullStart === null) {
+            return;
+        }
+        pullStart = null;
+        if (pullActive && pullDistance >= 52) {
+            el.pullLabel.textContent = "Refreshing";
+            el.pull.dataset.ready = "true";
+            resetPull();
+            clearTimeout(pollTimer);
+            load();
+        } else {
+            resetPull();
+        }
+        pullActive = false;
+    });
+
+    el.main.addEventListener("touchcancel", function () {
+        pullStart = null;
+        resetPull();
+    });
+
+    /* ----------------------------------------------------------------------
+       Wiring
+       ---------------------------------------------------------------------- */
+
+    el.triggerSoc.addEventListener("input", function () {
+        if (el.triggerSoc.value !== "") {
+            el.triggerRange.value = el.triggerSoc.value;
+        }
+    });
+
+    el.triggerRange.addEventListener("input", function () {
+        el.triggerSoc.value = el.triggerRange.value;
+    });
+
+    el.resetSoc.addEventListener("input", function () {
+        if (el.resetSoc.value !== "") {
+            el.resetRange.value = el.resetSoc.value;
+        }
+    });
+
+    el.resetRange.addEventListener("input", function () {
+        el.resetSoc.value = el.resetRange.value;
+    });
 
     el.retry.addEventListener("click", function () {
         clearTimeout(pollTimer);
@@ -1054,13 +1141,13 @@
         }
         setSettingsBusy(true);
         saveSettings(false).then(function (data) {
-            setSettingsBusy(false);
-            showToast("success", "Configuration saved.");
-            // A save that leaves Signal enabled is verified right away, so the
-            // user learns about a wrong phone/UUID or API key immediately
-            // instead of waiting for the battery to reach the trigger level.
             if (data.signal_enabled === true) {
+                // A save that leaves Signal enabled is verified right away, so
+                // a wrong phone/UUID or API key surfaces immediately instead
+                // of waiting for the battery to reach the trigger level.
                 verifySignalAfterSave();
+            } else {
+                showToast("success", "Configuration saved.");
             }
         }).catch(function (error) {
             showSettingsStatus("error", error.message);

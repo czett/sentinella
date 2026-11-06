@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="color-scheme" content="dark">
-    <meta name="theme-color" content="#0a0e0c">
+    <meta name="theme-color" content="#09090b">
     <meta name="description" content="Battery state of charge from an SMA inverter, published by the homematic-sma-battery-monitor add-on for the Homematic CCU3.">
     <title>Battery monitor · SMA / CCU3</title>
     <link rel="stylesheet" href="./style.css">
@@ -12,170 +12,186 @@
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
 
-<div class="shell">
-    <header class="topbar">
+<div class="app">
+    <header class="bar">
         <div class="brand">
-            <svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <rect x="2.5" y="7" width="16" height="10" rx="2"></rect>
-                <path d="M21.5 10.5v3"></path>
-                <path d="M6.5 10.5v3M10 10.5v3M13.5 10.5v3"></path>
-            </svg>
-            <div>
-                <p class="brand-name">Battery monitor</p>
-                <p class="brand-sub">SMA Sunny Tripower on Homematic CCU3</p>
-            </div>
+            <span class="brand-mark" aria-hidden="true">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square">
+                    <rect x="1.75" y="5.75" width="13.5" height="8.5"></rect>
+                    <path d="M17.25 8.5v3M5 8.75v2.5M8 8.75v2.5M11 8.75v2.5"></path>
+                </svg>
+            </span>
+            <span class="brand-name">SMA<span class="brand-slash">/</span>CCU3</span>
+            <span class="brand-sub">Battery monitor</span>
         </div>
 
-        <div class="connection-wrap">
-            <div class="connection" id="connection" data-state="loading">
+        <div class="bar-right">
+            <div class="live" id="connection" data-state="loading">
+                <span class="live-dot" aria-hidden="true"></span>
                 <span id="connection-text" role="status">Connecting</span>
+                <span class="live-sep" aria-hidden="true">•</span>
+                <time id="last-update" datetime="">not yet</time>
             </div>
-            <time id="last-update" datetime="">not yet</time>
             <button class="icon-button" id="settings-open" type="button"
                     aria-label="Open settings" aria-haspopup="dialog"
                     aria-expanded="false" aria-controls="settings-drawer">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
-                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <circle cx="12" cy="12" r="3"></circle>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"
+                     stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true">
+                    <circle cx="12" cy="12" r="3.1"></circle>
                     <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9v.09A1.7 1.7 0 0 0 20.96 10H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15z"></path>
                 </svg>
             </button>
         </div>
     </header>
 
-    <main id="main">
-        <div class="notice" id="notice" role="status" hidden>
-            <div class="notice-copy">
-                <strong id="notice-title"></strong>
-                <p id="notice-text"></p>
-            </div>
-            <button class="button" id="retry" type="button" hidden>Retry now</button>
+    <main id="main" class="main" tabindex="-1">
+        <div class="pull-indicator" id="pull" aria-hidden="true">
+            <span class="pull-bar"></span>
+            <span id="pull-label">Pull to refresh</span>
         </div>
 
-        <section class="instrument panel" aria-labelledby="instrument-title">
-            <div class="gauge-column">
-                <div class="section-head">
-                    <h1 id="instrument-title">Battery state</h1>
-                    <p id="soc-caption">Waiting for the first measurement.</p>
+        <div class="main-content" id="main-content">
+            <div class="notice" id="notice" role="status" hidden>
+                <div class="notice-copy">
+                    <strong id="notice-title"></strong>
+                    <p id="notice-text"></p>
+                </div>
+                <button class="button" id="retry" type="button" hidden>Retry now</button>
+            </div>
+
+            <section class="hero" aria-labelledby="instrument-title">
+                <div class="hero-lead">
+                    <div class="hero-meta">
+                        <h1 class="eyebrow" id="instrument-title">State of charge</h1>
+                        <span class="index" aria-hidden="true">01 — 03</span>
+                    </div>
+
+                    <div class="soc" id="gauge" role="img" aria-label="Battery state of charge unknown">
+                        <span class="soc-value" id="soc-value">--</span>
+                        <span class="soc-unit" aria-hidden="true">%</span>
+                    </div>
+
+                    <div class="hero-foot">
+                        <span class="state-tag" id="soc-state" data-charge="unknown">Unknown</span>
+                        <p id="soc-caption">Waiting for the first measurement.</p>
+                    </div>
                 </div>
 
-                <div class="gauge" id="gauge" role="img" aria-label="Battery state of charge unknown">
-                    <svg viewBox="0 0 240 240" aria-hidden="true">
-                        <defs>
-                            <linearGradient id="gauge-gradient" x1="0" y1="0" x2="1" y2="1">
-                                <stop offset="0%" class="gauge-stop-start"></stop>
-                                <stop offset="100%" class="gauge-stop-end"></stop>
-                            </linearGradient>
-                        </defs>
-                        <circle class="gauge-track" cx="120" cy="120" r="100"></circle>
-                        <circle class="gauge-progress" id="gauge-progress" cx="120" cy="120" r="100"></circle>
-                    </svg>
-                    <div class="gauge-readout">
-                        <div class="gauge-number">
-                            <span class="gauge-value" id="soc-value">--</span><span class="gauge-unit">%</span>
+                <div class="hero-side">
+                    <div class="signal-head">
+                        <div>
+                            <span class="eyebrow">Hysteresis signal</span>
+                            <p class="signal-value" id="signal-chip" data-tone="unknown">Unknown</p>
                         </div>
-                        <span class="gauge-label" id="soc-state">unknown</span>
+                        <p class="signal-copy" id="signal-copy">The signal is written to the CCU3 system variable on every run. Between the thresholds the previous state is held.</p>
                     </div>
-                </div>
-            </div>
 
-            <div class="detail-column">
-                <div class="detail-top">
-                    <h2>95 % signal</h2>
-                    <span class="chip" id="signal-chip" data-tone="unknown">Unknown</span>
-                </div>
-                <p class="detail-copy" id="signal-copy">The signal is written to the CCU3 system variable on every run. Between the thresholds the previous state is held.</p>
+                    <div class="rail-group">
+                        <div class="rail" id="rail" role="img" aria-label="State of charge, reset and trigger thresholds">
+                            <div class="rail-axis">
+                                <div class="rail-track"></div>
+                                <div class="rail-band"></div>
+                                <div class="rail-threshold rail-threshold-reset" id="rail-reset"></div>
+                                <div class="rail-threshold rail-threshold-trigger" id="rail-trigger"></div>
+                                <div class="rail-marker" id="rail-marker">
+                                    <span class="rail-marker-label" id="rail-marker-label">--</span>
+                                </div>
+                            </div>
+                            <div class="rail-scale" aria-hidden="true">
+                                <span class="rail-tick rail-tick-0">0</span>
+                                <span class="rail-tick rail-tick-25">25</span>
+                                <span class="rail-tick rail-tick-50">50</span>
+                                <span class="rail-tick rail-tick-75">75</span>
+                                <span class="rail-tick rail-tick-100">100</span>
+                            </div>
+                        </div>
 
-                <div class="rail" id="rail" role="img" aria-label="State of charge, reset and trigger thresholds">
-                    <div class="rail-track"></div>
-                    <div class="rail-band"></div>
-                    <div class="rail-threshold rail-threshold-reset" id="rail-reset"></div>
-                    <div class="rail-threshold rail-threshold-trigger" id="rail-trigger"></div>
-                    <div class="rail-marker" id="rail-marker">
-                        <span class="rail-marker-label" id="rail-marker-label">--</span>
+                        <div class="rail-legend">
+                            <span><span class="rail-key rail-key-reset" aria-hidden="true"></span>Reset <b id="rail-reset-value">--</b></span>
+                            <span><span class="rail-key rail-key-trigger" aria-hidden="true"></span>Trigger <b id="rail-trigger-value">--</b></span>
+                            <span class="rail-legend-note">% SoC</span>
+                        </div>
                     </div>
-                    <div class="rail-tick rail-tick-0"><span>0</span></div>
-                    <div class="rail-tick rail-tick-50"><span>50</span></div>
-                    <div class="rail-tick rail-tick-100"><span>100</span></div>
-                </div>
-
-                <div class="rail-legend">
-                    <span class="rail-legend-item"><span class="rail-key rail-key-reset"></span>Reset at <b id="rail-reset-value">--</b> %</span>
-                    <span class="rail-legend-item"><span class="rail-key rail-key-trigger"></span>Trigger at <b id="rail-trigger-value">--</b> %</span>
-                </div>
-
-                <dl class="stats">
-                    <div class="stat">
-                        <dt>Charging state</dt>
-                        <dd id="charge-state">not available</dd>
-                    </div>
-                    <div class="stat">
-                        <dt>Battery power</dt>
-                        <dd id="power-state">not available</dd>
-                    </div>
-                    <div class="stat">
-                        <dt>CCU write</dt>
-                        <dd id="ccu-state">not available</dd>
-                    </div>
-                </dl>
-            </div>
-        </section>
-
-        <div class="lower">
-            <section class="panel history" aria-labelledby="history-title">
-                <div class="section-head section-head-row">
-                    <div>
-                        <h2 id="history-title">State of charge history</h2>
-                        <p>One sample per monitor run. The dashed lines mark the hysteresis thresholds.</p>
-                    </div>
-                    <span class="chip" id="history-count" data-tone="unknown">no samples</span>
-                </div>
-
-                <div class="chart-wrap">
-                    <svg id="chart" class="chart" viewBox="0 0 760 240" role="img" aria-label="No state of charge history yet">
-                        <defs>
-                            <linearGradient id="history-fill" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" class="fill-top"></stop>
-                                <stop offset="100%" class="fill-bottom"></stop>
-                            </linearGradient>
-                        </defs>
-                        <g id="chart-layer"></g>
-                    </svg>
-                    <p class="chart-empty" id="chart-empty">No history yet.</p>
-                </div>
-
-                <div class="chart-legend">
-                    <span class="legend-item"><span class="legend-swatch legend-swatch-soc"></span>State of charge</span>
-                    <span class="legend-item"><span class="legend-swatch legend-swatch-threshold"></span>Thresholds</span>
-                    <span class="legend-time" id="chart-range">no data</span>
                 </div>
             </section>
 
-            <section class="panel meta" aria-labelledby="meta-title">
-                <div class="section-head">
-                    <h2 id="meta-title">Connection</h2>
-                    <p>Values reported by the last completed run.</p>
+            <section class="metrics" aria-label="Current telemetry">
+                <div class="metric">
+                    <span class="metric-label">Charging state</span>
+                    <span class="metric-value" id="charge-state">—</span>
                 </div>
-
-                <dl class="meta-list">
-                    <div class="meta-row"><dt>Inverter</dt><dd id="meta-host">not available</dd></div>
-                    <div class="meta-row"><dt>SoC variable</dt><dd id="meta-soc-var">not available</dd></div>
-                    <div class="meta-row"><dt>Signal variable</dt><dd id="meta-signal-var">not available</dd></div>
-                    <div class="meta-row"><dt>Notifications</dt><dd id="meta-notify">not available</dd></div>
-                    <div class="meta-row"><dt>Last run</dt><dd id="meta-last">not available</dd></div>
-                </dl>
+                <div class="metric">
+                    <span class="metric-label">Battery power</span>
+                    <span class="metric-value" id="power-state">—</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">CCU write</span>
+                    <span class="metric-value" id="ccu-state">—</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Last sample</span>
+                    <span class="metric-value" id="metric-last">—</span>
+                </div>
             </section>
+
+            <div class="lower">
+                <section class="history" aria-labelledby="history-title">
+                    <div class="section-head">
+                        <div>
+                            <div class="section-title-row">
+                                <h2 id="history-title">History</h2>
+                                <span class="index" aria-hidden="true">02</span>
+                            </div>
+                            <p>One sample per monitor run. Dashed rules mark the hysteresis thresholds.</p>
+                        </div>
+                        <span class="chip" id="history-count" data-tone="unknown">no samples</span>
+                    </div>
+
+                    <div class="chart-wrap">
+                        <svg id="chart" class="chart" viewBox="0 0 760 220" role="img" aria-label="No state of charge history yet">
+                            <g id="chart-layer"></g>
+                        </svg>
+                        <p class="chart-empty" id="chart-empty">No history yet.</p>
+                    </div>
+
+                    <div class="chart-legend">
+                        <span class="legend-item"><span class="legend-swatch legend-swatch-soc" aria-hidden="true"></span>State of charge</span>
+                        <span class="legend-item"><span class="legend-swatch legend-swatch-threshold" aria-hidden="true"></span>Thresholds</span>
+                        <span class="chart-range" id="chart-range">no data</span>
+                    </div>
+                </section>
+
+                <section class="meta" aria-labelledby="meta-title">
+                    <div class="section-head">
+                        <div>
+                            <div class="section-title-row">
+                                <h2 id="meta-title">Connection</h2>
+                                <span class="index" aria-hidden="true">03</span>
+                            </div>
+                            <p>Values reported by the last completed run.</p>
+                        </div>
+                    </div>
+
+                    <dl class="meta-list">
+                        <div class="meta-row"><dt>Inverter</dt><dd id="meta-host">—</dd></div>
+                        <div class="meta-row"><dt>SoC variable</dt><dd id="meta-soc-var">—</dd></div>
+                        <div class="meta-row"><dt>Signal variable</dt><dd id="meta-signal-var">—</dd></div>
+                        <div class="meta-row"><dt>Notifications</dt><dd id="meta-notify">—</dd></div>
+                        <div class="meta-row"><dt>Last run</dt><dd id="meta-last">—</dd></div>
+                    </dl>
+                </section>
+            </div>
+
+            <footer class="footer">
+                <span>homematic-sma-battery-monitor</span>
+                <span>MIT · local</span>
+            </footer>
         </div>
     </main>
-
-    <footer class="footer">
-        <p>homematic-sma-battery-monitor</p>
-        <p>MIT licensed. Runs locally on your CCU3.</p>
-    </footer>
 </div>
 
 <noscript>
-    <div class="noscript">This dashboard needs JavaScript to read <code>status.json</code> and draw the gauge.</div>
+    <div class="noscript">This dashboard needs JavaScript to read <code>status.json</code> and draw the history.</div>
 </noscript>
 
 <div class="drawer-layer" id="settings-layer" hidden>
@@ -189,8 +205,8 @@
                 <h2 id="settings-title">Settings</h2>
             </div>
             <button class="icon-button" id="settings-close" type="button" aria-label="Close settings">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
-                     stroke-linecap="round" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"
+                     stroke-linecap="square" aria-hidden="true">
                     <path d="M6 6l12 12M18 6L6 18"></path>
                 </svg>
             </button>
@@ -200,44 +216,52 @@
 
         <form class="settings-form" id="settings-form" novalidate>
             <fieldset class="field-group">
-                <legend>Battery thresholds</legend>
-                <p class="field-note">The signal turns on at the trigger level and off again at the reset level. The reset level must stay below the trigger level.</p>
+                <legend><span class="group-index">01</span>Battery thresholds</legend>
+                <p class="field-note">The signal turns on at the trigger level and off again at the reset level. Reset must stay below trigger.</p>
 
                 <div class="field-row">
                     <label class="field" for="trigger-soc">
                         <span class="field-label">Trigger level</span>
                         <span class="input-suffix">
                             <input class="input" id="trigger-soc" name="trigger_soc" type="number"
-                                   inputmode="numeric" min="0" max="100" step="1" required>
+                                   inputmode="numeric" min="0" max="100" step="1" required
+                                   aria-label="Trigger level">
                             <span class="suffix" aria-hidden="true">%</span>
                         </span>
+                        <input class="range" id="trigger-range" type="range" min="0" max="100" step="1"
+                               aria-label="Trigger level slider">
                     </label>
                     <label class="field" for="reset-soc">
                         <span class="field-label">Reset level</span>
                         <span class="input-suffix">
                             <input class="input" id="reset-soc" name="reset_soc" type="number"
-                                   inputmode="numeric" min="0" max="100" step="1" required>
+                                   inputmode="numeric" min="0" max="100" step="1" required
+                                   aria-label="Reset level">
                             <span class="suffix" aria-hidden="true">%</span>
                         </span>
+                        <input class="range" id="reset-range" type="range" min="0" max="100" step="1"
+                               aria-label="Reset level slider">
                     </label>
                 </div>
             </fieldset>
 
             <fieldset class="field-group">
-                <legend>Signal alerts</legend>
+                <legend><span class="group-index">02</span>Signal alerts</legend>
 
                 <label class="switch-row" for="signal-enabled">
                     <span>
                         <span class="field-label">Send notifications</span>
                         <span class="field-note">Calls the CallMeBot Signal gateway when the signal changes.</span>
                     </span>
-                    <input class="switch" id="signal-enabled" name="signal_enabled" type="checkbox" role="switch">
+                    <input class="switch" id="signal-enabled" name="signal_enabled" type="checkbox" role="switch"
+                           aria-label="Send Signal notifications">
                 </label>
 
                 <label class="field" for="signal-phone">
                     <span class="field-label">Phone / UUID</span>
                     <input class="input" id="signal-phone" name="signal_phone" type="text"
                            inputmode="tel" autocomplete="off" spellcheck="false"
+                           aria-label="Phone number or Signal UUID"
                            placeholder="+491701234567">
                 </label>
 
@@ -245,30 +269,34 @@
                     <span class="field-label">CallMeBot API key</span>
                     <input class="input" id="signal-apikey" name="signal_apikey" type="password"
                            autocomplete="new-password" spellcheck="false"
+                           aria-label="CallMeBot API key"
                            placeholder="Required">
                 </label>
                 <p class="field-hint" id="apikey-hint" hidden>An API key is stored. Leave the field empty to keep it.</p>
             </fieldset>
 
             <fieldset class="field-group">
-                <legend>Inverter</legend>
+                <legend><span class="group-index">03</span>Inverter</legend>
 
                 <label class="field" for="sma-ip">
                     <span class="field-label">SMA IP address</span>
                     <input class="input" id="sma-ip" name="sma_ip" type="text"
-                           autocomplete="off" spellcheck="false" placeholder="192.168.178.123">
+                           autocomplete="off" spellcheck="false"
+                           aria-label="SMA inverter IP address or hostname" placeholder="192.168.178.123">
                 </label>
 
                 <div class="field-row">
                     <label class="field" for="sma-port">
                         <span class="field-label">HTTPS port</span>
                         <input class="input" id="sma-port" name="sma_port" type="number"
-                               inputmode="numeric" min="1" max="65535" step="1">
+                               inputmode="numeric" min="1" max="65535" step="1"
+                               aria-label="Inverter HTTPS port">
                     </label>
                     <label class="field" for="sma-password">
                         <span class="field-label">Inverter password</span>
                         <input class="input" id="sma-password" name="sma_password" type="password"
-                               autocomplete="new-password" placeholder="Unchanged">
+                               autocomplete="new-password" placeholder="Unchanged"
+                               aria-label="Inverter password">
                     </label>
                 </div>
                 <p class="field-hint" id="sma-password-hint" hidden>A password is stored. Leave the field empty to keep it.</p>
@@ -276,10 +304,10 @@
 
             <div class="drawer-actions">
                 <button class="button button-test" id="settings-test" type="button">Test notification</button>
-                <button class="button button-primary" id="settings-save" type="submit">Save configuration</button>
+                <button class="button button-primary" id="settings-save" type="submit">Save settings</button>
             </div>
 
-            <p class="drawer-footnote">Values are written to <code>.env</code> on the CCU. The next monitor run, at most two minutes away, applies them.</p>
+            <p class="drawer-footnote">Values are written to <code>.env</code> on the CCU. The next monitor run applies them, at most two minutes away.</p>
         </form>
     </aside>
 </div>

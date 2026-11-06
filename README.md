@@ -21,7 +21,7 @@ The project is deliberately small: POSIX `/bin/sh`, BusyBox `ash`, `curl`, `sed`
 | Session safety | `EXIT`, `INT`, `TERM` and `HUP` traps always call `logout.json` |
 | Concurrency | PID lock directory with stale-lock recovery |
 | Notifications | optional detached CallMeBot Signal hook, never blocks cron |
-| Dashboard | vanilla HTML/CSS/JS, circular gauge, hysteresis rail, history chart |
+| Dashboard | vanilla HTML/CSS/JS, oversized SoC display, hysteresis rail, history chart |
 | Web settings | thresholds, Signal phone/UUID, API key and inverter credentials editable in the browser |
 | Deployment | `deploy.sh` over SSH, idempotent cron and system-variable setup |
 
@@ -83,7 +83,7 @@ flowchart LR
 ├── web/
 │   ├── index.html            dashboard markup and settings drawer
 │   ├── style.css             dark, responsive, no external assets
-│   ├── app.js                gauge, chart and settings client
+│   ├── app.js                dashboard, chart and settings client
 │   ├── api/
 │   │   ├── config.cgi        settings API (GET/POST config)
 │   │   └── test_signal.cgi   background test-notification endpoint
@@ -366,12 +366,13 @@ Fault behaviour is intentionally conservative:
 
 The dashboard is a static single-page app. It reads `status.json` with `fetch()` every 30 seconds and renders:
 
-- a circular SoC gauge,
-- a hysteresis rail with the current SoC marker and the two thresholds,
+- an oversized numeric state-of-charge display with the charging state,
+- a hairline hysteresis rail with the current SoC marker and the two thresholds,
 - charging state and optional battery power,
 - the signal state and CCU write result,
 - a history chart from the samples kept by the monitor,
-- connection metadata and a clear demo/live/stale indicator.
+- connection metadata and a clear demo/live/stale indicator,
+- mobile pull-to-refresh and a live age indicator.
 
 `status.json` is written atomically and contains no secrets:
 
