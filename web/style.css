@@ -20,6 +20,8 @@
     --blue-bright: #1a44e8;
     --blue-text: #183adb;
     --red: #e1261c;
+    --green: #15803d;
+    --green-surface: rgb(21 128 61 / 0.08);
     --accent-contrast: #ffffff;
     --chart-line: #183adb;
     --chart-grid: rgb(10 10 12 / 0.14);
@@ -53,6 +55,8 @@ html[data-theme="dark"] {
 
     --accent-contrast: #ffffff;
     --blue-text: #7c90ff;
+    --green: #4ade80;
+    --green-surface: rgb(74 222 128 / 0.1);
     --chart-line: #4f6cff;
     --chart-grid: rgb(244 244 245 / 0.16);
     --backdrop: rgb(0 0 0 / 0.68);
@@ -1111,16 +1115,56 @@ body[data-state="loading"] .rail-marker {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
+    gap: 12px 24px;
     flex-wrap: wrap;
     margin-top: auto;
-    padding: 18px var(--pad) calc(22px + env(safe-area-inset-bottom));
+    padding: 10px var(--pad) calc(14px + env(safe-area-inset-bottom));
     background: var(--paper);
     color: var(--ink-secondary);
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+}
+
+.footer-right {
+    display: flex;
+    align-items: center;
+    gap: 10px 20px;
+    flex-wrap: wrap;
+}
+
+.footer-github {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0 6px;
+    margin: 0 -6px;
+    color: var(--ink-faint);
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: none;
+    text-decoration: none;
+    transition: color 120ms ease;
+}
+
+html[data-theme="dark"] .footer-github {
+    color: var(--ink-muted);
+}
+
+.footer-github:hover,
+.footer-github:focus-visible {
+    color: var(--ink);
+}
+
+.footer-github svg {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
 }
 
 /* --------------------------------------------------------------------------
@@ -1533,6 +1577,106 @@ body.drawer-open {
 .switch:checked::after {
     background: var(--accent-contrast);
     transform: translateX(24px);
+}
+
+.quick-setup {
+    margin-top: 16px;
+    border: var(--rule);
+    background: var(--paper);
+}
+
+.quick-setup-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 44px;
+    padding: 10px 14px;
+    color: var(--ink);
+    font-size: 11.5px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+}
+
+.quick-setup-summary::-webkit-details-marker {
+    display: none;
+}
+
+.quick-setup-summary:hover {
+    background: var(--white);
+}
+
+.quick-setup-chevron {
+    flex: 0 0 auto;
+    font-family: var(--font-mono);
+    font-size: 15px;
+    font-weight: 800;
+    line-height: 1;
+    transition: transform 150ms var(--ease);
+}
+
+.quick-setup[open] .quick-setup-chevron {
+    transform: rotate(45deg);
+}
+
+.quick-setup-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px 14px;
+    border-top: var(--rule-hairline);
+    background: var(--white);
+}
+
+.quick-setup-textarea {
+    min-height: 82px;
+    padding: 10px 12px;
+    resize: vertical;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    font-weight: 600;
+    line-height: 1.45;
+}
+
+.quick-setup-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.quick-setup-button {
+    min-height: 42px;
+    padding: 0 14px;
+    font-size: 11.5px;
+}
+
+.quick-setup-status {
+    flex: 1 1 200px;
+    margin: 0;
+    padding: 7px 10px;
+    border-left: 4px solid var(--green);
+    background: var(--green-surface);
+    color: var(--green);
+    font-size: 11.5px;
+    font-weight: 700;
+    line-height: 1.35;
+}
+
+.quick-setup-status[data-tone="error"] {
+    border-left-color: var(--red);
+    background: transparent;
+    color: var(--red);
+}
+
+.input-extracted {
+    border-color: var(--green) !important;
+    box-shadow: inset 0 0 0 1.5px var(--green) !important;
 }
 
 .drawer-actions {

@@ -41,16 +41,13 @@
 
     var THEME_KEY = "sentinella_theme";
     var currentTheme = "light";
-    var themeMedia = window.matchMedia
-        ? window.matchMedia("(prefers-color-scheme: dark)")
-        : null;
 
     var I18N = {
         en: {
-            pageTitle: "Sentinella — SMA / CCU3 Battery Monitor",
+            pageTitle: "Sentinella — SMA Battery Monitor for CCU3",
             skipToContent: "Skip to content",
             retryNow: "Retry now",
-            brandSub: "Battery Monitor & Hysteresis Sentinel",
+            brandSub: "SMA Battery Monitor for CCU3",
             languageLabel: "Language",
             themeLabel: "Color theme",
             lightTheme: "Light theme",
@@ -61,9 +58,9 @@
             closeSettings: "Close settings",
             stateOfCharge: "State of charge",
             waitingFirstMeasurement: "Waiting for the first measurement.",
-            hysteresisSignal: "Hysteresis signal",
-            signalCopyDefault: "The signal is written to the CCU3 system variable on every run. Between the thresholds the previous state is held.",
-            thresholdCorridor: "Threshold corridor (0—100 %)",
+            hysteresisSignal: "Excess Signal",
+            signalCopyDefault: "Turns on at the trigger threshold and off below the reset threshold.",
+            thresholdCorridor: "Thresholds",
             reset: "Reset",
             trigger: "Trigger",
             chargingState: "Charging state",
@@ -71,23 +68,22 @@
             ccuWrite: "CCU write",
             lastSample: "Last sample",
             historyTitle: "State of charge history",
-            historyDescription: "One sample per monitor run. Dashed rules mark reset and trigger thresholds.",
+            historyDescription: "One sample per monitor run. Dashed lines mark the thresholds.",
             noSamples: "No samples",
             noHistory: "No history recorded yet.",
-            legendSoc: "SoC trajectory",
-            legendBounds: "Hysteresis bounds",
+            legendSoc: "SoC",
+            legendBounds: "Thresholds",
             noData: "No data",
             systemRegister: "System register",
-            systemRegisterDescription: "Parameters reported by the latest completed run.",
+            systemRegisterDescription: "Values from the latest run.",
             inverterHost: "Inverter host",
             socVariable: "SoC variable",
             signalVariable: "Signal variable",
             signalGateway: "Signal gateway",
             timestamp: "Timestamp",
-            footerTagline: "BATTERY MONITOR & HYSTERESIS SENTINEL · LOCAL",
             systemConfiguration: "System configuration",
-            batteryThresholds: "Battery thresholds",
-            thresholdsNote: "The signal turns on at the trigger level and off again at the reset level. Reset must stay below trigger.",
+            batteryThresholds: "Thresholds",
+            thresholdsNote: "The signal turns on at the trigger level and off below the reset level. Reset must stay below trigger.",
             triggerLevel: "Trigger level",
             triggerSlider: "Trigger level slider",
             resetLevel: "Reset level",
@@ -97,7 +93,15 @@
             sendNotificationsNote: "Calls the CallMeBot Signal gateway when the signal changes.",
             phoneLabel: "Phone / UUID",
             phoneAria: "Phone number or Signal UUID",
+            phoneHint: "E.164 format (e.g. +49 171 1234567 or 0171 1234567). Auto-normalized on save.",
             apikeyLabel: "CallMeBot API key",
+            quickSetupLabel: "Quick Setup via CallMeBot Message",
+            quickSetupPlaceholder: "Paste the activation message here (e.g. 'The APIKey created for you is: 653590 ... phone=98526357-0cec...')",
+            quickSetupButton: "Extract & Apply",
+            quickSetupSuccessBoth: "Extracted UUID & API Key successfully",
+            quickSetupSuccessPhone: "Extracted Phone / UUID successfully",
+            quickSetupSuccessApikey: "Extracted API Key successfully",
+            quickSetupNotFound: "Could not find a CallMeBot Phone/UUID or API key in the pasted text.",
             required: "Required",
             storedKeepHint: "An API key is stored. Leave the field empty to keep it.",
             inverter: "Inverter",
@@ -110,7 +114,7 @@
             testNotification: "Test notification",
             saveSettings: "Save settings",
             footnotePrefix: "Values are written to",
-            footnoteSuffix: "on the CCU. The next monitor run applies them, at most two minutes away.",
+            footnoteSuffix: "on the CCU. The next monitor run applies them within two minutes.",
 
             charging: "Charging",
             discharging: "Discharging",
@@ -129,15 +133,15 @@
             ariaRail: "State of charge {soc} percent. Reset at {reset} percent, trigger at {trigger} percent.",
             ariaNoHistory: "No state of charge history yet",
             ariaHistory: "State of charge history, {count} samples, latest {soc} percent at {time}.",
-            captionActive: "At {soc}% the overflow signal is active. Resets at {reset}% or below.",
-            captionInactive: "At {soc}% the overflow signal is inactive. Triggers at {trigger}% or above.",
-            captionUnknown: "No definitive signal state yet. Between {reset}% and {trigger}% the previous state is held.",
-            signalCopyTriggered: "Triggered at {soc}%. Active until state of charge falls to {reset}% or below.",
-            signalCopyHeld: "Held active inside the hysteresis band. Resets at {reset}% or below.",
-            signalCopyActive: "Active. Resets at {reset}% or below.",
-            signalCopyReset: "Reset at {soc}%. Triggers again at {trigger}% or above.",
-            signalCopyInactive: "Inactive. Triggers at {trigger}% or above.",
-            signalCopyUnknown: "The boolean is held between {reset}% and {trigger}% when no previous state is known.",
+            captionActive: "Excess signal active at {soc}%. Turns off below {reset}%.",
+            captionInactive: "Excess signal inactive at {soc}%. Turns on at {trigger}%.",
+            captionUnknown: "No signal state yet. Previous state is kept between {reset}% and {trigger}%.",
+            signalCopyTriggered: "Active. Turns off below {reset}%.",
+            signalCopyHeld: "Active. Turns off below {reset}%.",
+            signalCopyActive: "Active. Turns off below {reset}%.",
+            signalCopyReset: "Inactive. Turns on at {trigger}%.",
+            signalCopyInactive: "Inactive. Turns on at {trigger}%.",
+            signalCopyUnknown: "Kept unchanged between {reset}% and {trigger}% until a threshold is crossed.",
             sampleOne: "1 sample",
             sampleMany: "{count} samples",
             enabled: "Enabled",
@@ -150,14 +154,14 @@
             lastStateTitle: "Showing last recorded state",
             lastStateText: "The latest request failed ({error}). Polling continues automatically.",
             waitingTitle: "Waiting for first measurement",
-            waitingText: "The dashboard reads status.json after the monitor completes its first inverter poll (up to two minutes after installation).",
+            waitingText: "The dashboard reads status.json after the first inverter poll (up to two minutes after installation).",
             statusErrorTitle: "Cannot read status.json",
-            statusErrorText: "The dashboard could not load telemetry ({error}). Verify that the monitor has run and lighttpd serves the add-on directory.",
+            statusErrorText: "Could not load status.json ({error}). Check that the cron job has run and lighttpd serves the add-on directory.",
             demoTitle: "Sentinella Preview Data",
-            demoText: "status.json is not reachable. Showing synthesized telemetry; open the dashboard via the CCU3 for live inverter measurements.",
+            demoText: "status.json is not reachable. Showing demo data; open the dashboard on the CCU3 for live inverter readings.",
 
             savingConfig: "Saving configuration…",
-            configSavedApply: "Configuration saved. The monitor applies it on its next run.",
+            configSavedApply: "Configuration saved. Applied on the next run.",
             configSaved: "Configuration saved.",
             loadingSettings: "Loading settings…",
             settingsUnavailable: "Settings are not available. Open the dashboard through the CCU3 and make sure CGI is enabled for the add-on directory.",
@@ -182,10 +186,10 @@
             portInvalid: "Inverter port must be a whole number between 1 and 65535."
         },
         de: {
-            pageTitle: "Sentinella — SMA / CCU3 Batteriemonitor",
+            pageTitle: "Sentinella — SMA Batteriestatus für CCU3",
             skipToContent: "Zum Inhalt springen",
             retryNow: "Jetzt erneut versuchen",
-            brandSub: "Batteriemonitor & Hysterese-Wächter",
+            brandSub: "SMA Batteriestatus für CCU3",
             languageLabel: "Sprache",
             themeLabel: "Farbschema",
             lightTheme: "Helles Design",
@@ -196,43 +200,50 @@
             closeSettings: "Einstellungen schließen",
             stateOfCharge: "Ladezustand",
             waitingFirstMeasurement: "Warte auf die erste Messung.",
-            hysteresisSignal: "Hysteresesignal",
-            signalCopyDefault: "Das Signal wird bei jedem Lauf in die CCU3-Systemvariable geschrieben. Zwischen den Schwellen bleibt der vorherige Zustand erhalten.",
-            thresholdCorridor: "Schwellenkorridor (0—100 %)",
-            reset: "Rücksetzen",
-            trigger: "Auslösen",
+            hysteresisSignal: "Überschuss-Signal",
+            signalCopyDefault: "Schaltet ab der Einschaltschwelle ein und unter der Ausschaltschwelle wieder ab.",
+            thresholdCorridor: "Schaltschwellen",
+            reset: "Aus",
+            trigger: "Ein",
             chargingState: "Ladeverhalten",
             batteryPower: "Batterieleistung",
             ccuWrite: "CCU-Schreibzugriff",
             lastSample: "Letzte Messung",
             historyTitle: "Verlauf des Ladezustands",
-            historyDescription: "Eine Messung pro Monitorlauf. Gestrichelte Linien markieren Rücksetz- und Auslöseschwelle.",
+            historyDescription: "Eine Messung pro Lauf. Gestrichelte Linien zeigen die Schaltschwellen.",
             noSamples: "Keine Messwerte",
             noHistory: "Noch kein Verlauf aufgezeichnet.",
-            legendSoc: "SoC-Verlauf",
-            legendBounds: "Hysteresegrenzen",
+            legendSoc: "SoC",
+            legendBounds: "Schaltschwellen",
             noData: "Keine Daten",
             systemRegister: "Systemregister",
-            systemRegisterDescription: "Parameter aus dem letzten abgeschlossenen Lauf.",
+            systemRegisterDescription: "Werte aus dem letzten abgeschlossenen Lauf.",
             inverterHost: "Wechselrichter",
             socVariable: "SoC-Variable",
             signalVariable: "Signalvariable",
             signalGateway: "Signal-Gateway",
             timestamp: "Zeitstempel",
-            footerTagline: "BATTERIEMONITOR & HYSTERESE-WÄCHTER · LOKAL",
             systemConfiguration: "Systemkonfiguration",
-            batteryThresholds: "Batterieschwellen",
-            thresholdsNote: "Das Signal schaltet bei der Auslöseschwelle ein und bei der Rücksetzschwelle wieder aus. Die Rücksetzschwelle muss unter der Auslöseschwelle liegen.",
-            triggerLevel: "Auslöseschwelle",
-            triggerSlider: "Schieberegler Auslöseschwelle",
-            resetLevel: "Rücksetzschwelle",
-            resetSlider: "Schieberegler Rücksetzschwelle",
+            batteryThresholds: "Schaltschwellen",
+            thresholdsNote: "Das Signal schaltet ab der Einschaltschwelle ein und unter der Ausschaltschwelle wieder ab. Die Ausschaltschwelle muss unter der Einschaltschwelle liegen.",
+            triggerLevel: "Einschaltschwelle",
+            triggerSlider: "Schieberegler Einschaltschwelle",
+            resetLevel: "Ausschaltschwelle",
+            resetSlider: "Schieberegler Ausschaltschwelle",
             signalAlerts: "Signalbenachrichtigungen",
             sendNotifications: "Benachrichtigungen senden",
-            sendNotificationsNote: "Ruft das CallMeBot-Signal-Gateway auf, wenn sich das Signal ändert.",
+            sendNotificationsNote: "Sendet eine Signal-Nachricht über CallMeBot, wenn das Signal umschaltet.",
             phoneLabel: "Telefon / UUID",
             phoneAria: "Telefonnummer oder Signal-UUID",
+            phoneHint: "E.164-Format (z. B. +49 171 1234567 oder 0171 1234567). Wird beim Speichern automatisch normalisiert.",
             apikeyLabel: "CallMeBot-API-Schlüssel",
+            quickSetupLabel: "Schnelleinrichtung via CallMeBot-Nachricht",
+            quickSetupPlaceholder: "Aktivierungsnachricht hier einfügen (z. B. 'The APIKey created for you is: 653590 ... phone=98526357-0cec...')",
+            quickSetupButton: "Extrahieren & Übernehmen",
+            quickSetupSuccessBoth: "UUID & API-Schlüssel erfolgreich extrahiert",
+            quickSetupSuccessPhone: "Telefon / UUID erfolgreich extrahiert",
+            quickSetupSuccessApikey: "API-Schlüssel erfolgreich extrahiert",
+            quickSetupNotFound: "Keine CallMeBot-Telefonnummer/UUID oder API-Schlüssel im eingefügten Text gefunden.",
             required: "Erforderlich",
             storedKeepHint: "Ein API-Schlüssel ist gespeichert. Feld leer lassen, um ihn zu behalten.",
             inverter: "Wechselrichter",
@@ -245,7 +256,7 @@
             testNotification: "Testbenachrichtigung",
             saveSettings: "Einstellungen speichern",
             footnotePrefix: "Werte werden in",
-            footnoteSuffix: "auf der CCU geschrieben. Der nächste Monitorlauf übernimmt sie, spätestens nach zwei Minuten.",
+            footnoteSuffix: "auf der CCU gespeichert und beim nächsten Lauf (innerhalb von zwei Minuten) übernommen.",
 
             charging: "Lädt",
             discharging: "Entlädt",
@@ -261,18 +272,18 @@
             ccuWritten: "Geschrieben",
             ccuWriteFailed: "Schreiben fehlgeschlagen",
             ariaSoc: "Batterieladezustand {soc} Prozent, {state}",
-            ariaRail: "Ladezustand {soc} Prozent. Rücksetzen bei {reset} Prozent, Auslösen bei {trigger} Prozent.",
+            ariaRail: "Ladezustand {soc} Prozent. Ausschalten unter {reset} Prozent, Einschalten ab {trigger} Prozent.",
             ariaNoHistory: "Noch kein Ladezustandsverlauf",
             ariaHistory: "Ladezustandsverlauf, {count} Messwerte, zuletzt {soc} Prozent um {time}.",
-            captionActive: "Bei {soc}% ist das Überschusssignal aktiv. Rücksetzen bei {reset}% oder darunter.",
-            captionInactive: "Bei {soc}% ist das Überschusssignal inaktiv. Auslösen bei {trigger}% oder darüber.",
-            captionUnknown: "Noch kein eindeutiger Signalzustand. Zwischen {reset}% und {trigger}% bleibt der vorherige Zustand erhalten.",
-            signalCopyTriggered: "Ausgelöst bei {soc}%. Aktiv, bis der Ladezustand auf {reset}% oder darunter fällt.",
-            signalCopyHeld: "Im Hysteresebereich aktiv gehalten. Rücksetzen bei {reset}% oder darunter.",
-            signalCopyActive: "Aktiv. Rücksetzen bei {reset}% oder darunter.",
-            signalCopyReset: "Zurückgesetzt bei {soc}%. Löst wieder bei {trigger}% oder darüber aus.",
-            signalCopyInactive: "Inaktiv. Löst bei {trigger}% oder darüber aus.",
-            signalCopyUnknown: "Die Boolesche Variable bleibt zwischen {reset}% und {trigger}% erhalten, solange kein vorheriger Zustand bekannt ist.",
+            captionActive: "Überschuss-Signal aktiv bei {soc}%. Schaltet ab unter {reset}%.",
+            captionInactive: "Überschuss-Signal inaktiv bei {soc}%. Schaltet ein ab {trigger}%.",
+            captionUnknown: "Noch kein Signalzustand bekannt. Zwischen {reset}% und {trigger}% bleibt der letzte Zustand erhalten.",
+            signalCopyTriggered: "Aktiv. Schaltet ab unter {reset}%.",
+            signalCopyHeld: "Aktiv. Schaltet ab unter {reset}%.",
+            signalCopyActive: "Aktiv. Schaltet ab unter {reset}%.",
+            signalCopyReset: "Inaktiv. Schaltet ein ab {trigger}%.",
+            signalCopyInactive: "Inaktiv. Schaltet ein ab {trigger}%.",
+            signalCopyUnknown: "Zwischen {reset}% und {trigger}% bleibt der Wert unverändert, bis eine Schwelle erreicht wird.",
             sampleOne: "1 Messwert",
             sampleMany: "{count} Messwerte",
             enabled: "Aktiviert",
@@ -282,17 +293,17 @@
             releaseRefresh: "Zum Aktualisieren loslassen",
             refreshing: "Wird aktualisiert",
 
-            lastStateTitle: "Letzter aufgezeichneter Zustand",
-            lastStateText: "Die letzte Anfrage ist fehlgeschlagen ({error}). Die Abfrage läuft automatisch weiter.",
+            lastStateTitle: "Letzter bekannter Stand",
+            lastStateText: "Abruf fehlgeschlagen ({error}). Nächster Versuch folgt automatisch.",
             waitingTitle: "Warte auf die erste Messung",
-            waitingText: "Das Dashboard liest status.json, sobald der Monitor seinen ersten Wechselrichter-Abruf abgeschlossen hat (bis zu zwei Minuten nach der Installation).",
-            statusErrorTitle: "status.json kann nicht gelesen werden",
-            statusErrorText: "Das Dashboard konnte die Telemetrie nicht laden ({error}). Prüfen Sie, ob der Monitor gelaufen ist und lighttpd das Add-on-Verzeichnis ausliefert.",
+            waitingText: "Das Dashboard liest status.json nach dem ersten Wechselrichter-Abruf (maximal zwei Minuten nach der Installation).",
+            statusErrorTitle: "status.json nicht lesbar",
+            statusErrorText: "status.json konnte nicht geladen werden ({error}). Prüfen Sie, ob der Cron-Job gelaufen ist und lighttpd das Verzeichnis ausliefert.",
             demoTitle: "Sentinella-Vorschaudaten",
-            demoText: "status.json ist nicht erreichbar. Es werden synthetische Telemetriedaten angezeigt; öffnen Sie das Dashboard über die CCU3 für Live-Messwerte.",
+            demoText: "status.json ist nicht erreichbar. Es werden Beispieldaten gezeigt; öffnen Sie das Dashboard auf der CCU3 für Live-Messwerte.",
 
             savingConfig: "Konfiguration wird gespeichert…",
-            configSavedApply: "Konfiguration gespeichert. Der Monitor übernimmt sie beim nächsten Lauf.",
+            configSavedApply: "Konfiguration gespeichert. Wird beim nächsten Lauf übernommen.",
             configSaved: "Konfiguration gespeichert.",
             loadingSettings: "Einstellungen werden geladen…",
             settingsUnavailable: "Einstellungen sind nicht verfügbar. Öffnen Sie das Dashboard über die CCU3 und stellen Sie sicher, dass CGI für das Add-on-Verzeichnis aktiviert ist.",
@@ -307,9 +318,9 @@
             savingBeforeTest: "Konfiguration wird vor dem Test gespeichert…",
             sendingTest: "Testbenachrichtigung wird gesendet…",
             languageSaveFailed: "Sprache lokal gespeichert. Das Backend konnte nicht aktualisiert werden.",
-            triggerWhole: "Die Auslöseschwelle muss eine ganze Zahl zwischen 0 und 100 sein.",
-            resetWhole: "Die Rücksetzschwelle muss eine ganze Zahl zwischen 0 und 100 sein.",
-            resetLower: "Die Rücksetzschwelle muss unter der Auslöseschwelle liegen.",
+            triggerWhole: "Die Einschaltschwelle muss eine ganze Zahl zwischen 0 und 100 sein.",
+            resetWhole: "Die Ausschaltschwelle muss eine ganze Zahl zwischen 0 und 100 sein.",
+            resetLower: "Die Ausschaltschwelle muss unter der Einschaltschwelle liegen.",
             phoneInvalid: "Geben Sie eine E.164-Telefonnummer (zum Beispiel +491701234567) oder eine Signal-UUID ein.",
             phoneRequired: "Wenn Benachrichtigungen aktiviert sind, ist eine Telefonnummer oder Signal-UUID erforderlich.",
             apikeyRequired: "Wenn Benachrichtigungen aktiviert sind, ist ein CallMeBot-API-Schlüssel erforderlich.",
@@ -384,6 +395,10 @@
         signalPhone: $("signal-phone"),
         signalApikey: $("signal-apikey"),
         apikeyHint: $("apikey-hint"),
+        callmebotQuickSetup: $("callmebot-quick-setup"),
+        callmebotPaste: $("callmebot-paste"),
+        callmebotExtract: $("callmebot-extract"),
+        callmebotStatus: $("callmebot-status"),
         smaIp: $("sma-ip"),
         smaPort: $("sma-port"),
         smaPassword: $("sma-password"),
@@ -529,10 +544,9 @@
 
     function readStoredTheme() {
         try {
-            var value = window.localStorage.getItem(THEME_KEY);
-            return value === "light" || value === "dark" ? value : null;
+            return window.localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light";
         } catch (error) {
-            return null;
+            return "light";
         }
     }
 
@@ -544,10 +558,6 @@
         }
     }
 
-    function systemTheme() {
-        return themeMedia && themeMedia.matches ? "dark" : "light";
-    }
-
     function applyTheme(theme) {
         currentTheme = normalizeTheme(theme);
         document.documentElement.setAttribute("data-theme", currentTheme);
@@ -555,6 +565,10 @@
         var meta = document.querySelector('meta[name="theme-color"]');
         if (meta) {
             meta.setAttribute("content", currentTheme === "dark" ? "#09090b" : "#f8f8f9");
+        }
+        var scheme = document.querySelector('meta[name="color-scheme"]');
+        if (scheme) {
+            scheme.setAttribute("content", currentTheme);
         }
 
         document.querySelectorAll(".theme-option").forEach(function (button) {
@@ -566,13 +580,6 @@
     function setTheme(theme) {
         applyTheme(theme);
         storeTheme(currentTheme);
-    }
-
-    function syncSystemTheme(event) {
-        if (readStoredTheme()) {
-            return;
-        }
-        applyTheme(event.matches ? "dark" : "light");
     }
 
     /* ----------------------------------------------------------------------
@@ -1149,6 +1156,136 @@
         el.settingsForm.setAttribute("aria-busy", busy ? "true" : "false");
     }
 
+    function normalizeSignalPhone(value) {
+        var raw = String(value || "").trim();
+        if (!raw) {
+            return "";
+        }
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)) {
+            return raw;
+        }
+        var stripped = raw.replace(/[\s\-/()]/g, "");
+        if (stripped.indexOf("00") === 0) {
+            return "+" + stripped.slice(2);
+        }
+        if (stripped.indexOf("0") === 0) {
+            return "+49" + stripped.slice(1);
+        }
+        return stripped;
+    }
+
+    function parseCallMeBotMessage(raw) {
+        var text = String(raw || "");
+        var apikey = "";
+        var phone = "";
+
+        var keyQueryMatch = text.match(/[?&]apikey=([a-zA-Z0-9]+)/i);
+        var keyCreatedMatch = text.match(/API\s*Key\s+created\s+for\s+you\s+is\s*:\s*([a-zA-Z0-9]+)/i);
+        var keyColonMatch = text.match(/\bapikey\s*[:=]\s*([a-zA-Z0-9]+)/i);
+
+        if (keyQueryMatch) {
+            apikey = keyQueryMatch[1];
+        } else if (keyCreatedMatch) {
+            apikey = keyCreatedMatch[1];
+        } else if (keyColonMatch) {
+            apikey = keyColonMatch[1];
+        }
+
+        var phoneUuidMatch = text.match(/phone=([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/);
+        var anyUuidMatch = text.match(/\b([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\b/);
+        var phoneParamMatch = text.match(/phone=([^&\s"'<>]+)/i);
+
+        if (phoneUuidMatch) {
+            phone = phoneUuidMatch[1];
+        } else if (phoneParamMatch) {
+            var candidate = phoneParamMatch[1].replace(/[.,;)]+$/, "");
+            try {
+                candidate = decodeURIComponent(candidate);
+            } catch (error) {
+                /* Keep raw candidate if malformed percent encoding */
+            }
+            if (!/^\[.*\]$/.test(candidate) && candidate.toLowerCase() !== "your_phone_number") {
+                phone = normalizeSignalPhone(candidate);
+            }
+        }
+        if (!phone && anyUuidMatch) {
+            phone = anyUuidMatch[1];
+        }
+
+        return {
+            phone: phone,
+            apikey: apikey
+        };
+    }
+
+    var extractHighlightTimer = null;
+
+    function showQuickSetupFeedback(tone, message) {
+        if (!el.callmebotStatus) {
+            return;
+        }
+        if (!message) {
+            el.callmebotStatus.hidden = true;
+            el.callmebotStatus.textContent = "";
+            delete el.callmebotStatus.dataset.tone;
+            return;
+        }
+        el.callmebotStatus.hidden = false;
+        el.callmebotStatus.dataset.tone = tone || "success";
+        el.callmebotStatus.textContent = message;
+    }
+
+    function flashExtractedFields(fields) {
+        clearTimeout(extractHighlightTimer);
+        fields.forEach(function (field) {
+            if (field) {
+                field.classList.add("input-extracted");
+            }
+        });
+        extractHighlightTimer = setTimeout(function () {
+            fields.forEach(function (field) {
+                if (field) {
+                    field.classList.remove("input-extracted");
+                }
+            });
+        }, 2400);
+    }
+
+    function applyCallMeBotMessage(raw, silentIfEmpty) {
+        var parsed = parseCallMeBotMessage(raw);
+        if (!parsed.phone && !parsed.apikey) {
+            if (!silentIfEmpty) {
+                showQuickSetupFeedback("error", t("quickSetupNotFound"));
+                showToast("error", t("quickSetupNotFound"));
+            }
+            return false;
+        }
+
+        var updatedFields = [];
+        if (parsed.phone) {
+            el.signalPhone.value = parsed.phone;
+            updatedFields.push(el.signalPhone);
+        }
+        if (parsed.apikey) {
+            el.signalApikey.value = parsed.apikey;
+            updatedFields.push(el.signalApikey);
+        }
+        if (el.callmebotPaste) {
+            el.callmebotPaste.value = "";
+        }
+
+        var messageKey = parsed.phone && parsed.apikey
+            ? "quickSetupSuccessBoth"
+            : (parsed.phone ? "quickSetupSuccessPhone" : "quickSetupSuccessApikey");
+        var message = t(messageKey);
+
+        flashExtractedFields(updatedFields);
+        showQuickSetupFeedback("success", message);
+        showSettingsStatus("success", message);
+        showToast("success", message);
+        return true;
+    }
+
     function fillSettingsForm(data) {
         el.triggerSoc.value = String(data.trigger_soc);
         el.resetSoc.value = String(data.reset_soc);
@@ -1156,7 +1293,7 @@
         el.resetRange.value = String(data.reset_soc);
 
         el.signalEnabled.checked = data.signal_enabled === true;
-        el.signalPhone.value = data.signal_phone || "";
+        el.signalPhone.value = normalizeSignalPhone(data.signal_phone || "");
         el.signalApikey.value = "";
         el.signalApikey.placeholder = data.signal_apikey_set ? t("unchanged") : t("required");
         el.apikeyHint.hidden = !data.signal_apikey_set;
@@ -1219,13 +1356,14 @@
             };
         }
 
-        var phone = el.signalPhone.value.trim();
+        var phone = normalizeSignalPhone(el.signalPhone.value);
         if (phone && !/^(\+[1-9]\d{6,14}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.test(phone)) {
             return {
                 field: "signal-phone",
                 text: t("phoneInvalid")
             };
         }
+        el.signalPhone.value = phone;
 
         var apikey = el.signalApikey.value.trim();
         if (el.signalEnabled.checked) {
@@ -1264,11 +1402,13 @@
     }
 
     function buildPayload() {
+        var phone = normalizeSignalPhone(el.signalPhone.value);
+        el.signalPhone.value = phone;
         var payload = {
             trigger_soc: Number(el.triggerSoc.value.trim()),
             reset_soc: Number(el.resetSoc.value.trim()),
             signal_enabled: el.signalEnabled.checked,
-            signal_phone: el.signalPhone.value.trim(),
+            signal_phone: phone,
             sma_ip: el.smaIp.value.trim(),
             sma_port: Number(el.smaPort.value.trim())
         };
@@ -1440,6 +1580,10 @@
         el.settingsOpen.setAttribute("aria-expanded", "false");
         document.body.classList.remove("drawer-open");
         showSettingsStatus("", "");
+        showQuickSetupFeedback("", "");
+        if (el.callmebotPaste) {
+            el.callmebotPaste.value = "";
+        }
         if (settingsFocusBefore && typeof settingsFocusBefore.focus === "function") {
             settingsFocusBefore.focus();
         }
@@ -1572,18 +1716,35 @@
         });
     });
 
-    if (themeMedia) {
-        if (themeMedia.addEventListener) {
-            themeMedia.addEventListener("change", syncSystemTheme);
-        } else if (themeMedia.addListener) {
-            themeMedia.addListener(syncSystemTheme);
-        }
-    }
-
     el.settingsOpen.addEventListener("click", openSettings);
     el.settingsClose.addEventListener("click", closeSettings);
     el.settingsBackdrop.addEventListener("click", closeSettings);
     el.settingsTest.addEventListener("click", runTest);
+
+    if (el.callmebotExtract && el.callmebotPaste) {
+        el.callmebotExtract.addEventListener("click", function () {
+            applyCallMeBotMessage(el.callmebotPaste.value, false);
+        });
+        el.callmebotPaste.addEventListener("paste", function (event) {
+            var pasted = "";
+            if (event.clipboardData && typeof event.clipboardData.getData === "function") {
+                pasted = event.clipboardData.getData("text");
+            }
+            if (pasted) {
+                var parsed = parseCallMeBotMessage(pasted);
+                if (parsed.phone || parsed.apikey) {
+                    event.preventDefault();
+                    applyCallMeBotMessage(pasted, true);
+                    return;
+                }
+            }
+            window.setTimeout(function () {
+                if (el.callmebotPaste.value) {
+                    applyCallMeBotMessage(el.callmebotPaste.value, true);
+                }
+            }, 0);
+        });
+    }
 
     el.settingsForm.addEventListener("submit", function (event) {
         event.preventDefault();
@@ -1638,9 +1799,7 @@
         }
     });
 
-    applyTheme(readStoredTheme() ||
-        document.documentElement.getAttribute("data-theme") ||
-        systemTheme());
+    applyTheme(readStoredTheme());
 
     setLanguage(readStoredLanguage(), { persist: false });
 

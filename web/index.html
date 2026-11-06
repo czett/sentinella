@@ -3,27 +3,28 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="color-scheme" content="light dark">
+    <meta name="color-scheme" content="light">
     <meta name="theme-color" content="#f8f8f9">
-    <meta name="description" content="Sentinella — high-precision battery state of charge and hysteresis telemetry for SMA inverters and the Homematic CCU3.">
-    <title>Sentinella — SMA / CCU3 Battery Monitor</title>
+    <meta name="description" content="Sentinella — SMA battery monitor for Homematic CCU3.">
+    <title>Sentinella — SMA Battery Monitor for CCU3</title>
     <script>
         (function () {
-            var theme;
+            var theme = "light";
             try {
-                theme = window.localStorage.getItem("sentinella_theme");
+                if (window.localStorage.getItem("sentinella_theme") === "dark") {
+                    theme = "dark";
+                }
             } catch (error) {
-                theme = null;
-            }
-            if (theme !== "light" && theme !== "dark") {
-                theme = window.matchMedia &&
-                    window.matchMedia("(prefers-color-scheme: dark)").matches
-                    ? "dark" : "light";
+                theme = "light";
             }
             document.documentElement.setAttribute("data-theme", theme);
             var meta = document.querySelector('meta[name="theme-color"]');
             if (meta) {
                 meta.setAttribute("content", theme === "dark" ? "#09090b" : "#f8f8f9");
+            }
+            var scheme = document.querySelector('meta[name="color-scheme"]');
+            if (scheme) {
+                scheme.setAttribute("content", theme);
             }
         })();
     </script>
@@ -38,7 +39,7 @@
             <span class="brand-mark" aria-hidden="true"></span>
             <div class="brand-titles">
                 <span class="brand-name">SENTINELLA</span>
-                <span class="brand-sub" data-i18n="brandSub">Battery Monitor &amp; Hysteresis Sentinel</span>
+                <span class="brand-sub" data-i18n="brandSub">SMA Battery Monitor for CCU3</span>
             </div>
         </div>
 
@@ -115,7 +116,7 @@
                     <div class="signal-panel">
                         <div class="panel-header">
                             <span class="panel-index">02</span>
-                            <span class="panel-eyebrow" data-i18n="hysteresisSignal">Hysteresis signal</span>
+                            <span class="panel-eyebrow" data-i18n="hysteresisSignal">Excess Signal</span>
                         </div>
 
                         <div class="signal-display">
@@ -123,12 +124,12 @@
                             <p class="signal-value" id="signal-chip" data-tone="unknown" data-i18n="unknown">Unknown</p>
                         </div>
 
-                        <p class="signal-copy" id="signal-copy" data-i18n="signalCopyDefault">The signal is written to the CCU3 system variable on every run. Between the thresholds the previous state is held.</p>
+                        <p class="signal-copy" id="signal-copy" data-i18n="signalCopyDefault">Turns on at the trigger threshold and off below the reset threshold.</p>
                     </div>
 
                     <div class="rail-panel">
                         <div class="rail-header">
-                            <span class="rail-title" data-i18n="thresholdCorridor">Threshold corridor (0—100 %)</span>
+                            <span class="rail-title" data-i18n="thresholdCorridor">Thresholds</span>
                             <span class="rail-readout">
                                 <span data-i18n="reset">Reset</span> <strong id="rail-reset-value">90</strong>% / <span data-i18n="trigger">Trigger</span> <strong id="rail-trigger-value">95</strong>%
                             </span>
@@ -200,8 +201,8 @@
                     </div>
 
                     <div class="chart-legend">
-                        <span class="legend-item"><span class="legend-swatch legend-swatch-soc" aria-hidden="true"></span><span data-i18n="legendSoc">SoC trajectory</span></span>
-                        <span class="legend-item"><span class="legend-swatch legend-swatch-threshold" aria-hidden="true"></span><span data-i18n="legendBounds">Hysteresis bounds</span></span>
+                        <span class="legend-item"><span class="legend-swatch legend-swatch-soc" aria-hidden="true"></span><span data-i18n="legendSoc">SoC</span></span>
+                        <span class="legend-item"><span class="legend-swatch legend-swatch-threshold" aria-hidden="true"></span><span data-i18n="legendBounds">Thresholds</span></span>
                         <span class="chart-range" id="chart-range" data-i18n="noData">No data</span>
                     </div>
                 </section>
@@ -228,8 +229,17 @@
             </div>
 
             <footer class="footer">
-                <span>SENTINELLA · SMA / CCU3 TELEMETRY</span>
-                <span data-i18n="footerTagline">BATTERY MONITOR &amp; HYSTERESIS SENTINEL · LOCAL</span>
+                <span>SENTINELLA · CCU3</span>
+                <div class="footer-right">
+                    <a class="footer-github" href="https://github.com/czett/sentinella"
+                       target="_blank" rel="noopener noreferrer"
+                       title="GitHub: czett/sentinella" aria-label="GitHub: czett/sentinella">
+                        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+                            <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"></path>
+                        </svg>
+                        <span>czett/sentinella</span>
+                    </a>
+                </div>
             </footer>
         </div>
     </main>
@@ -300,12 +310,32 @@
                            aria-label="Send Signal notifications" data-i18n-aria="sendNotifications">
                 </label>
 
+                <details class="quick-setup" id="callmebot-quick-setup">
+                    <summary class="quick-setup-summary">
+                        <span data-i18n="quickSetupLabel">Quick Setup via CallMeBot Message</span>
+                        <span class="quick-setup-chevron" aria-hidden="true">+</span>
+                    </summary>
+                    <div class="quick-setup-body">
+                        <textarea class="input quick-setup-textarea" id="callmebot-paste" rows="3"
+                                  autocomplete="off" spellcheck="false"
+                                  aria-label="Quick Setup via CallMeBot Message" data-i18n-aria="quickSetupLabel"
+                                  placeholder="Paste the activation message here (e.g. 'The APIKey created for you is: 653590 ... phone=98526357-0cec...')"
+                                  data-i18n-placeholder="quickSetupPlaceholder"></textarea>
+                        <div class="quick-setup-footer">
+                            <button class="button button-outline quick-setup-button" id="callmebot-extract" type="button" data-i18n="quickSetupButton">Extract &amp; Apply</button>
+                            <p class="quick-setup-status" id="callmebot-status" role="status" aria-live="polite" hidden></p>
+                        </div>
+                    </div>
+                </details>
+
                 <label class="field" for="signal-phone">
                     <span class="field-label" data-i18n="phoneLabel">Phone / UUID</span>
                     <input class="input" id="signal-phone" name="signal_phone" type="text"
                            inputmode="tel" autocomplete="off" spellcheck="false"
                            aria-label="Phone number or Signal UUID" data-i18n-aria="phoneAria"
-                           placeholder="+491701234567">
+                           aria-describedby="phone-hint"
+                           placeholder="+49 171 1234567">
+                    <span class="field-hint" id="phone-hint" data-i18n="phoneHint">E.164 format (e.g. +49 171 1234567 or 0171 1234567). Auto-normalized on save.</span>
                 </label>
 
                 <label class="field" for="signal-apikey">

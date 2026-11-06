@@ -67,6 +67,22 @@ is_uint() {
     return 0
 }
 
+normalize_phone() {
+    _raw=$(printf '%s' "${1:-}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    [ -n "$_raw" ] || return 0
+    if printf '%s' "$_raw" | grep -Eq \
+        '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'; then
+        printf '%s' "$_raw"
+        return 0
+    fi
+    _clean=$(printf '%s' "$_raw" | tr -d ' \t\r\n/()-')
+    case "$_clean" in
+        00*) printf '+%s' "${_clean#00}" ;;
+        0*)  printf '+49%s' "${_clean#0}" ;;
+        *)   printf '%s' "$_clean" ;;
+    esac
+}
+
 usage() {
     cat <<'EOF'
 Usage: notify_signal.sh trigger|reset SOC
@@ -123,7 +139,7 @@ load_config() {
     fi
 
     SIGNAL_ENABLED=${SIGNAL_ENABLED:-false}
-    SIGNAL_PHONE=${SIGNAL_PHONE:-}
+    SIGNAL_PHONE=$(normalize_phone "${SIGNAL_PHONE:-}")
     SIGNAL_APIKEY=${SIGNAL_APIKEY:-}
     SIGNAL_API_URL=${SIGNAL_API_URL:-https://signal.callmebot.com/signal/send.php}
     SIGNAL_TIMEOUT=${SIGNAL_TIMEOUT:-15}
@@ -173,8 +189,8 @@ load_config() {
         SIGNAL_COOLDOWN=3600
     fi
     case "$SIGNAL_PHONE" in
-        +*) ;;
-        '') ;;
+        +*|'') ;;
+        *-*-*-*) ;;
         *) log "WARNING: SIGNAL_PHONE should use E.164 format, e.g. +491701234567" ;;
     esac
     return 0
@@ -249,9 +265,9 @@ send_message() {
     _resp=
 
     while [ "$_attempt" -le "$SIGNAL_RETRIES" ]; do
-        # --get + --data-urlencode percent-encodes spaces, umlauts and the
-        # phone's leading '+' as raw UTF-8, entirely inside curl.
-        _resp=$(curl -fsS --connect-timeout 5 -m "$SIGNAL_TIMEOUT" --get \
+        # -G (--get) + --data-urlencode percent-encodes spaces, umlauts and the
+        # phone's leading '+' (%2B) as raw UTF-8, entirely inside curl.
+        _resp=$(curl -fsS --connect-timeout 5 -m "$SIGNAL_TIMEOUT" -G \
             --data-urlencode "phone=$SIGNAL_PHONE" \
             --data-urlencode "apikey=$SIGNAL_APIKEY" \
             --data-urlencode "text=$_text" \

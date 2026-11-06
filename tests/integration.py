@@ -726,6 +726,63 @@ def main() -> int:
         check(status_code == "200 OK" and config.get("ui_language") == "en",
               "language survives a settings reload", failures)
 
+        print("\n15b. Signal phone numbers are normalized on save and read, and URL-encoded in curl")
+        phone_cases = [
+            ("+49 171 1234567", "+491711234567"),
+            ("0171 1234567", "+491711234567"),
+            ("+491711234567", "+491711234567"),
+            ("0049 (171) 123-45/67", "+491711234567"),
+            ("123e4567-e89b-12d3-a456-426614174000", "123e4567-e89b-12d3-a456-426614174000"),
+        ]
+        for raw_phone, expected_phone in phone_cases:
+            result = run_cgi(addon4, "POST", body=json.dumps({"signal_phone": raw_phone}))
+            status_code, saved = parse_cgi(result)
+            check(
+                status_code == "200 OK" and saved.get("signal_phone") == expected_phone,
+                f"normalizes {raw_phone!r} -> {expected_phone!r} on save",
+                failures,
+            )
+            check(
+                f"SIGNAL_PHONE='{expected_phone}'" in (addon4 / ".env").read_text(),
+                f"writes normalized {expected_phone!r} to .env",
+                failures,
+            )
+
+        # Verify normalization when reading an unnormalized .env directly (GET config + notify_signal.sh)
+        env4_text = (addon4 / ".env").read_text().replace(
+            "SIGNAL_PHONE='123e4567-e89b-12d3-a456-426614174000'",
+            "SIGNAL_PHONE='0171 123-4567'",
+        )
+        (addon4 / ".env").write_text(env4_text)
+        (addon4 / ".env").chmod(0o600)
+        status_code, config = parse_cgi(run_cgi(addon4, "GET"))
+        check(
+            status_code == "200 OK" and config.get("signal_phone") == "+491711234567",
+            "GET config normalizes unnormalized SIGNAL_PHONE from .env",
+            failures,
+        )
+        signal_state.reset_requests()
+        result = run_notify(addon4, "--test")
+        check(result.returncode == 0, "notify_signal.sh --test with unnormalized .env phone exits 0", failures)
+        check(
+            wait_until(lambda: bool(signal_state.signal_requests)),
+            "normalized phone test request received",
+            failures,
+        )
+        if signal_state.signal_requests:
+            raw_req = signal_state.signal_requests[0]
+            query = parse_qs(urlparse(raw_req).query)
+            check(
+                "phone=%2B491711234567" in raw_req or "phone=%2b491711234567" in raw_req,
+                "leading '+' is explicitly percent-encoded as %2B in query string",
+                failures,
+            )
+            check(
+                query.get("phone", [""])[0] == "+491711234567",
+                "gateway decodes normalized phone with leading '+' intact",
+                failures,
+            )
+
         print("\n16. test notification is dispatched in the background")
         signal_before = (addon2 / "state" / "signal").read_text()
         signal_state.reset_requests()
@@ -762,6 +819,103 @@ def main() -> int:
             "test does not change the battery signal state",
             failures,
         )
+
+        if shutil.which("node"):
+            print("\n17. CallMeBot onboarding message parser in web/app.js")
+            node_script = """
+const fs = require("fs");
+const code = fs.readFileSync(process.argv[1], "utf8");
+const normMatch = code.match(/function normalizeSignalPhone\\([\\s\\S]*?\\n    \\}/);
+const parseMatch = code.match(/function parseCallMeBotMessage\\([\\s\\S]*?\\n    \\}/);
+if (!normMatch || !parseMatch) {
+    process.exit(2);
+}
+const fn = new Function(normMatch[0] + "\\n" + parseMatch[0] + "\\nreturn parseCallMeBotMessage;")();
+const samples = [
+    {
+        input: "APIKey created for Signal CallMeBot!!\\nThe APIKey created for you is: 653590\\nYou can now send messages using the API.\\nhttps://signal.callmebot.com/signal/send.php?phone=98526357-0cec-4a2b-8f1d-123456789abc&apikey=653590&text=This+is+a+test",
+        phone: "98526357-0cec-4a2b-8f1d-123456789abc",
+        apikey: "653590"
+    },
+    {
+        input: "https://api.callmebot.com/signal/send.php?phone=+491711234567&apikey=abc123XYZ&text=Hello",
+        phone: "+491711234567",
+        apikey: "abc123XYZ"
+    },
+    {
+        input: "The APIKey created for you is:   998877  \\nYour UUID is 123e4567-e89b-12d3-a456-426614174000",
+        phone: "123e4567-e89b-12d3-a456-426614174000",
+        apikey: "998877"
+    },
+    {
+        input: "apikey: 445566\\nphone=01711234567",
+        phone: "+491711234567",
+        apikey: "445566"
+    }
+];
+for (const s of samples) {
+    const res = fn(s.input);
+    if (res.phone !== s.phone || res.apikey !== s.apikey) {
+        console.error("Mismatch:", s, "got:", res);
+        process.exit(1);
+    }
+}
+"""
+            node_res = subprocess.run(
+                ["node", "-e", node_script, str(ROOT / "web" / "app.js")],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            check(
+                node_res.returncode == 0,
+                f"parseCallMeBotMessage extracts UUID/phone & API key across CallMeBot formats ({node_res.stderr.strip() or 'ok'})",
+                failures,
+            )
+
+            print("\n18. Streamlined EN/DE UI terminology and footer in web/")
+            i18n_script = """
+const fs = require("fs");
+const code = fs.readFileSync(process.argv[1], "utf8");
+const html = fs.readFileSync(process.argv[2], "utf8");
+const i18nMatch = code.match(/var I18N = (\\{[\\s\\S]*?\\n    \\});/);
+if (!i18nMatch) process.exit(2);
+const I18N = new Function("return " + i18nMatch[1])();
+const assertEq = (actual, expected, label) => {
+    if (actual !== expected) {
+        console.error(label + ": expected " + JSON.stringify(expected) + ", got " + JSON.stringify(actual));
+        process.exit(1);
+    }
+};
+assertEq(I18N.en.brandSub, "SMA Battery Monitor for CCU3", "EN brandSub");
+assertEq(I18N.de.brandSub, "SMA Batteriestatus für CCU3", "DE brandSub");
+assertEq(I18N.en.hysteresisSignal, "Excess Signal", "EN signal box label");
+assertEq(I18N.de.hysteresisSignal, "Überschuss-Signal", "DE signal box label");
+assertEq(I18N.en.thresholdCorridor, "Thresholds", "EN slider title");
+assertEq(I18N.de.thresholdCorridor, "Schaltschwellen", "DE slider title");
+assertEq(I18N.en.legendBounds, "Thresholds", "EN chart bounds");
+assertEq(I18N.de.legendBounds, "Schaltschwellen", "DE chart bounds");
+assertEq(I18N.de.signalCopyActive, "Aktiv. Schaltet ab unter {reset}%.", "DE active signal copy");
+assertEq(I18N.de.signalCopyHeld, "Aktiv. Schaltet ab unter {reset}%.", "DE held signal copy");
+assertEq(I18N.de.signalCopyInactive, "Inaktiv. Schaltet ein ab {trigger}%.", "DE inactive signal copy");
+assertEq(I18N.en.signalCopyActive, "Active. Turns off below {reset}%.", "EN active signal copy");
+assertEq(I18N.en.signalCopyInactive, "Inactive. Turns on at {trigger}%.", "EN inactive signal copy");
+if (!html.includes("<span>SENTINELLA · CCU3</span>") || html.includes("footerTagline")) {
+    console.error("Footer not simplified properly");
+    process.exit(1);
+}
+"""
+            i18n_res = subprocess.run(
+                ["node", "-e", i18n_script, str(ROOT / "web" / "app.js"), str(ROOT / "web" / "index.html")],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            check(
+                i18n_res.returncode == 0,
+                f"EN/DE UI strings and footer match streamlined copy ({i18n_res.stderr.strip() or 'ok'})",
+                failures,
+            )
     finally:
         sma.shutdown()
         rega.shutdown()

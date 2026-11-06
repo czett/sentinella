@@ -115,6 +115,22 @@ is_safe_host() {
     return 0
 }
 
+normalize_phone() {
+    _raw=$(printf '%s' "${1:-}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    [ -n "$_raw" ] || return 0
+    if printf '%s' "$_raw" | grep -Eq \
+        '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'; then
+        printf '%s' "$_raw"
+        return 0
+    fi
+    _clean=$(printf '%s' "$_raw" | tr -d ' \t\r\n/()-')
+    case "$_clean" in
+        00*) printf '+%s' "${_clean#00}" ;;
+        0*)  printf '+49%s' "${_clean#0}" ;;
+        *)   printf '%s' "$_clean" ;;
+    esac
+}
+
 is_phone_or_uuid() {
     case "$1" in
         +*)
@@ -354,7 +370,7 @@ load_env() {
     case "${THRESHOLD_TRIGGER:-}" in ''|*[!0-9]*) THRESHOLD_TRIGGER=95 ;; esac
     case "${THRESHOLD_RESET:-}" in ''|*[!0-9]*) THRESHOLD_RESET=90 ;; esac
     SIGNAL_ENABLED=${SIGNAL_ENABLED:-false}
-    SIGNAL_PHONE=${SIGNAL_PHONE:-}
+    SIGNAL_PHONE=$(normalize_phone "${SIGNAL_PHONE:-}")
     SIGNAL_APIKEY=${SIGNAL_APIKEY:-}
     SMA_IP=${SMA_IP:-}
     SMA_PORT=${SMA_PORT:-443}
@@ -531,7 +547,7 @@ save_config() {
     fi
 
     if body_has signal_phone; then
-        _phone=$(body_str signal_phone)
+        _phone=$(normalize_phone "$(body_str signal_phone)")
         if [ -n "$_phone" ] && ! is_phone_or_uuid "$_phone"; then
             fail "400 Bad Request" \
                 "$(msg phone_invalid)" \
