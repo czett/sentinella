@@ -78,22 +78,99 @@ printf 'Referrer-Policy: same-origin\r\n\r\n'
 # pointing at .env or /etc/shadow) is never followed by this root CGI.
 printf '['
 
+# Strict RFC 8259 validator (object at top level). Rejects trailing commas,
+# truncated or concatenated documents, bare control characters and 0-byte
+# files, so one broken plugin file can never corrupt the response array.
+json_object_valid() {
+    awk '
+    BEGIN { RS = "\001" }
+    function ws() { while (p <= n && index(" \t\r\n", substr(s, p, 1))) p++ }
+    function str(   c) {
+        if (substr(s, p, 1) != "\"") return 0
+        p++
+        while (p <= n) {
+            c = substr(s, p, 1)
+            if (c == "\"") { p++; return 1 }
+            if (c == "\\") {
+                c = substr(s, p + 1, 1)
+                if (c == "u") {
+                    if (substr(s, p + 2, 4) !~ /^[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]$/) return 0
+                    p += 6; continue
+                }
+                if (!index("\"\\/bfnrt", c) || c == "") return 0
+                p += 2; continue
+            }
+            if (c < " ") return 0
+            p++
+        }
+        return 0
+    }
+    function num(   m) {
+        m = substr(s, p)
+        if (!match(m, /^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?/)) return 0
+        p += RLENGTH; return 1
+    }
+    function val(   c) {
+        if (++depth > 64) return 0
+        ws(); c = substr(s, p, 1)
+        if (c == "{") { r = obj() }
+        else if (c == "[") { r = arr() }
+        else if (c == "\"") { r = str() }
+        else if (substr(s, p, 4) == "true" || substr(s, p, 4) == "null") { p += 4; r = 1 }
+        else if (substr(s, p, 5) == "false") { p += 5; r = 1 }
+        else { r = num() }
+        depth--
+        return r
+    }
+    function obj() {
+        p++; ws()
+        if (substr(s, p, 1) == "}") { p++; return 1 }
+        while (1) {
+            ws(); if (!str()) return 0
+            ws(); if (substr(s, p, 1) != ":") return 0
+            p++; if (!val()) return 0
+            ws(); c = substr(s, p, 1); p++
+            if (c == "}") return 1
+            if (c != ",") return 0
+        }
+    }
+    function arr() {
+        p++; ws()
+        if (substr(s, p, 1) == "]") { p++; return 1 }
+        while (1) {
+            if (!val()) return 0
+            ws(); c = substr(s, p, 1); p++
+            if (c == "]") return 1
+            if (c != ",") return 0
+        }
+    }
+    { s = s $0 }
+    END {
+        n = length(s); p = 1; depth = 0
+        ws()
+        if (substr(s, p, 1) != "{") exit 1
+        if (!val()) exit 1
+        ws()
+        exit (p <= n) ? 1 : 0
+    }'
+}
+
 first=1
 if [ -d "$PLUGINS_STATE_DIR" ]; then
     for f in "$PLUGINS_STATE_DIR"/*.json; do
         [ -f "$f" ] || continue
         [ ! -L "$f" ] || continue
-        _trimmed=$(tr -d '\r\n\t ' < "$f" 2>/dev/null)
-        case "$_trimmed" in
-            '{'*'}') ;;
-            *) continue ;;
-        esac
+        [ -s "$f" ] || continue
+        # Read once (capped at 64 KiB) and validate/emit the same bytes, so a
+        # writer replacing the file mid-request cannot slip unvalidated data in.
+        _content=$(head -c 65536 "$f" 2>/dev/null) || continue
+        printf '%s' "$_content" | json_object_valid || continue
         if [ "$first" -eq 1 ]; then
             first=0
         else
             printf ','
         fi
-        cat "$f"
+        printf '%s' "$_content"
     done
 fi
 

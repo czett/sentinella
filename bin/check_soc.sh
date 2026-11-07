@@ -193,6 +193,12 @@ cleanup() {
     if [ "$LOCK_OWNED" = "1" ] && [ -n "$LOCK_DIR" ]; then
         rm -rf "$LOCK_DIR"
     fi
+    # Never leave half-written state behind when a signal or abort hits
+    # between "write .tmp" and "mv".
+    for _tmp in "${SIGNAL_STATE_FILE:-}" "${SOC_STATE_FILE:-}" "${HISTORY_FILE:-}" \
+        "${WEB_STATUS_FILE:-}" "${_snapshot:-}"; do
+        [ -n "$_tmp" ] && rm -f "$_tmp.tmp" 2>/dev/null
+    done
     exit "$_rc"
 }
 
@@ -489,6 +495,17 @@ sma_curl() {
     fi
 }
 
+# POST a SID-bearing request. The session ID is a credential, so both the URL
+# (?sid=) and the body travel through a curl config on stdin and never show up
+# in /proc/<pid>/cmdline. SID is restricted to [A-Za-z0-9._-] by sma_login.
+sma_post_sid() {
+    _cfg_body=$(printf '%s' "$3" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+    {
+        printf 'url = "https://%s:%s/dyn/%s?sid=%s"\n' "$SMA_IP" "$SMA_PORT" "$1" "$2"
+        printf 'data-binary = "%s"\n' "$_cfg_body"
+    } | sma_curl -X POST -H 'Content-Type: application/json' --config -
+}
+
 sma_login() {
     # Escape backslash and double quote for the JSON string.
     _pw=$(printf '%s' "$SMA_PASS" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
@@ -518,9 +535,7 @@ sma_logout() {
     _sid=$SID
     SID=                         # never try twice, even if this call is killed
     _body='{"destDev":[],"sid":"'"$_sid"'"}'
-    if ! sma_curl -X POST -H 'Content-Type: application/json' \
-        --data-binary "$_body" \
-        "https://$SMA_IP:$SMA_PORT/dyn/logout.json?sid=$_sid" >/dev/null 2>&1; then
+    if ! sma_post_sid "logout.json" "$_sid" "$_body" >/dev/null 2>&1; then
         log "WARNING: SMA logout failed; the session may expire on its own"
     fi
 }
@@ -531,9 +546,7 @@ sma_get_value() {
     _quiet=${3:-0}
 
     _body='{"destDev":[],"keys":["'"$_key"'"],"sid":"'"$SID"'"}'
-    _resp=$(sma_curl -X POST -H 'Content-Type: application/json' \
-        --data-binary "$_body" \
-        "https://$SMA_IP:$SMA_PORT/dyn/getValues.json?sid=$SID") || {
+    _resp=$(sma_post_sid "getValues.json" "$SID" "$_body") || {
         [ "$_quiet" = "1" ] || log "getValues request failed for $_key"
         return 1
     }

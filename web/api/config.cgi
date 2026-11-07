@@ -398,23 +398,50 @@ check_origin() {
     # State-changing requests must be JSON. Browsers cannot send this media
     # type cross-origin from a plain HTML form without a CORS preflight, which
     # this endpoint never grants.
-    case "${CONTENT_TYPE:-}" in
-        application/json*) ;;
+    # Media types and host names are case-insensitive (RFC 9110 / RFC 3986).
+    _ct=$(printf '%s' "${CONTENT_TYPE:-}" | tr '[:upper:]' '[:lower:]')
+    case "$_ct" in
+        application/json|application/json\;*|application/json\ *) ;;
         *) fail "400 Bad Request" "$(msg cross_origin)" ;;
     esac
 
-    # A present Origin must match this host exactly.
+    _host=$(printf '%s' "${HTTP_HOST:-}" | tr '[:upper:]' '[:lower:]')
+    # Strip a default port so "ccu3:80" and "ccu3" compare equal.
+    case "$_host" in
+        *:80) _host_http=${_host%:80}; _host_https=$_host ;;
+        *:443) _host_http=$_host; _host_https=${_host%:443} ;;
+        *) _host_http=$_host; _host_https=$_host ;;
+    esac
+
+    # A present Origin must match this host. An Origin without a Host header
+    # can never be verified and is rejected ("http://" must not match "").
     if [ -n "${HTTP_ORIGIN:-}" ]; then
-        case "$HTTP_ORIGIN" in
-            "http://${HTTP_HOST:-}"|"https://${HTTP_HOST:-}") return 0 ;;
+        [ -n "$_host" ] || fail "403 Forbidden" "$(msg cross_origin)"
+        _origin=$(printf '%s' "$HTTP_ORIGIN" | tr '[:upper:]' '[:lower:]')
+        _origin=${_origin%/}
+        case "$_origin" in
+            http://*:80) _origin=${_origin%:80} ;;
+            https://*:443) _origin=${_origin%:443} ;;
+        esac
+        case "$_origin" in
+            "http://$_host"|"http://$_host_http"|"https://$_host"|"https://$_host_https") return 0 ;;
         esac
         fail "403 Forbidden" "$(msg cross_origin)"
     fi
 
     # Otherwise fall back to Referer when the browser supplied one.
     if [ -n "${HTTP_REFERER:-}" ]; then
-        case "$HTTP_REFERER" in
-            "http://${HTTP_HOST:-}/"*|"https://${HTTP_HOST:-}/"*) return 0 ;;
+        [ -n "$_host" ] || fail "403 Forbidden" "$(msg cross_origin)"
+        _ref=$(printf '%s' "$HTTP_REFERER" | tr '[:upper:]' '[:lower:]')
+        _ref_scheme=${_ref%%://*}
+        _ref_auth=${_ref#*://}
+        _ref_auth=${_ref_auth%%/*}
+        case "$_ref_scheme:$_ref_auth" in
+            http:*:80) _ref_auth=${_ref_auth%:80} ;;
+            https:*:443) _ref_auth=${_ref_auth%:443} ;;
+        esac
+        case "$_ref_scheme:$_ref_auth" in
+            "http:$_host"|"http:$_host_http"|"https:$_host"|"https:$_host_https") return 0 ;;
         esac
         fail "403 Forbidden" "$(msg cross_origin)"
     fi
@@ -433,19 +460,28 @@ check_origin() {
 # of string literals, so a value containing a comma is never truncated and a
 # key name embedded inside another value is never matched.
 body_lines() {
+    # Only depth-1 members are emitted: keys inside nested objects/arrays can
+    # never shadow a top-level setting, and nested values collapse to empty.
     printf '%s\n' "$BODY" | tr -d '\r\n' | awk '
     {
-        s = $0; n = length(s); q = 0; esc = 0; out = ""
+        s = $0; n = length(s); q = 0; esc = 0; d = 0; out = ""
         for (i = 1; i <= n; i++) {
             c = substr(s, i, 1)
-            if (esc) { out = out c; esc = 0; continue }
-            if (c == "\\") { out = out c; esc = 1; continue }
-            if (c == "\"") { q = (!q); out = out c; continue }
-            if (!q && (c == "{" || c == "}" || c == ",")) {
-                out = out "\n"
+            if (esc) { if (d == 1) out = out c; esc = 0; continue }
+            if (q && c == "\\") { if (d == 1) out = out c; esc = 1; continue }
+            if (c == "\"") { q = (!q); if (d == 1) out = out c; continue }
+            if (!q && (c == "{" || c == "[")) {
+                d++
+                if (d == 1) out = out "\n"
                 continue
             }
-            out = out c
+            if (!q && (c == "}" || c == "]")) {
+                if (d == 1) out = out "\n"
+                if (d > 0) d--
+                continue
+            }
+            if (!q && c == "," && d == 1) { out = out "\n"; continue }
+            if (d == 1) out = out c
         }
         printf "%s", out
     }'
@@ -455,10 +491,34 @@ body_has() {
     body_lines | grep -Eq "^[[:space:]]*\"$1\"[[:space:]]*:"
 }
 
+# Extract and decode a JSON string value. Escaped quotes and backslashes are
+# honoured, so "a\"b" yields a"b instead of being truncated at the escape.
 body_str() {
-    body_lines \
-        | sed -n 's/^[[:space:]]*"'"$1"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*$/\1/p' \
-        | head -n 1
+    body_lines | awk -v k="$1" '
+    {
+        line = $0
+        sub(/^[ \t]*/, "", line)
+        if (substr(line, 1, length(k) + 2) != "\"" k "\"") next
+        line = substr(line, length(k) + 3)
+        sub(/^[ \t]*:[ \t]*/, "", line)
+        if (substr(line, 1, 1) != "\"") next
+        n = length(line); out = ""; ok = 0
+        for (i = 2; i <= n; i++) {
+            c = substr(line, i, 1)
+            if (c == "\\") {
+                i++; e = substr(line, i, 1)
+                # Control escapes (\n \r \t \b \f \uXXXX) are dropped: a decoded
+                # newline must never reach the root-sourced env files.
+                if (e == "n" || e == "r" || e == "t" || e == "b" || e == "f") continue
+                if (e == "u") { i += 4; continue }
+                out = out e
+                continue
+            }
+            if (c == "\"") { ok = 1; break }
+            out = out c
+        }
+        if (ok) { printf "%s\n", out; exit }
+    }'
 }
 
 body_num() {

@@ -140,7 +140,12 @@ log() {
 cleanup() {
     rm -f "$TMP_AUTH" "$RAW_FILE" "$OUT_FILE.tmp.$$" "$SESSION_FILE.tmp.$$" 2>/dev/null || true
 }
-trap cleanup EXIT HUP INT TERM
+# EXIT alone runs cleanup; signal traps must exit, otherwise the script would
+# resume after an INT/TERM with its scratch files already removed.
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # ---------------------------------------------------------------------------
 # Helpers

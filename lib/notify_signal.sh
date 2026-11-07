@@ -93,6 +93,8 @@ cleanup() {
     if [ "$NOTIFY_LOCK_OWNED" = "1" ] && [ -n "$NOTIFY_LOCK_DIR" ]; then
         rm -rf "$NOTIFY_LOCK_DIR" 2>/dev/null || true
     fi
+    # Drop a cooldown stamp left half-written by an aborted run.
+    [ -n "${_file:-}" ] && rm -f "$_file.tmp" 2>/dev/null
     exit "$_rc"
 }
 trap cleanup EXIT
