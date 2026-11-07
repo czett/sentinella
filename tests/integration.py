@@ -247,14 +247,23 @@ class RenaultHandler(BaseHTTPRequestHandler):
         if parsed.path == "/accounts.getJWT":
             with state.lock:
                 state.renault_jwt_calls += 1
-            if "gigya-login-token-xyz" not in raw or "data.personId,data.gigyaDataCenter" not in raw:
+            content_type = self.headers.get("Content-Type", "")
+            if (
+                not content_type.startswith("multipart/form-data")
+                or 'name="ApiKey"' not in raw
+                or "3_VgdkgtIRH3AdHvJm-cjV2ug2EFE0lxt0IJzMC4MFqZjFpn_GYFXVdNZ19L7wZX0N" not in raw
+                or "gigya-login-token-xyz" not in raw
+                or "data.personId,data.gigyaDataCenter" not in raw
+                or 'name="expiration"' not in raw
+            ):
                 self._json(400, {"errorCode": 400006})
                 return
             self._json(
                 200,
                 {
                     "id_token": "jwt-id-token-valid-999",
-                    "data": {"personId": "person-de-001", "gigyaDataCenter": "eu1"},
+                    "data.personId": "person-de-001",
+                    "data.gigyaDataCenter": "eu1",
                 },
             )
             return

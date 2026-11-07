@@ -239,10 +239,10 @@ authenticate_renault() {
     _jwt_code=$(curl -sS -o "$TMP_AUTH" -w '%{http_code}' \
         --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME" \
         -X POST \
-        -F "ApiKey=$GIGYA_API_KEY" \
-        -F "login_token=$COOKIE_VALUE" \
-        -F "fields=data.personId,data.gigyaDataCenter" \
-        -F "expiration=86400" \
+        --form "ApiKey=$GIGYA_API_KEY" \
+        --form "login_token=$COOKIE_VALUE" \
+        --form "fields=data.personId,data.gigyaDataCenter" \
+        --form "expiration=86400" \
         "$GIGYA_URL/accounts.getJWT" 2>/dev/null) || _jwt_code=000
 
     if [ "$_jwt_code" != "200" ] || [ ! -s "$TMP_AUTH" ]; then
@@ -250,8 +250,31 @@ authenticate_renault() {
         return 1
     fi
 
-    ID_TOKEN=$(extract_json_str "$TMP_AUTH" id_token)
-    PERSON_ID=$(extract_json_str "$TMP_AUTH" personId)
+    JWT_RES=$(cat "$TMP_AUTH" 2>/dev/null)
+    ID_TOKEN=$(printf '%s' "$JWT_RES" |
+        grep -o '"id_token"[[:space:]]*:[[:space:]]*"[^"]*"' |
+        head -n1 | cut -d'"' -f4)
+    PERSON_ID=$(printf '%s' "$JWT_RES" |
+        grep -o '"data\.personId"[[:space:]]*:[[:space:]]*"[^"]*"' |
+        head -n1 | cut -d'"' -f4)
+    if [ -z "$PERSON_ID" ]; then
+        # Some Gigya deployments return the bare personId key.
+        PERSON_ID=$(printf '%s' "$JWT_RES" |
+            grep -o '"personId"[[:space:]]*:[[:space:]]*"[^"]*"' |
+            head -n1 | cut -d'"' -f4)
+    fi
+    if [ -z "$PERSON_ID" ] && [ -n "$ID_TOKEN" ]; then
+        # Last resort: decode the base64url JWT payload and read personId there.
+        _jwt_payload=$(printf '%s' "$ID_TOKEN" | cut -d. -f2 | tr '_-' '/+')
+        case $((${#_jwt_payload} % 4)) in
+            2) _jwt_payload="${_jwt_payload}==" ;;
+            3) _jwt_payload="${_jwt_payload}=" ;;
+        esac
+        _jwt_json=$(printf '%s' "$_jwt_payload" | base64 -d 2>/dev/null)
+        PERSON_ID=$(printf '%s' "$_jwt_json" |
+            grep -o '"\(data\.\)\{0,1\}personId"[[:space:]]*:[[:space:]]*"[^"]*"' |
+            head -n1 | cut -d'"' -f4)
+    fi
     if [ -z "$ID_TOKEN" ] || [ -z "$PERSON_ID" ]; then
         log "WARNING: Gigya getJWT response missing id_token or personId"
         return 1
