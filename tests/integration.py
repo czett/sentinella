@@ -1110,6 +1110,115 @@ if (/payload\\.signal_enabled = el\\.signalEnabled\\.checked/.test(code)) fail("
         heatpump_entry = next((p for p in plugins_array if p.get("id") == "heatpump"), None)
         check(tibber_entry == plugin1_data, "tibber plugin JSON matches original object", failures)
         check(heatpump_entry == plugin2_data, "heatpump plugin JSON matches original object", failures)
+
+        if shutil.which("node"):
+            print("\n21. web/app.js and web/index.html plugins grid validation")
+            frontend_plugin_script = r"""
+const fs = require("fs");
+const appCode = fs.readFileSync(process.argv[1], "utf8");
+const htmlCode = fs.readFileSync(process.argv[2], "utf8");
+const fail = (msg) => { console.error(msg); process.exit(1); };
+
+// 1. Verify HTML anchor
+if (!htmlCode.includes('id="plugins-section"')) fail("missing plugins-section in index.html");
+if (!htmlCode.includes('class="plugins-section"')) fail("missing class plugins-section in index.html");
+if (!htmlCode.includes('id="plugins-grid"')) fail("missing plugins-grid in index.html");
+if (!htmlCode.includes('class="plugins-grid"')) fail("missing class plugins-grid in index.html");
+if (!htmlCode.includes('data-i18n="pluginsTitle"')) fail("missing data-i18n pluginsTitle in index.html");
+
+// 2. Verify JS functions & templates
+if (!appCode.includes("fetchAndRenderPlugins")) fail("fetchAndRenderPlugins missing in app.js");
+if (!appCode.includes("renderPluginCard")) fail("renderPluginCard missing in app.js");
+if (!appCode.includes("escapeHtml")) fail("escapeHtml missing in app.js");
+
+// 3. Test renderPluginCard logic in a mocked DOM environment
+const escapeHtmlMatch = appCode.match(/function escapeHtml\([\s\S]*?\n    \}/);
+const secondaryMetricsMatch = appCode.match(/function renderSecondaryMetrics\([\s\S]*?\n    \}/);
+const renderPluginCardMatch = appCode.match(/function renderPluginCard\([\s\S]*?\n    \}/);
+
+if (!escapeHtmlMatch || !secondaryMetricsMatch || !renderPluginCardMatch) {
+    fail("could not extract plugin functions from app.js");
+}
+
+const mockEnv = `
+const document = {
+    createElement: function(tag) {
+        return {
+            tagName: tag,
+            className: "",
+            innerHTML: "",
+            setAttribute: function(k, v) { this[k] = v; }
+        };
+    }
+};
+` + escapeHtmlMatch[0] + "\n" + secondaryMetricsMatch[0] + "\n" + renderPluginCardMatch[0] + "\n" + `
+
+// Test Layout: stat
+const statCard = renderPluginCard({
+    layout: "stat",
+    title: "Solar Production",
+    status_badge: "AKTIV",
+    status_color: "green",
+    primary: { value: 4.8, unit: "kW", label: "Peak Generation" },
+    secondary_metrics: [{ label: "Daily Total", value: 24.5, unit: "kWh" }]
+});
+if (!statCard.innerHTML.includes("Solar Production")) throw new Error("statCard title missing");
+if (!statCard.innerHTML.includes("4.8")) throw new Error("statCard value missing");
+if (!statCard.innerHTML.includes("kW")) throw new Error("statCard unit missing");
+if (!statCard.innerHTML.includes("AKTIV")) throw new Error("statCard badge missing");
+if (!statCard.innerHTML.includes("Daily Total")) throw new Error("statCard secondary metrics missing");
+
+// Test Layout: delta
+const deltaCard = renderPluginCard({
+    layout: "delta",
+    title: "Grid Feed-In",
+    status_badge: "EXPORT",
+    status_color: "blue",
+    primary: { value: 3.2, unit: "kW" },
+    delta: { direction: "up", value: "+1.2 kW", comparison: "vs. Yesterday: +3.2 kWh" }
+});
+if (!deltaCard.innerHTML.includes("Grid Feed-In")) throw new Error("deltaCard title missing");
+if (!deltaCard.innerHTML.includes("+1.2 kW")) throw new Error("deltaCard delta value missing");
+if (!deltaCard.innerHTML.includes("vs. Yesterday: +3.2 kWh")) throw new Error("deltaCard comparison missing");
+
+// Test Layout: list
+const listCard = renderPluginCard({
+    layout: "list",
+    title: "SG-Ready Heat Pump",
+    status_badge: "BOOST",
+    status_color: "green",
+    secondary_metrics: [
+        { label: "Compressor", value: "Active", unit: "" },
+        { label: "Target Temp", value: 55, unit: "°C" }
+    ]
+});
+if (!listCard.innerHTML.includes("SG-Ready Heat Pump")) throw new Error("listCard title missing");
+if (!listCard.innerHTML.includes("Compressor")) throw new Error("listCard row 1 missing");
+if (!listCard.innerHTML.includes("Target Temp")) throw new Error("listCard row 2 missing");
+
+// Test XSS safety
+const xssCard = renderPluginCard({
+    layout: "stat",
+    title: "<script>alert('xss')</script>",
+    primary: { value: "\\"><img src=x onerror=1>", unit: "" }
+});
+if (xssCard.innerHTML.includes("<script>")) throw new Error("XSS script tag not escaped");
+if (xssCard.innerHTML.includes("<img")) throw new Error("XSS img tag not escaped");
+`;
+
+eval(mockEnv);
+"""
+            fe_res = subprocess.run(
+                ["node", "-e", frontend_plugin_script, str(ROOT / "web" / "app.js"), str(ROOT / "web" / "index.html")],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            check(
+                fe_res.returncode == 0,
+                f"web/app.js & web/index.html plugin layout and XSS checks pass ({fe_res.stderr.strip() or 'ok'})",
+                failures,
+            )
     finally:
         sma.shutdown()
         rega.shutdown()

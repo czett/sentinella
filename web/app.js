@@ -11,6 +11,7 @@
     var STATUS_URL = new URL("./status.json", window.location.href);
     var CONFIG_URL = new URL("./api/config.cgi", window.location.href);
     var TEST_URL = new URL("./api/test_signal.cgi", window.location.href);
+    var PLUGINS_URL = new URL("./api/plugins.cgi", window.location.href);
 
     var POLL_MS = 30000;
     var TEST_POLL_MS = 1000;
@@ -76,6 +77,7 @@
             noData: "No data",
             systemRegister: "System register",
             systemRegisterDescription: "Values from the latest run.",
+            pluginsTitle: "EXTENSIONS",
             inverterHost: "Inverter host",
             socVariable: "SoC variable",
             signalVariable: "Signal variable",
@@ -220,6 +222,7 @@
             noData: "Keine Daten",
             systemRegister: "Systemregister",
             systemRegisterDescription: "Werte aus dem letzten abgeschlossenen Lauf.",
+            pluginsTitle: "ERWEITERUNGEN",
             inverterHost: "Wechselrichter",
             socVariable: "SoC-Variable",
             signalVariable: "Signalvariable",
@@ -380,6 +383,9 @@
         metaSignalVar: $("meta-signal-var"),
         metaNotify: $("meta-notify"),
         metaLast: $("meta-last"),
+
+        pluginsSection: $("plugins-section"),
+        pluginsGrid: $("plugins-grid"),
 
         settingsOpen: $("settings-open"),
         settingsLayer: $("settings-layer"),
@@ -1059,6 +1065,7 @@
             })
             .finally(function () {
                 loading = false;
+                fetchAndRenderPlugins();
             });
     }
 
@@ -1103,6 +1110,167 @@
             {},
             false
         );
+        fetchAndRenderPlugins();
+    }
+
+    /* ----------------------------------------------------------------------
+       Plugins Ingest & Rendering
+       ---------------------------------------------------------------------- */
+
+    function escapeHtml(str) {
+        if (str === null || str === undefined) {
+            return "";
+        }
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
+
+    function renderSecondaryMetrics(metrics) {
+        if (!Array.isArray(metrics) || !metrics.length) {
+            return "";
+        }
+        var rows = metrics.map(function (m) {
+            var label = escapeHtml((m && m.label) || "");
+            var value = escapeHtml((m && m.value !== undefined) ? String(m.value) : "");
+            var unit = (m && m.unit) ? (" " + escapeHtml(m.unit)) : "";
+            return (
+                '<div class="plugin-list-row">' +
+                    '<span class="plugin-list-label">' + label + '</span>' +
+                    '<span class="plugin-list-value">' + value + unit + '</span>' +
+                '</div>'
+            );
+        }).join("");
+        return '<div class="plugin-secondary-metrics">' + rows + '</div>';
+    }
+
+    function renderPluginCard(plugin) {
+        var card = document.createElement("div");
+        card.className = "plugin-card";
+
+        var layout = (plugin && plugin.layout) || "stat";
+        var title = escapeHtml((plugin && plugin.title) || "");
+        var badgeText = (plugin && plugin.status_badge) ? escapeHtml(plugin.status_badge) : "";
+        var badgeColor = escapeHtml((plugin && plugin.status_color) || "neutral");
+
+        var badgeHtml = badgeText ? (
+            '<span class="plugin-badge" data-color="' + badgeColor + '">' + badgeText + '</span>'
+        ) : "";
+
+        var headerHtml = (
+            '<div class="plugin-header">' +
+                '<h3 class="plugin-title">' + title + '</h3>' +
+                badgeHtml +
+            '</div>'
+        );
+
+        var bodyHtml = "";
+
+        if (layout === "delta") {
+            var delta = (plugin && plugin.delta) || {};
+            var deltaDir = escapeHtml(delta.direction || "neutral");
+            var deltaVal = escapeHtml((delta.value !== undefined) ? String(delta.value) : "");
+            var deltaComp = escapeHtml(delta.comparison || "");
+
+            var primary = (plugin && plugin.primary) || {};
+            var priVal = escapeHtml((primary.value !== undefined) ? String(primary.value) : "");
+            var priUnit = primary.unit ? escapeHtml(primary.unit) : "";
+
+            var arrow = "";
+            if (deltaDir === "up") {
+                arrow = "↑ ";
+            } else if (deltaDir === "down") {
+                arrow = "↓ ";
+            }
+
+            bodyHtml = (
+                '<div class="plugin-delta-hero">' +
+                    '<span class="plugin-stat-value">' + priVal + '</span>' +
+                    (priUnit ? '<span class="plugin-stat-unit">' + priUnit + '</span>' : '') +
+                    (deltaVal ? (
+                        '<span class="plugin-delta-badge" data-direction="' + deltaDir + '">' +
+                            arrow + deltaVal +
+                        '</span>'
+                    ) : '') +
+                '</div>' +
+                (deltaComp ? '<div class="plugin-delta-comparison">' + deltaComp + '</div>' : '') +
+                renderSecondaryMetrics(plugin && plugin.secondary_metrics)
+            );
+        } else if (layout === "list") {
+            var metrics = (plugin && plugin.secondary_metrics) || [];
+            var listRows = "";
+            if (Array.isArray(metrics) && metrics.length) {
+                listRows = metrics.map(function (m) {
+                    var l = escapeHtml((m && m.label) || "");
+                    var v = escapeHtml((m && m.value !== undefined) ? String(m.value) : "");
+                    var u = (m && m.unit) ? (" " + escapeHtml(m.unit)) : "";
+                    return (
+                        '<li class="plugin-list-row">' +
+                            '<span class="plugin-list-label">' + l + '</span>' +
+                            '<span class="plugin-list-value">' + v + u + '</span>' +
+                        '</li>'
+                    );
+                }).join("");
+            }
+            bodyHtml = '<ul class="plugin-list-metrics">' + listRows + '</ul>';
+        } else {
+            /* Fallback to 'stat' layout */
+            var primaryStat = (plugin && plugin.primary) || {};
+            var statVal = escapeHtml((primaryStat.value !== undefined) ? String(primaryStat.value) : "");
+            var statUnit = primaryStat.unit ? escapeHtml(primaryStat.unit) : "";
+            var statLabel = primaryStat.label ? escapeHtml(primaryStat.label) : "";
+
+            bodyHtml = (
+                '<div class="plugin-stat-hero">' +
+                    '<span class="plugin-stat-value">' + statVal + '</span>' +
+                    (statUnit ? '<span class="plugin-stat-unit">' + statUnit + '</span>' : '') +
+                '</div>' +
+                (statLabel ? '<div class="plugin-stat-label">' + statLabel + '</div>' : '') +
+                renderSecondaryMetrics(plugin && plugin.secondary_metrics)
+            );
+        }
+
+        card.innerHTML = headerHtml + bodyHtml;
+        return card;
+    }
+
+    function fetchAndRenderPlugins() {
+        if (!el.pluginsSection || !el.pluginsGrid) {
+            return;
+        }
+
+        var url = new URL(PLUGINS_URL.href);
+        url.searchParams.set("t", String(Date.now()));
+
+        fetch(url.toString(), { cache: "no-store" })
+            .then(function (res) {
+                if (!res.ok) {
+                    throw new Error("HTTP " + res.status);
+                }
+                return res.json();
+            })
+            .then(function (plugins) {
+                if (!Array.isArray(plugins) || !plugins.length) {
+                    el.pluginsSection.style.display = "none";
+                    el.pluginsGrid.innerHTML = "";
+                    return;
+                }
+
+                el.pluginsGrid.innerHTML = "";
+                plugins.forEach(function (plugin) {
+                    if (plugin && typeof plugin === "object") {
+                        el.pluginsGrid.appendChild(renderPluginCard(plugin));
+                    }
+                });
+                el.pluginsSection.style.display = "";
+            })
+            .catch(function () {
+                el.pluginsSection.style.display = "none";
+                el.pluginsGrid.innerHTML = "";
+            });
     }
 
     /* ----------------------------------------------------------------------

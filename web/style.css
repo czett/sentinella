@@ -1114,6 +1114,249 @@ body[data-state="loading"] .rail-marker {
     overflow-wrap: anywhere;
 }
 
+/* --------------------------------------------------------------------------
+   Section 05: Plugins (Erweiterungen) — Swiss-Poster Grid
+   -------------------------------------------------------------------------- */
+
+.plugins-section {
+    padding: clamp(24px, 3.6vw, 40px) var(--pad);
+    border-bottom: var(--rule-heavy);
+    background: var(--paper);
+}
+
+.plugins-section .section-header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding-bottom: 16px;
+    border-bottom: var(--rule);
+}
+
+.plugins-section .section-num {
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+}
+
+.plugins-section .section-title {
+    margin: 0;
+    color: var(--ink);
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.plugins-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+    margin-top: 24px;
+}
+
+/* Base Plugin Card */
+.plugin-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: clamp(18px, 2.4vw, 24px);
+    border: var(--rule);
+    background: var(--white);
+    color: var(--ink);
+    transition: transform 150ms var(--ease), box-shadow 150ms var(--ease);
+}
+
+.plugin-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+html[data-theme="dark"] .plugin-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+/* Card Header */
+.plugin-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.plugin-title {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink);
+    line-height: 1.3;
+}
+
+.plugin-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border: 1px solid currentColor;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    line-height: 1.3;
+}
+
+.plugin-badge[data-color="green"] {
+    color: var(--green);
+    background: var(--green-surface);
+}
+
+.plugin-badge[data-color="blue"] {
+    color: var(--blue-text);
+    background: rgb(24 58 219 / 0.08);
+}
+
+.plugin-badge[data-color="red"] {
+    color: var(--red);
+    background: rgb(225 38 28 / 0.08);
+}
+
+.plugin-badge[data-color="neutral"] {
+    color: var(--ink-muted);
+    background: transparent;
+}
+
+/* Layout 1: Stat Hero */
+.plugin-stat-hero {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    margin: 8px 0 4px;
+}
+
+.plugin-stat-value {
+    font-family: var(--font-mono);
+    font-size: clamp(2.5rem, 6vw, 3.75rem);
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+}
+
+.plugin-stat-unit {
+    font-family: var(--font-mono);
+    font-size: clamp(1.1rem, 2.4vw, 1.5rem);
+    font-weight: 700;
+    color: var(--ink-muted);
+}
+
+.plugin-stat-label {
+    margin: 4px 0 12px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-secondary);
+}
+
+/* Layout 2: Delta Trend */
+.plugin-delta-hero {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin: 8px 0 6px;
+    flex-wrap: wrap;
+}
+
+.plugin-delta-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border: 1px solid currentColor;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1.4;
+    white-space: nowrap;
+}
+
+.plugin-delta-badge[data-direction="up"] {
+    color: var(--green);
+    background: var(--green-surface);
+}
+
+.plugin-delta-badge[data-direction="down"] {
+    color: var(--red);
+    background: rgb(225 38 28 / 0.08);
+}
+
+.plugin-delta-badge[data-direction="neutral"] {
+    color: var(--ink-muted);
+}
+
+.plugin-delta-comparison {
+    margin: 6px 0 12px;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--ink-secondary);
+    line-height: 1.4;
+}
+
+/* Layout 3: Clean Key-Value List */
+.plugin-list-metrics {
+    display: flex;
+    flex-direction: column;
+    margin: 4px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.plugin-list-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    padding: 0.35rem 0;
+    border-bottom: 1px solid var(--rule-hairline, rgb(10 10 12 / 0.18));
+}
+
+.plugin-list-row:last-child {
+    border-bottom: 0;
+}
+
+.plugin-list-label {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-secondary);
+}
+
+.plugin-list-value {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+    text-align: right;
+    white-space: nowrap;
+}
+
+/* Secondary metrics container inside stat and delta cards */
+.plugin-secondary-metrics {
+    margin-top: auto;
+    padding-top: 10px;
+    border-top: var(--rule-hairline);
+    display: flex;
+    flex-direction: column;
+}
+
 /* Footer */
 .footer {
     display: flex;
@@ -2012,6 +2255,10 @@ body.drawer-open {
 
     .quick-setup-status {
         flex-basis: 100%;
+    }
+
+    .plugins-grid {
+        grid-template-columns: 1fr;
     }
 
     .notice {
