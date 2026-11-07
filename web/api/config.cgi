@@ -73,6 +73,12 @@ if [ -z "$ENV_FILE" ]; then
 fi
 
 STATE_DIR=$ADDON_DIR/state
+RENAULT_CONFIG_DIR=$ADDON_DIR/config/plugins
+RENAULT_ENV_FILE=${RENAULT_ENV:-$RENAULT_CONFIG_DIR/renault.env}
+RENAULT_PLUGIN=$ADDON_DIR/plugins.d/20_renault_zoe.sh
+RENAULT_SESSION_FILE=$STATE_DIR/plugins/.renault_session
+RENAULT_CARD_FILE=$STATE_DIR/plugins/renault_zoe.json
+RENAULT_TMP_FILE=
 NOTIFY_SCRIPT=$ADDON_DIR/lib/notify_signal.sh
 TEST_RESULT=$STATE_DIR/notify_test.result
 TEST_LOG=$STATE_DIR/notify_test.log
@@ -80,6 +86,9 @@ TEST_LOCK=$STATE_DIR/.test_signal.lock
 CONFIG_LOCK=$STATE_DIR/.config.lock
 TEST_WRAPPER=
 UI_LANGUAGE=en
+RENAULT_USER=
+RENAULT_PASS=
+RENAULT_VIN=
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -177,6 +186,28 @@ is_password() {
     [ "${#1}" -ge 1 ] && [ "${#1}" -le 128 ]
 }
 
+is_masked_secret() {
+    case "$1" in
+        ''|'••••••••'*|'********'*) return 0 ;;
+    esac
+    printf '%s' "$1" | grep -Eq '^[•*]+$'
+}
+
+is_renault_user() {
+    case "$1" in
+        ''|*[[:space:]]*|*'"'*|*\\*) return 1 ;;
+    esac
+    if printf '%s' "$1" | grep -q '[[:cntrl:]]'; then
+        return 1
+    fi
+    printf '%s' "$1" | grep -Eq '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' || return 1
+    [ "${#1}" -le 128 ]
+}
+
+is_renault_vin() {
+    printf '%s' "$1" | grep -Eq '^[A-Z0-9]{6,24}$'
+}
+
 shquote() {
     printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
 }
@@ -271,6 +302,22 @@ msg() {
         en:method) printf 'Use GET or POST for this endpoint.' ;;
         de:unknown_action) printf 'Unbekannte API-Aktion.' ;;
         en:unknown_action) printf 'Unknown API action.' ;;
+        de:renault_user_invalid) printf 'Geben Sie eine gültige Renault-E-Mail-Adresse ein.' ;;
+        en:renault_user_invalid) printf 'Enter a valid Renault email address.' ;;
+        de:renault_pass_invalid) printf 'Das Renault-Passwort enthält nicht unterstützte Zeichen.' ;;
+        en:renault_pass_invalid) printf 'The Renault password contains unsupported characters.' ;;
+        de:renault_vin_invalid) printf 'Geben Sie eine gültige Fahrzeug-Identifizierungsnummer (VIN, z. B. VF1...) ein.' ;;
+        en:renault_vin_invalid) printf 'Enter a valid vehicle identification number (VIN, e.g. VF1...).' ;;
+        de:write_renault) printf 'Die Renault-Konfiguration kann nicht geschrieben werden.' ;;
+        en:write_renault) printf 'Cannot write the Renault configuration.' ;;
+        de:renault_test_credentials) printf 'Speichern Sie zuerst Renault E-Mail, Passwort und VIN.' ;;
+        en:renault_test_credentials) printf 'Enter Renault email, password and VIN before testing.' ;;
+        de:renault_plugin_missing) printf 'Das Renault-Zoe-Plugin fehlt oder ist nicht ausführbar.' ;;
+        en:renault_plugin_missing) printf 'The Renault Zoe plugin is missing or not executable.' ;;
+        de:renault_test_ok) printf 'Renault Zoe: Verbindung erfolgreich hergestellt.' ;;
+        en:renault_test_ok) printf 'Renault Zoe: Connection verified.' ;;
+        de:renault_test_failed) printf 'Renault-Verbindung fehlgeschlagen. Prüfen Sie E-Mail, Passwort und VIN.' ;;
+        en:renault_test_failed) printf 'Renault connection failed. Check email, password and VIN.' ;;
         *) printf 'Request failed.' ;;
     esac
 }
@@ -278,6 +325,7 @@ msg() {
 # shellcheck disable=SC2317,SC2329  # invoked indirectly through trap
 cleanup() {
     [ -n "${TMP_FILE:-}" ] && rm -f "$TMP_FILE" 2>/dev/null
+    [ -n "${RENAULT_TMP_FILE:-}" ] && rm -f "$RENAULT_TMP_FILE" 2>/dev/null
     [ -n "$TEST_WRAPPER" ] && rm -f "$TEST_WRAPPER" 2>/dev/null
     if [ "${CONFIG_LOCK_OWNED:-0}" = "1" ]; then
         rm -rf "$CONFIG_LOCK" 2>/dev/null
@@ -376,7 +424,22 @@ body_bool() {
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
+load_renault_env() {
+    RENAULT_USER=
+    RENAULT_PASS=
+    RENAULT_VIN=
+    if [ -r "$RENAULT_ENV_FILE" ]; then
+        # shellcheck source=/dev/null
+        . "$RENAULT_ENV_FILE" 2>/dev/null || true
+    fi
+    RENAULT_USER=$(trim_ws "${RENAULT_USER:-}")
+    RENAULT_PASS=${RENAULT_PASS:-}
+    RENAULT_VIN=$(trim_ws "${RENAULT_VIN:-}" | tr '[:lower:]' '[:upper:]')
+    return 0
+}
+
 load_env() {
+    load_renault_env
     [ -r "$ENV_FILE" ] || return 1
     # shellcheck source=/dev/null
     . "$ENV_FILE" || return 1
@@ -393,6 +456,7 @@ load_env() {
         de|DE|de_DE|de-DE) UI_LANGUAGE=de ;;
         *) UI_LANGUAGE=en ;;
     esac
+    load_renault_env
     return 0
 }
 
@@ -405,6 +469,8 @@ config_payload() {
     [ -n "$SIGNAL_APIKEY" ] && _apikey_set=true
     _password_set=false
     [ -n "$SMA_PASS" ] && _password_set=true
+    _renault_pass_set=false
+    [ -n "$RENAULT_PASS" ] && _renault_pass_set=true
 
     _writable=false
     [ -w "$ENV_FILE" ] && _writable=true
@@ -424,6 +490,10 @@ config_payload() {
     printf ',"sma_ip":%s' "$(json_str "$SMA_IP")"
     printf ',"sma_port":%s' "$_port"
     printf ',"sma_password_set":%s' "$_password_set"
+    printf ',"renault_user":%s' "$(json_str "$RENAULT_USER")"
+    printf ',"renault_vin":%s' "$(json_str "$RENAULT_VIN")"
+    printf ',"renault_pass_set":%s' "$_renault_pass_set"
+    printf ',"renault_password_set":%s' "$_renault_pass_set"
     printf ',"writable":%s' "$_writable"
     printf '}\n'
 }
@@ -481,6 +551,92 @@ release_config_lock() {
     if [ "${CONFIG_LOCK_OWNED:-0}" = "1" ]; then
         rm -rf "$CONFIG_LOCK" 2>/dev/null || true
         CONFIG_LOCK_OWNED=0
+    fi
+}
+
+save_renault_env() {
+    _r_user=$1
+    _r_pass=$2
+    _r_vin=$3
+
+    mkdir -p "$RENAULT_CONFIG_DIR" 2>/dev/null || return 1
+    chmod 755 "$ADDON_DIR/config" "$RENAULT_CONFIG_DIR" 2>/dev/null || true
+
+    RENAULT_TMP_FILE="$RENAULT_ENV_FILE.tmp.$$"
+    (
+        umask 077
+        if [ -f "$RENAULT_ENV_FILE" ]; then
+            cp -p "$RENAULT_ENV_FILE" "$RENAULT_TMP_FILE" 2>/dev/null
+        else
+            cat > "$RENAULT_TMP_FILE" <<'EOF'
+# Sentinella - Renault Zoe plugin credentials (mode 600)
+RENAULT_USER=''
+RENAULT_PASS=''
+RENAULT_VIN=''
+EOF
+        fi
+    ) || return 1
+
+    chmod 600 "$RENAULT_TMP_FILE" 2>/dev/null || true
+    env_set "$RENAULT_TMP_FILE" RENAULT_USER "$_r_user" || return 1
+    env_set "$RENAULT_TMP_FILE" RENAULT_PASS "$_r_pass" || return 1
+    env_set "$RENAULT_TMP_FILE" RENAULT_VIN "$_r_vin" || return 1
+    chmod 600 "$RENAULT_TMP_FILE" 2>/dev/null || true
+
+    mv -f "$RENAULT_TMP_FILE" "$RENAULT_ENV_FILE" 2>/dev/null || return 1
+    chmod 600 "$RENAULT_ENV_FILE" 2>/dev/null || true
+    RENAULT_TMP_FILE=
+
+    # Invalidate cached token whenever Renault credentials are updated
+    rm -f "$RENAULT_SESSION_FILE" 2>/dev/null || true
+    if [ -z "$_r_user" ] || [ -z "$_r_vin" ]; then
+        rm -f "$RENAULT_CARD_FILE" 2>/dev/null || true
+    fi
+    return 0
+}
+
+parse_and_validate_renault() {
+    _ruser=$RENAULT_USER
+    _rpass=$RENAULT_PASS
+    _rvin=$RENAULT_VIN
+    _want_renault=0
+
+    _ruser_field=
+    if body_has renault_user; then
+        _ruser_field=renault_user
+    elif body_has renault_email; then
+        _ruser_field=renault_email
+    fi
+    if [ -n "$_ruser_field" ]; then
+        _ruser=$(trim_ws "$(body_str "$_ruser_field")")
+        if [ -n "$_ruser" ] && ! is_renault_user "$_ruser"; then
+            fail "400 Bad Request" "$(msg renault_user_invalid)" "renault_user"
+        fi
+        _want_renault=1
+    fi
+
+    if body_has renault_vin; then
+        _rvin=$(trim_ws "$(body_str renault_vin)" | tr '[:lower:]' '[:upper:]')
+        if [ -n "$_rvin" ] && ! is_renault_vin "$_rvin"; then
+            fail "400 Bad Request" "$(msg renault_vin_invalid)" "renault_vin"
+        fi
+        _want_renault=1
+    fi
+
+    _rpass_field=
+    if body_has renault_pass; then
+        _rpass_field=renault_pass
+    elif body_has renault_password; then
+        _rpass_field=renault_password
+    fi
+    if [ -n "$_rpass_field" ]; then
+        _new_rpass=$(body_str "$_rpass_field")
+        if [ -n "$_new_rpass" ] && ! is_masked_secret "$_new_rpass"; then
+            is_password "$_new_rpass" || fail "400 Bad Request" \
+                "$(msg renault_pass_invalid)" "renault_pass"
+            _rpass=$_new_rpass
+            _want_renault=1
+        fi
     fi
 }
 
@@ -630,6 +786,8 @@ save_config() {
         fi
     fi
 
+    parse_and_validate_renault
+
     acquire_config_lock || fail "409 Conflict" \
         "$(msg config_busy)"
 
@@ -679,6 +837,11 @@ save_config() {
     mv -f "$TMP_FILE" "$ENV_FILE" 2>/dev/null \
         || fail "500 Internal Server Error" "$(msg replace_config)"
     TMP_FILE=
+
+    if [ "$_want_renault" = "1" ]; then
+        save_renault_env "$_ruser" "$_rpass" "$_rvin" \
+            || fail "500 Internal Server Error" "$(msg write_renault)"
+    fi
 
     release_config_lock
     load_env || fail "500 Internal Server Error" \
@@ -804,17 +967,61 @@ report_test() {
 }
 
 # ---------------------------------------------------------------------------
+# Renault Zoe connection test (synchronous dry-run + card refresh)
+# ---------------------------------------------------------------------------
+run_renault_test() {
+    load_env 2>/dev/null || load_renault_env
+
+    parse_and_validate_renault
+    if [ "$_want_renault" = "1" ]; then
+        acquire_config_lock || fail "409 Conflict" "$(msg config_busy)"
+        save_renault_env "$_ruser" "$_rpass" "$_rvin" \
+            || fail "500 Internal Server Error" "$(msg write_renault)"
+        release_config_lock
+        load_renault_env
+    fi
+
+    if [ -z "$RENAULT_USER" ] || [ -z "$RENAULT_PASS" ] || [ -z "$RENAULT_VIN" ]; then
+        fail "400 Bad Request" "$(msg renault_test_credentials)"
+    fi
+
+    [ -x "$RENAULT_PLUGIN" ] || fail "500 Internal Server Error" \
+        "$(msg renault_plugin_missing)"
+
+    rm -f "$RENAULT_SESSION_FILE" 2>/dev/null || true
+
+    if RENAULT_ADDON_DIR="$ADDON_DIR" RENAULT_ENV="$RENAULT_ENV_FILE" \
+        "$RENAULT_PLUGIN" --test >/dev/null 2>&1; then
+        emit_json "200 OK" \
+            "{\"ok\":true,\"status\":\"connected\",\"message\":$(json_str "$(msg renault_test_ok)")}"
+    fi
+
+    fail "502 Bad Gateway" "$(msg renault_test_failed)"
+}
+
+report_renault_test() {
+    load_renault_env
+    if [ -f "$RENAULT_CARD_FILE" ]; then
+        emit_json "200 OK" \
+            "{\"ok\":true,\"status\":\"connected\",\"message\":$(json_str "$(msg renault_test_ok)")}"
+    fi
+    emit_json "200 OK" '{"ok":true,"status":"idle"}'
+}
+
+# ---------------------------------------------------------------------------
 # Routing
 # ---------------------------------------------------------------------------
 ACTION=${SMA_CGI_ACTION:-}
 if [ -z "$ACTION" ]; then
     case "${PATH_INFO:-}" in
+        */test_renault*) ACTION=test_renault ;;
         */test_signal*) ACTION=test_signal ;;
-        */config*) ACTION=config ;;
+        */settings*|*/config*) ACTION=config ;;
     esac
 fi
 if [ -z "$ACTION" ]; then
     case "${SCRIPT_NAME##*/}" in
+        test_renault.cgi|test_renault) ACTION=test_renault ;;
         test_signal.cgi|test_signal) ACTION=test_signal ;;
         *) ACTION=config ;;
     esac
@@ -825,7 +1032,7 @@ fi
 load_env 2>/dev/null || true
 
 case "$ACTION" in
-    config)
+    config|settings)
         case "$REQUEST_METHOD" in
             GET|HEAD)
                 load_env || fail "500 Internal Server Error" \
@@ -852,6 +1059,22 @@ case "$ACTION" in
                 check_origin
                 read_body
                 start_test
+                ;;
+            *)
+                emit_json "405 Method Not Allowed" \
+                    "{\"ok\":false,\"error\":$(json_str "$(msg method)")}"
+                ;;
+        esac
+        ;;
+    test_renault)
+        case "$REQUEST_METHOD" in
+            GET|HEAD)
+                report_renault_test
+                ;;
+            POST)
+                check_origin
+                read_body
+                run_renault_test
                 ;;
             *)
                 emit_json "405 Method Not Allowed" \

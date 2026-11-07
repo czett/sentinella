@@ -52,6 +52,15 @@ class State:
         self.rega_bodies: list[str] = []
         self.signal_requests: list[str] = []
         self.forecast_requests: list[str] = []
+        self.renault_login_calls = 0
+        self.renault_jwt_calls = 0
+        self.renault_person_calls = 0
+        self.renault_battery_calls = 0
+        self.renault_battery_level = 78
+        self.renault_autonomy = 214
+        self.renault_plug_status = 1
+        self.renault_charging_status = 1.0
+        self.renault_force_401_once = False
 
     def reset_requests(self) -> None:
         with self.lock:
@@ -61,6 +70,10 @@ class State:
             self.rega_bodies = []
             self.signal_requests = []
             self.forecast_requests = []
+            self.renault_login_calls = 0
+            self.renault_jwt_calls = 0
+            self.renault_person_calls = 0
+            self.renault_battery_calls = 0
 
 
 class SmaHandler(BaseHTTPRequestHandler):
@@ -195,6 +208,119 @@ class SignalHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+
+class RenaultHandler(BaseHTTPRequestHandler):
+    """Mock Gigya + Kamereon endpoints for Renault Zoe plugin tests."""
+
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, *_args) -> None:
+        pass
+
+    def _json(self, status: int, payload: dict) -> None:
+        body = json.dumps(payload).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self) -> None:  # noqa: N802
+        state: State = self.server.state  # type: ignore[attr-defined]
+        parsed = urlparse(self.path)
+        length = int(self.headers.get("Content-Length", "0"))
+        raw = self.rfile.read(length).decode("utf-8", "replace") if length else ""
+
+        if parsed.path == "/accounts.login":
+            with state.lock:
+                state.renault_login_calls += 1
+            params = parse_qs(raw)
+            user = params.get("loginID", [""])[0]
+            pw = params.get("password", [""])[0]
+            if user != "zoe@example.com" or pw != "renault-secret-42":
+                self._json(200, {"errorCode": 403042, "errorDetails": "invalid loginID or password"})
+                return
+            self._json(200, {"sessionInfo": {"cookieName": "gmid", "cookieValue": "gigya-login-token-xyz"}})
+            return
+
+        if parsed.path == "/accounts.getJWT":
+            with state.lock:
+                state.renault_jwt_calls += 1
+            if "gigya-login-token-xyz" not in raw or "data.personId,data.gigyaDataCenter" not in raw:
+                self._json(400, {"errorCode": 400006})
+                return
+            self._json(
+                200,
+                {
+                    "id_token": "jwt-id-token-valid-999",
+                    "data": {"personId": "person-de-001", "gigyaDataCenter": "eu1"},
+                },
+            )
+            return
+
+        self._json(404, {"err": 404})
+
+    def do_GET(self) -> None:  # noqa: N802
+        state: State = self.server.state  # type: ignore[attr-defined]
+        parsed = urlparse(self.path)
+        id_token = self.headers.get("x-gigya-id_token", "")
+        api_key = self.headers.get("apikey", "")
+
+        if parsed.path == "/commerce/v1/persons/person-de-001":
+            with state.lock:
+                state.renault_person_calls += 1
+            if id_token != "jwt-id-token-valid-999" or not api_key:
+                self._json(401, {"error": "unauthorized"})
+                return
+            self._json(
+                200,
+                {
+                    "accounts": [
+                        {"accountId": "acc-dacia-ignore", "accountType": "MYDACIA"},
+                        {"accountId": "acc-myrenault-777", "accountType": "MYRENAULT"},
+                    ]
+                },
+            )
+            return
+
+        expected_bat_path = (
+            "/commerce/v1/accounts/acc-myrenault-777/kamereon/kca/"
+            "car-adapter/v2/cars/VF1AG000012345678/battery-status"
+        )
+        if parsed.path == expected_bat_path:
+            with state.lock:
+                state.renault_battery_calls += 1
+                if state.renault_force_401_once:
+                    state.renault_force_401_once = False
+                    self._json(401, {"error": "token expired"})
+                    return
+                if id_token != "jwt-id-token-valid-999" or not api_key:
+                    self._json(401, {"error": "invalid token"})
+                    return
+                level = state.renault_battery_level
+                autonomy = state.renault_autonomy
+                plug = state.renault_plug_status
+                charging = state.renault_charging_status
+            self._json(
+                200,
+                {
+                    "data": {
+                        "type": "Car",
+                        "id": "VF1AG000012345678",
+                        "attributes": {
+                            "timestamp": "2026-11-07T14:30:00Z",
+                            "batteryLevel": level,
+                            "batteryAutonomy": autonomy,
+                            "plugStatus": plug,
+                            "chargingStatus": charging,
+                        },
+                    }
+                },
+            )
+            return
+
+        self._json(404, {"err": 404})
 
 
 def start_server(handler, state: State, tls: tuple[str, str] | None = None):
@@ -382,10 +508,13 @@ def main() -> int:
     sig = start_server(SignalHandler, signal_state)
     forecast_state = State()
     fc = start_server(ForecastHandler, forecast_state)
+    renault_state = State()
+    rn = start_server(RenaultHandler, renault_state)
     sma_port = sma.server_address[1]
     rega_port = rega.server_address[1]
     signal_port = sig.server_address[1]
     forecast_port = fc.server_address[1]
+    renault_port = rn.server_address[1]
 
     try:
         print("\n1. trigger at 96 %")
@@ -1401,15 +1530,292 @@ eval(mockEnv);
             "legacy fixtures/dev directory is gone",
             failures,
         )
+
+        print("\n23. Renault Zoe plugin, token caching, settings API & WebUI integration")
+        zoe_plugin_path = ROOT / "plugins.d" / "20_renault_zoe.sh"
+        renault_example_path = ROOT / "config" / "plugins" / "renault.env.example"
+        check(zoe_plugin_path.is_file(), "plugins.d/20_renault_zoe.sh exists", failures)
+        check(renault_example_path.is_file(), "config/plugins/renault.env.example exists", failures)
+        if renault_example_path.is_file():
+            ex_text = renault_example_path.read_text()
+            for expected_line in ('RENAULT_USER=""', 'RENAULT_PASS=""', 'RENAULT_VIN=""'):
+                check(
+                    expected_line in ex_text,
+                    f"renault.env.example contains {expected_line}",
+                    failures,
+                )
+
+        zoe_syntax = subprocess.run(
+            ["sh", "-n", str(zoe_plugin_path)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        check(
+            zoe_syntax.returncode == 0,
+            f"20_renault_zoe.sh passes sh -n ({zoe_syntax.stderr.strip() or 'ok'})",
+            failures,
+        )
+
+        zoe_addon = make_addon(tmp, sma_port, rega_port, signal_port, False, name="zoe-addon")
+        (zoe_addon / "plugins.d").mkdir(parents=True, exist_ok=True)
+        (zoe_addon / "config" / "plugins").mkdir(parents=True, exist_ok=True)
+        (zoe_addon / "state" / "plugins").mkdir(parents=True, exist_ok=True)
+        zoe_script = zoe_addon / "plugins.d" / "20_renault_zoe.sh"
+        shutil.copy2(zoe_plugin_path, zoe_script)
+        zoe_script.chmod(0o755)
+        check(
+            (zoe_script.stat().st_mode & 0o777) == 0o755,
+            "20_renault_zoe.sh has mode 755",
+            failures,
+        )
+
+        zoe_card_path = zoe_addon / "state" / "plugins" / "renault_zoe.json"
+        zoe_session_path = zoe_addon / "state" / "plugins" / ".renault_session"
+
+        # 23a. Missing / empty credentials -> clean exit 0 without writing card or error
+        noop_res = subprocess.run(
+            [str(zoe_script)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        check(noop_res.returncode == 0, "unconfigured Renault plugin exits 0", failures)
+        check(not zoe_card_path.exists(), "unconfigured Renault plugin writes no card", failures)
+        check(not zoe_session_path.exists(), "unconfigured Renault plugin writes no session", failures)
+
+        # 23b. Settings API saves Renault credentials with mode 600 and masks password on GET
+        post_renault = run_cgi(
+            zoe_addon,
+            "POST",
+            "settings",
+            body=json.dumps(
+                {
+                    "renault_user": "zoe@example.com",
+                    "renault_pass": "renault-secret-42",
+                    "renault_vin": "vf1ag000012345678",
+                }
+            ),
+        )
+        r_status, r_saved = parse_cgi(post_renault)
+        renault_env_file = zoe_addon / "config" / "plugins" / "renault.env"
+        check(r_status == "200 OK", f"POST settings.cgi returns 200 (got {r_status})", failures)
+        check(renault_env_file.is_file(), "config/plugins/renault.env created", failures)
+        check(
+            (renault_env_file.stat().st_mode & 0o777) == 0o600,
+            "config/plugins/renault.env has mode 600",
+            failures,
+        )
+        check(
+            r_saved.get("renault_user") == "zoe@example.com",
+            "renault_user returned in settings response",
+            failures,
+        )
+        check(
+            r_saved.get("renault_vin") == "VF1AG000012345678",
+            "renault_vin normalized to uppercase",
+            failures,
+        )
+        check(
+            r_saved.get("renault_pass_set") is True,
+            "renault_pass_set is True",
+            failures,
+        )
+        check(
+            "renault-secret-42" not in post_renault.stdout,
+            "Renault password is never returned in CGI response",
+            failures,
+        )
+
+        # Verify subsequent save with empty password keeps stored password
+        post_keep = run_cgi(
+            zoe_addon,
+            "POST",
+            "settings",
+            body=json.dumps(
+                {
+                    "renault_user": "zoe@example.com",
+                    "renault_pass": "",
+                    "renault_vin": "VF1AG000012345678",
+                }
+            ),
+        )
+        _, keep_data = parse_cgi(post_keep)
+        check(
+            keep_data.get("renault_pass_set") is True
+            and "renault-secret-42" in renault_env_file.read_text(),
+            "empty renault_pass preserves stored password in renault.env",
+            failures,
+        )
+
+        # 23c. Full 4-step auth chain + telemetry parse (chargingStatus=1.0 -> LÄDT / green)
+        zoe_env = os.environ.copy()
+        zoe_env["RENAULT_GIGYA_URL"] = f"http://127.0.0.1:{renault_port}"
+        zoe_env["RENAULT_KAMEREON_URL"] = f"http://127.0.0.1:{renault_port}"
+        renault_state.reset_requests()
+        renault_state.renault_battery_level = 78
+        renault_state.renault_autonomy = 214
+        renault_state.renault_plug_status = 1
+        renault_state.renault_charging_status = 1.0
+
+        zoe_res = subprocess.run(
+            [str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20
+        )
+        check(zoe_res.returncode == 0, f"Renault plugin exits 0 (got {zoe_res.returncode})", failures)
+        check(renault_state.renault_login_calls == 1, "Gigya accounts.login called once", failures)
+        check(renault_state.renault_jwt_calls == 1, "Gigya accounts.getJWT called once", failures)
+        check(renault_state.renault_person_calls == 1, "Kamereon persons called once", failures)
+        check(renault_state.renault_battery_calls == 1, "Kamereon battery-status called once", failures)
+        check(zoe_session_path.is_file(), ".renault_session cache file written", failures)
+        check(
+            (zoe_session_path.stat().st_mode & 0o777) == 0o600,
+            ".renault_session has mode 600",
+            failures,
+        )
+        session_text = zoe_session_path.read_text()
+        check(
+            "ID_TOKEN=" in session_text and "ACCOUNT_ID=" in session_text and "TOKEN_TS=" in session_text,
+            ".renault_session stores ID_TOKEN, ACCOUNT_ID, TOKEN_TS",
+            failures,
+        )
+        check(zoe_card_path.is_file(), "renault_zoe.json card written", failures)
+        zoe_card = json.loads(zoe_card_path.read_text()) if zoe_card_path.is_file() else {}
+        check(zoe_card.get("layout") == "stat", "Renault card layout is stat", failures)
+        check(zoe_card.get("status_badge") == "LÄDT", "chargingStatus 1.0 -> badge LÄDT", failures)
+        check(zoe_card.get("status_color") == "green", "chargingStatus 1.0 -> color green", failures)
+        check(
+            zoe_card.get("primary") == {"value": 78, "unit": "%", "label": "BATTERIE SOC"},
+            f"primary stat matches expected structure (got {zoe_card.get('primary')})",
+            failures,
+        )
+        check(
+            zoe_card.get("secondary_metrics")
+            == [
+                {"label": "REICHWEITE", "value": "214 km"},
+                {"label": "STECKER", "value": "Gesteckt"},
+            ],
+            f"secondary_metrics match expected values (got {zoe_card.get('secondary_metrics')})",
+            failures,
+        )
+
+        # 23d. Cache hit (< 6h): reuses ID_TOKEN and ACCOUNT_ID without re-authenticating
+        renault_state.reset_requests()
+        renault_state.renault_battery_level = 82
+        renault_state.renault_autonomy = 225
+        renault_state.renault_plug_status = 1
+        renault_state.renault_charging_status = 0.0
+        zoe_res2 = subprocess.run(
+            [str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20
+        )
+        check(zoe_res2.returncode == 0, "cached Renault poll exits 0", failures)
+        check(
+            renault_state.renault_login_calls == 0
+            and renault_state.renault_jwt_calls == 0
+            and renault_state.renault_person_calls == 0,
+            "cached poll skips Gigya and persons auth calls",
+            failures,
+        )
+        check(renault_state.renault_battery_calls == 1, "cached poll queries battery-status", failures)
+        zoe_card2 = json.loads(zoe_card_path.read_text())
+        check(
+            zoe_card2.get("status_badge") == "VERBUNDEN"
+            and zoe_card2.get("status_color") == "blue",
+            "plugStatus 1 & chargingStatus 0.0 -> VERBUNDEN / blue",
+            failures,
+        )
+
+        # 23e. HTTP 401 on cached token triggers automatic re-auth and retry; unplugged -> BEREIT / neutral
+        renault_state.reset_requests()
+        renault_state.renault_force_401_once = True
+        renault_state.renault_battery_level = 65
+        renault_state.renault_autonomy = 180
+        renault_state.renault_plug_status = 0
+        renault_state.renault_charging_status = -1.0
+        zoe_res3 = subprocess.run(
+            [str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20
+        )
+        check(zoe_res3.returncode == 0, "401 recovery poll exits 0", failures)
+        check(renault_state.renault_login_calls == 1, "401 triggers fresh Gigya login", failures)
+        check(renault_state.renault_battery_calls == 2, "battery-status retried after 401", failures)
+        zoe_card3 = json.loads(zoe_card_path.read_text())
+        check(
+            zoe_card3.get("status_badge") == "BEREIT"
+            and zoe_card3.get("status_color") == "neutral"
+            and zoe_card3.get("secondary_metrics")
+            == [
+                {"label": "REICHWEITE", "value": "180 km"},
+                {"label": "STECKER", "value": "Getrennt"},
+            ],
+            "unplugged Zoe card reports BEREIT / neutral / Getrennt",
+            failures,
+        )
+
+        # 23f. test_renault.cgi connection test endpoint
+        test_rn_env = os.environ.copy()
+        test_rn_env.update(
+            {
+                "REQUEST_METHOD": "POST",
+                "SCRIPT_NAME": "/addons/sentinella/api/test_renault.cgi",
+                "PATH_INFO": "",
+                "CONTENT_LENGTH": "2",
+                "CONTENT_TYPE": "application/json",
+                "SMA_MONITOR_ADDON_DIR": str(zoe_addon),
+                "SMA_MONITOR_ENV": str(zoe_addon / ".env"),
+                "RENAULT_GIGYA_URL": f"http://127.0.0.1:{renault_port}",
+                "RENAULT_KAMEREON_URL": f"http://127.0.0.1:{renault_port}",
+            }
+        )
+        test_rn_res = subprocess.run(
+            ["sh", str(ROOT / "web" / "api" / "test_renault.cgi")],
+            input="{}",
+            env=test_rn_env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        rn_test_status, rn_test_body = parse_cgi(test_rn_res)
+        check(
+            rn_test_status == "200 OK" and rn_test_body.get("status") == "connected",
+            f"test_renault.cgi verifies live connection (got {rn_test_status}: {rn_test_body})",
+            failures,
+        )
+
+        # 23g. WebUI & deploy.sh checks for Renault Zoe
+        deploy_text = (ROOT / "deploy.sh").read_text()
+        check(
+            "plugins.d/20_renault_zoe.sh" in deploy_text
+            and 'install -m 755 "$ROOT/plugins.d/20_renault_zoe.sh"' in deploy_text,
+            "deploy.sh stages 20_renault_zoe.sh with mode 755",
+            failures,
+        )
+        html_text = (ROOT / "web" / "index.html").read_text()
+        app_text = (ROOT / "web" / "app.js").read_text()
+        check(
+            'id="renault-user"' in html_text
+            and 'id="renault-pass"' in html_text
+            and 'id="renault-vin"' in html_text
+            and 'id="renault-test"' in html_text,
+            "web/index.html includes Renault Zoe settings fields and test button",
+            failures,
+        )
+        check(
+            "test_renault.cgi" in app_text
+            and "settings.cgi" in app_text
+            and "••••••••" in app_text,
+            "web/app.js wires settings.cgi, test_renault.cgi, and masked password placeholder",
+            failures,
+        )
     finally:
         sma.shutdown()
         rega.shutdown()
         sig.shutdown()
         fc.shutdown()
+        rn.shutdown()
         sma.server_close()
         rega.server_close()
         sig.server_close()
         fc.server_close()
+        rn.server_close()
         if not failures:
             shutil.rmtree(tmp, ignore_errors=True)
 

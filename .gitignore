@@ -4,6 +4,8 @@
 .env
 .env.*
 !.env.example
+config/plugins/*.env
+!config/plugins/*.env.example
 *.secret
 *.pem
 *.key
@@ -16,6 +18,7 @@
 state/*
 !state/plugins/
 state/plugins/*.json
+state/plugins/.renault_session
 !state/plugins/.gitkeep
 .lock/
 *.pid

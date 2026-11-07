@@ -176,10 +176,14 @@ for tool in ssh tar; do
 done
 
 for file in .env bin/check_soc.sh lib/notify_signal.sh setup_variables.sh \
+            plugins.d/20_renault_zoe.sh \
             plugins.d/30_forecast_solar.sh \
+            config/plugins/renault.env.example \
             config/plugins/forecast_solar.env.example \
             web/index.html web/style.css web/app.js \
-            web/api/config.cgi web/api/test_signal.cgi web/api/plugins.cgi; do
+            web/api/config.cgi web/api/settings.cgi \
+            web/api/test_signal.cgi web/api/test_renault.cgi \
+            web/api/plugins.cgi; do
     [ -f "$ROOT/$file" ] || die "missing required file: $file"
 done
 
@@ -227,8 +231,12 @@ mkdir -p "$STAGE/bin" "$STAGE/lib" "$STAGE/web/api" \
 install -m 700 "$ROOT/bin/check_soc.sh"      "$STAGE/bin/check_soc.sh"
 install -m 700 "$ROOT/lib/notify_signal.sh"  "$STAGE/lib/notify_signal.sh"
 install -m 700 "$ROOT/setup_variables.sh"    "$STAGE/setup_variables.sh"
+install -m 755 "$ROOT/plugins.d/20_renault_zoe.sh" \
+    "$STAGE/plugins.d/20_renault_zoe.sh"
 install -m 755 "$ROOT/plugins.d/30_forecast_solar.sh" \
     "$STAGE/plugins.d/30_forecast_solar.sh"
+install -m 644 "$ROOT/config/plugins/renault.env.example" \
+    "$STAGE/config/plugins/renault.env.example"
 install -m 644 "$ROOT/config/plugins/forecast_solar.env.example" \
     "$STAGE/config/plugins/forecast_solar.env.example"
 # Staged separately: an existing remote .env keeps its credentials.
@@ -236,9 +244,11 @@ install -m 600 "$ROOT/.env"                  "$STAGE/.env.new"
 install -m 644 "$ROOT/web/index.html"        "$STAGE/web/index.html"
 install -m 644 "$ROOT/web/style.css"         "$STAGE/web/style.css"
 install -m 644 "$ROOT/web/app.js"            "$STAGE/web/app.js"
-install -m 755 "$ROOT/web/api/config.cgi"     "$STAGE/web/api/config.cgi"
-install -m 755 "$ROOT/web/api/test_signal.cgi" "$STAGE/web/api/test_signal.cgi"
-install -m 755 "$ROOT/web/api/plugins.cgi"     "$STAGE/web/api/plugins.cgi"
+install -m 755 "$ROOT/web/api/config.cgi"       "$STAGE/web/api/config.cgi"
+install -m 755 "$ROOT/web/api/settings.cgi"     "$STAGE/web/api/settings.cgi"
+install -m 755 "$ROOT/web/api/test_signal.cgi"  "$STAGE/web/api/test_signal.cgi"
+install -m 755 "$ROOT/web/api/test_renault.cgi" "$STAGE/web/api/test_renault.cgi"
+install -m 755 "$ROOT/web/api/plugins.cgi"      "$STAGE/web/api/plugins.cgi"
 
 ssh_ccu() {
     ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
@@ -276,13 +286,22 @@ for _plugin in "$ADDON_DIR/plugins.d"/*.sh; do
 done
 
 # Ship the plugin defaults as an example only. An operator's
-# forecast_solar.env must survive every redeployment untouched.
+# forecast_solar.env and renault.env must survive every redeployment untouched.
 if [ -f "$ADDON_DIR/config/plugins/forecast_solar.env.example" ]; then
     chmod 644 "$ADDON_DIR/config/plugins/forecast_solar.env.example"
     if [ ! -f "$ADDON_DIR/config/plugins/forecast_solar.env" ]; then
         printf 'Plugin defaults available in %s/config/plugins/forecast_solar.env.example\n' \
             "$ADDON_DIR"
     fi
+fi
+if [ -f "$ADDON_DIR/config/plugins/renault.env.example" ]; then
+    chmod 644 "$ADDON_DIR/config/plugins/renault.env.example"
+fi
+if [ -f "$ADDON_DIR/config/plugins/renault.env" ]; then
+    chmod 600 "$ADDON_DIR/config/plugins/renault.env" 2>/dev/null || true
+fi
+if [ -f "$ADDON_DIR/state/plugins/.renault_session" ]; then
+    chmod 600 "$ADDON_DIR/state/plugins/.renault_session" 2>/dev/null || true
 fi
 
 # Production state carries real telemetry only. Purge sample cards left behind by
@@ -388,7 +407,7 @@ if [ "$SKIP_WEB" != "1" ]; then
 
     # The CGI needs to find the add-on even though lighttpd serves it from a
     # different directory. The path is written once at deploy time.
-    for file in config.cgi test_signal.cgi plugins.cgi; do
+    for file in config.cgi settings.cgi test_signal.cgi test_renault.cgi plugins.cgi; do
         cp -f "$ADDON_DIR/web/api/$file" "$WEB_DIR/api/$file"
         chmod 755 "$WEB_DIR/api/$file"
     done
@@ -407,7 +426,7 @@ if [ "$SKIP_WEB" != "1" ]; then
         cp -f "$ADDON_DIR/web/$file" "$ADDON_DIR/$file"
         chmod 644 "$ADDON_DIR/$file"
     done
-    for file in config.cgi test_signal.cgi plugins.cgi; do
+    for file in config.cgi settings.cgi test_signal.cgi test_renault.cgi plugins.cgi; do
         cp -f "$ADDON_DIR/web/api/$file" "$ADDON_DIR/api/$file"
         chmod 755 "$ADDON_DIR/api/$file"
     done
@@ -501,6 +520,14 @@ if [ "$SKIP_TEST" != "1" ]; then
         printf 'First check completed successfully.\n'
     else
         printf 'WARNING: first check failed; see log or run the script manually.\n' >&2
+    fi
+
+    if [ -x "$ADDON_DIR/plugins.d/20_renault_zoe.sh" ]; then
+        if "$ADDON_DIR/plugins.d/20_renault_zoe.sh"; then
+            printf 'renault_zoe plugin checked.\n'
+        else
+            printf 'WARNING: renault_zoe plugin failed; existing card kept.\n' >&2
+        fi
     fi
 
     # Populate the forecast card immediately. The plugin exits 0 when offline

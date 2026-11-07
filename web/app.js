@@ -10,7 +10,9 @@
 
     var STATUS_URL = new URL("./status.json", window.location.href);
     var CONFIG_URL = new URL("./api/config.cgi", window.location.href);
+    var SETTINGS_URL = new URL("./api/settings.cgi", window.location.href);
     var TEST_URL = new URL("./api/test_signal.cgi", window.location.href);
+    var TEST_RENAULT_URL = new URL("./api/test_renault.cgi", window.location.href);
     var PLUGINS_URL = new URL("./api/plugins.cgi", window.location.href);
 
     var POLL_MS = 30000;
@@ -115,6 +117,18 @@
             inverterPassword: "Inverter password",
             unchanged: "Unchanged",
             storedPasswordHint: "A password is stored. Leave the field empty to keep it.",
+            renaultSection: "RENAULT ZOE",
+            renaultNote: "Optional MY Renault cloud credentials for live Zoe battery and charging telemetry.",
+            renaultEmail: "Renault E-Mail",
+            renaultPassword: "Renault Passwort",
+            renaultVin: "Renault VIN",
+            testRenaultConnection: "Verbindung testen",
+            testingRenault: "Testing Renault connection…",
+            renaultTestSuccess: "Renault Zoe: Connection verified.",
+            renaultTestFailed: "Renault connection failed. Check email, password and VIN.",
+            renaultEmailInvalid: "Enter a valid Renault email address.",
+            renaultVinInvalid: "Enter a valid Renault VIN (e.g. VF1...).",
+            renaultCredentialsRequired: "Enter Renault email, password and VIN before testing.",
             testNotification: "Test notification",
             saveSettings: "Save settings",
             footnotePrefix: "Values are written to",
@@ -260,6 +274,18 @@
             inverterPassword: "Wechselrichter-Passwort",
             unchanged: "Unverändert",
             storedPasswordHint: "Ein Passwort ist gespeichert. Feld leer lassen, um es zu behalten.",
+            renaultSection: "RENAULT ZOE",
+            renaultNote: "Optionale MY-Renault-Zugangsdaten für Live-Ladezustand und Reichweite der Zoe.",
+            renaultEmail: "Renault E-Mail",
+            renaultPassword: "Renault Passwort",
+            renaultVin: "Renault VIN",
+            testRenaultConnection: "Verbindung testen",
+            testingRenault: "Renault-Verbindung wird getestet…",
+            renaultTestSuccess: "Renault Zoe: Verbindung erfolgreich hergestellt.",
+            renaultTestFailed: "Renault-Verbindung fehlgeschlagen. Prüfen Sie E-Mail, Passwort und VIN.",
+            renaultEmailInvalid: "Geben Sie eine gültige Renault-E-Mail-Adresse ein.",
+            renaultVinInvalid: "Geben Sie eine gültige Fahrzeug-Identifizierungsnummer (VIN, z. B. VF1...) ein.",
+            renaultCredentialsRequired: "Geben Sie zuerst Renault E-Mail, Passwort und VIN ein.",
             testNotification: "Testbenachrichtigung",
             saveSettings: "Einstellungen speichern",
             footnotePrefix: "Werte werden in",
@@ -414,6 +440,13 @@
         smaPort: $("sma-port"),
         smaPassword: $("sma-password"),
         smaPasswordHint: $("sma-password-hint"),
+
+        renaultUser: $("renault-user"),
+        renaultPass: $("renault-pass"),
+        renaultPassHint: $("renault-pass-hint"),
+        renaultVin: $("renault-vin"),
+        renaultTest: $("renault-test"),
+        renaultTestStatus: $("renault-test-status"),
 
         toast: $("toast")
     };
@@ -1333,7 +1366,25 @@
         settingsBusy = busy;
         el.settingsSave.disabled = busy;
         el.settingsTest.disabled = busy || (el.signalEnabled && !el.signalEnabled.checked);
+        if (el.renaultTest) {
+            el.renaultTest.disabled = busy;
+        }
         el.settingsForm.setAttribute("aria-busy", busy ? "true" : "false");
+    }
+
+    function showRenaultTestFeedback(tone, message) {
+        if (!el.renaultTestStatus) {
+            return;
+        }
+        if (!message) {
+            el.renaultTestStatus.hidden = true;
+            el.renaultTestStatus.textContent = "";
+            delete el.renaultTestStatus.dataset.tone;
+            return;
+        }
+        el.renaultTestStatus.hidden = false;
+        el.renaultTestStatus.dataset.tone = tone || "success";
+        el.renaultTestStatus.textContent = message;
     }
 
     function isSignalUuid(value) {
@@ -1595,6 +1646,21 @@
         el.smaPassword.value = "";
         el.smaPassword.placeholder = data.sma_password_set ? t("unchanged") : t("required");
         el.smaPasswordHint.hidden = !data.sma_password_set;
+
+        if (el.renaultUser) {
+            el.renaultUser.value = String(data.renault_user || "").trim();
+        }
+        if (el.renaultVin) {
+            el.renaultVin.value = String(data.renault_vin || "").trim().toUpperCase();
+        }
+        if (el.renaultPass) {
+            var renaultPassSet = Boolean(data.renault_pass_set || data.renault_password_set);
+            el.renaultPass.value = "";
+            el.renaultPass.placeholder = renaultPassSet ? "••••••••" : t("unchanged");
+            if (el.renaultPassHint) {
+                el.renaultPassHint.hidden = !renaultPassSet;
+            }
+        }
     }
 
     function adoptConfig(data) {
@@ -1696,6 +1762,28 @@
             };
         }
 
+        if (el.renaultUser) {
+            var rUser = el.renaultUser.value.trim();
+            el.renaultUser.value = rUser;
+            if (rUser && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rUser)) {
+                return {
+                    field: "renault-user",
+                    text: t("renaultEmailInvalid")
+                };
+            }
+        }
+
+        if (el.renaultVin) {
+            var rVin = el.renaultVin.value.trim().toUpperCase();
+            el.renaultVin.value = rVin;
+            if (rVin && !/^[A-Z0-9]{6,24}$/.test(rVin)) {
+                return {
+                    field: "renault-vin",
+                    text: t("renaultVinInvalid")
+                };
+            }
+        }
+
         return null;
     }
 
@@ -1719,6 +1807,20 @@
         if (password) {
             payload.sma_password = password;
         }
+        if (el.renaultUser) {
+            payload.renault_user = el.renaultUser.value.trim();
+        }
+        if (el.renaultVin) {
+            var rVin = el.renaultVin.value.trim().toUpperCase();
+            el.renaultVin.value = rVin;
+            payload.renault_vin = rVin;
+        }
+        if (el.renaultPass) {
+            var rPass = el.renaultPass.value;
+            if (rPass && !isMaskedApiKey(rPass)) {
+                payload.renault_pass = rPass;
+            }
+        }
         return payload;
     }
 
@@ -1740,7 +1842,7 @@
             showSettingsStatus("pending", t("savingConfig"));
         }
 
-        return requestJSON(CONFIG_URL, {
+        return requestJSON(SETTINGS_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(buildPayload())
@@ -1833,6 +1935,89 @@
         });
     }
 
+    function runRenaultTest() {
+        if (settingsBusy) {
+            return;
+        }
+        var rUser = el.renaultUser ? el.renaultUser.value.trim() : "";
+        var rVin = el.renaultVin ? el.renaultVin.value.trim().toUpperCase() : "";
+        var rPass = el.renaultPass ? el.renaultPass.value : "";
+        if (el.renaultUser) {
+            el.renaultUser.value = rUser;
+        }
+        if (el.renaultVin) {
+            el.renaultVin.value = rVin;
+        }
+
+        if (rUser && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rUser)) {
+            showRenaultTestFeedback("error", t("renaultEmailInvalid"));
+            showToast("error", t("renaultEmailInvalid"));
+            if (el.renaultUser) {
+                el.renaultUser.focus();
+            }
+            return;
+        }
+        if (rVin && !/^[A-Z0-9]{6,24}$/.test(rVin)) {
+            showRenaultTestFeedback("error", t("renaultVinInvalid"));
+            showToast("error", t("renaultVinInvalid"));
+            if (el.renaultVin) {
+                el.renaultVin.focus();
+            }
+            return;
+        }
+        var hasStoredPass = Boolean(liveConfig && (liveConfig.renault_pass_set || liveConfig.renault_password_set));
+        var hasNewPass = Boolean(rPass && !isMaskedApiKey(rPass));
+        if (!rUser || !rVin || (!hasNewPass && !hasStoredPass)) {
+            showRenaultTestFeedback("error", t("renaultCredentialsRequired"));
+            showToast("error", t("renaultCredentialsRequired"));
+            return;
+        }
+
+        var testPayload = {
+            renault_user: rUser,
+            renault_vin: rVin
+        };
+        if (hasNewPass) {
+            testPayload.renault_pass = rPass;
+        }
+
+        setSettingsBusy(true);
+        showRenaultTestFeedback("success", t("testingRenault"));
+        showSettingsStatus("pending", t("testingRenault"));
+
+        requestJSON(TEST_RENAULT_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(testPayload)
+        }).then(function (res) {
+            var msgText = (res && res.message) || t("renaultTestSuccess");
+            if (liveConfig) {
+                liveConfig.renault_user = rUser;
+                liveConfig.renault_vin = rVin;
+                liveConfig.renault_pass_set = true;
+                liveConfig.renault_password_set = true;
+            }
+            if (el.renaultPass) {
+                el.renaultPass.value = "";
+                el.renaultPass.placeholder = "••••••••";
+            }
+            if (el.renaultPassHint) {
+                el.renaultPassHint.hidden = false;
+            }
+            showRenaultTestFeedback("success", msgText);
+            showSettingsStatus("success", msgText);
+            showToast("success", msgText);
+            fetchAndRenderPlugins();
+        }).catch(function (error) {
+            var errText = (error && error.message) || t("renaultTestFailed");
+            showRenaultTestFeedback("error", errText);
+            showSettingsStatus("error", errText);
+            showToast("error", errText);
+        }).finally(function () {
+            setSettingsBusy(false);
+        });
+    }
+
     function loadSettings() {
         settingsAvailable = true;
         setSettingsBusy(false);
@@ -1879,6 +2064,7 @@
         document.body.classList.remove("drawer-open");
         showSettingsStatus("", "");
         showQuickSetupFeedback("", "");
+        showRenaultTestFeedback("", "");
         if (el.callmebotPaste) {
             el.callmebotPaste.value = "";
         }
@@ -2018,6 +2204,25 @@
     el.settingsClose.addEventListener("click", closeSettings);
     el.settingsBackdrop.addEventListener("click", closeSettings);
     el.settingsTest.addEventListener("click", runTest);
+    if (el.renaultTest) {
+        el.renaultTest.addEventListener("click", runRenaultTest);
+    }
+    if (el.renaultVin) {
+        el.renaultVin.addEventListener("input", function () {
+            var pos = el.renaultVin.selectionStart;
+            var upper = el.renaultVin.value.toUpperCase();
+            if (el.renaultVin.value !== upper) {
+                el.renaultVin.value = upper;
+                if (typeof pos === "number") {
+                    try {
+                        el.renaultVin.setSelectionRange(pos, pos);
+                    } catch (err) {
+                        /* Ignore selection errors on unsupported input types */
+                    }
+                }
+            }
+        });
+    }
 
     if (el.signalEnabled) {
         el.signalEnabled.addEventListener("change", function () {

@@ -384,6 +384,42 @@
                 <p class="field-hint" id="sma-password-hint" hidden data-i18n="storedPasswordHint">A password is stored. Leave the field empty to keep it.</p>
             </fieldset>
 
+            <fieldset class="field-group" id="renault-group">
+                <legend><span class="group-index">04</span><span data-i18n="renaultSection">RENAULT ZOE</span></legend>
+                <p class="field-note" data-i18n="renaultNote">Optional MY Renault cloud credentials for live Zoe battery and charging telemetry.</p>
+
+                <label class="field" for="renault-user">
+                    <span class="field-label" data-i18n="renaultEmail">Renault E-Mail</span>
+                    <input class="input" id="renault-user" name="renault_user" type="text"
+                           autocomplete="off" spellcheck="false"
+                           aria-label="Renault E-Mail" data-i18n-aria="renaultEmail"
+                           placeholder="name@example.com">
+                </label>
+
+                <div class="field-row">
+                    <label class="field" for="renault-pass">
+                        <span class="field-label" data-i18n="renaultPassword">Renault Passwort</span>
+                        <input class="input" id="renault-pass" name="renault_pass" type="password"
+                               autocomplete="new-password" spellcheck="false"
+                               aria-label="Renault Passwort" data-i18n-aria="renaultPassword"
+                               placeholder="••••••••">
+                    </label>
+                    <label class="field" for="renault-vin">
+                        <span class="field-label" data-i18n="renaultVin">Renault VIN</span>
+                        <input class="input input-uppercase" id="renault-vin" name="renault_vin" type="text"
+                               autocomplete="off" spellcheck="false" maxlength="17"
+                               aria-label="Renault VIN" data-i18n-aria="renaultVin"
+                               placeholder="VF1...">
+                    </label>
+                </div>
+                <p class="field-hint" id="renault-pass-hint" hidden data-i18n="storedPasswordHint">A password is stored. Leave the field empty to keep it.</p>
+
+                <div class="quick-setup-footer renault-actions">
+                    <button class="button button-outline quick-setup-button" id="renault-test" type="button" data-i18n="testRenaultConnection">Verbindung testen</button>
+                    <p class="quick-setup-status" id="renault-test-status" role="status" aria-live="polite" hidden></p>
+                </div>
+            </fieldset>
+
             <div class="drawer-actions">
                 <button class="button button-outline" id="settings-test" type="button" data-i18n="testNotification"
                         data-signal-control>Test notification</button>
