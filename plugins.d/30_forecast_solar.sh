@@ -20,7 +20,7 @@
 
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
-umask 022
+umask 077
 
 APP_DIR=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)
 [ -n "$APP_DIR" ] || APP_DIR=/usr/local/addons/sentinella
@@ -41,6 +41,7 @@ if [ -z "$CONFIG_FILE" ]; then
     done
 fi
 if [ -n "$CONFIG_FILE" ] && [ -r "$CONFIG_FILE" ]; then
+    chmod 600 "$CONFIG_FILE" 2>/dev/null || true
     # shellcheck source=/dev/null
     . "$CONFIG_FILE"
 fi
@@ -56,7 +57,8 @@ MAX_TIME=${FORECAST_MAX_TIME:-20}
 
 STATE_DIR=${FORECAST_STATE_DIR:-$APP_DIR/state/plugins}
 OUT_FILE=$STATE_DIR/forecast_solar.json
-RAW_FILE=${TMPDIR:-/tmp}/sentinella_forecast.$$.json
+# Private scratch file beside the state, never in world-writable /tmp.
+RAW_FILE=$STATE_DIR/.forecast_raw.$$.tmp
 
 log() {
     _ts=$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null)
@@ -68,7 +70,7 @@ log() {
 }
 
 cleanup() {
-    rm -f "$RAW_FILE" "$OUT_FILE.tmp" 2>/dev/null || true
+    rm -f "$RAW_FILE" "$OUT_FILE.tmp.$$" 2>/dev/null || true
 }
 trap cleanup EXIT HUP INT TERM
 
@@ -104,6 +106,16 @@ fi
 is_uint "$CONNECT_TIMEOUT" || CONNECT_TIMEOUT=5
 is_uint "$MAX_TIME" || MAX_TIME=20
 
+# The API base is concatenated into the request URL. Reject anything that is
+# not a plain http(s) origin/path without whitespace or control characters.
+case "$API_BASE" in
+    http://*|https://*) ;;
+    *) API_BASE=https://api.forecast.solar/estimate ;;
+esac
+case "$API_BASE" in
+    *[[:space:]]*|*[[:cntrl:]]*) API_BASE=https://api.forecast.solar/estimate ;;
+esac
+
 mkdir -p "$STATE_DIR" 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
@@ -111,7 +123,7 @@ mkdir -p "$STATE_DIR" 2>/dev/null || true
 # ---------------------------------------------------------------------------
 write_neutral() {
     _ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null) || _ts=
-    cat > "$OUT_FILE.tmp" <<EOF
+    cat > "$OUT_FILE.tmp.$$" <<EOF
 {
   "id": "forecast_solar",
   "layout": "delta",
@@ -124,10 +136,11 @@ write_neutral() {
   "secondary_metrics": []
 }
 EOF
-    if mv -f "$OUT_FILE.tmp" "$OUT_FILE" 2>/dev/null; then
+    if mv -f "$OUT_FILE.tmp.$$" "$OUT_FILE" 2>/dev/null; then
+        chmod 644 "$OUT_FILE" 2>/dev/null || true
         return 0
     fi
-    rm -f "$OUT_FILE.tmp" 2>/dev/null || true
+    rm -f "$OUT_FILE.tmp.$$" 2>/dev/null || true
     return 1
 }
 
@@ -226,7 +239,7 @@ NOW_ISO=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null) || NOW_ISO=
 # ---------------------------------------------------------------------------
 # Atomic publish
 # ---------------------------------------------------------------------------
-cat > "$OUT_FILE.tmp" <<EOF
+cat > "$OUT_FILE.tmp.$$" <<EOF
 {
   "id": "forecast_solar",
   "layout": "delta",
@@ -247,10 +260,11 @@ cat > "$OUT_FILE.tmp" <<EOF
 }
 EOF
 
-if mv -f "$OUT_FILE.tmp" "$OUT_FILE" 2>/dev/null; then
+if mv -f "$OUT_FILE.tmp.$$" "$OUT_FILE" 2>/dev/null; then
+    chmod 644 "$OUT_FILE" 2>/dev/null || true
     log "forecast card updated: today ${TODAY_KWH} kWh, tomorrow ${TOMORROW_KWH} kWh"
 else
-    rm -f "$OUT_FILE.tmp" 2>/dev/null || true
+    rm -f "$OUT_FILE.tmp.$$" 2>/dev/null || true
     log "WARNING: could not publish $OUT_FILE"
 fi
 

@@ -270,10 +270,13 @@ info "configuring permissions, dashboard, cron and system variables"
 ssh_ccu "$REMOTE" \
     "ADDON_DIR='$ADDON_DIR' WEB_DIR='$WEB_DIR' SKIP_CRON='$SKIP_CRON' SKIP_VARS='$SKIP_VARS' SKIP_WEB='$SKIP_WEB' SKIP_TEST='$SKIP_TEST' sh -s" <<'REMOTE_SCRIPT'
 set -e
+umask 077
 
 mkdir -p "$ADDON_DIR/state" "$ADDON_DIR/plugins.d" "$ADDON_DIR/config/plugins" \
          "$ADDON_DIR/state/plugins"
-chmod 755 "$ADDON_DIR" "$ADDON_DIR/bin" "$ADDON_DIR/lib" "$ADDON_DIR/state" \
+# The add-on root is never a web document root: only the isolated $WEB_DIR is
+# served. Credentials, state and helpers therefore stay root-only.
+chmod 700 "$ADDON_DIR" "$ADDON_DIR/bin" "$ADDON_DIR/lib" "$ADDON_DIR/state" \
     "$ADDON_DIR/plugins.d" "$ADDON_DIR/config" "$ADDON_DIR/config/plugins" \
     "$ADDON_DIR/state/plugins"
 chmod 755 "$ADDON_DIR/bin/check_soc.sh" "$ADDON_DIR/lib/notify_signal.sh" "$ADDON_DIR/setup_variables.sh"
@@ -299,6 +302,9 @@ if [ -f "$ADDON_DIR/config/plugins/renault.env.example" ]; then
 fi
 if [ -f "$ADDON_DIR/config/plugins/renault.env" ]; then
     chmod 600 "$ADDON_DIR/config/plugins/renault.env" 2>/dev/null || true
+fi
+if [ -f "$ADDON_DIR/config/plugins/forecast_solar.env" ]; then
+    chmod 600 "$ADDON_DIR/config/plugins/forecast_solar.env" 2>/dev/null || true
 fi
 if [ -f "$ADDON_DIR/state/plugins/.renault_session" ]; then
     chmod 600 "$ADDON_DIR/state/plugins/.renault_session" 2>/dev/null || true
@@ -443,8 +449,10 @@ if [ "$SKIP_WEB" != "1" ]; then
         ln -sfn /usr/local/etc/config/addons/www/sentinella /usr/local/etc/config/addons/www/sma_battery 2>/dev/null || true
     fi
     if [ -d /www/addons ]; then
-        ln -sfn /usr/local/addons/sentinella /www/addons/sma_battery 2>/dev/null || true
-        ln -sfn /usr/local/addons/sentinella /www/addons/sentinella 2>/dev/null || true
+        # Serve the isolated web root only. Pointing these symlinks at
+        # $ADDON_DIR would expose .env, config/ and state/ over HTTP.
+        ln -sfn "$WEB_DIR" /www/addons/sma_battery 2>/dev/null || true
+        ln -sfn "$WEB_DIR" /www/addons/sentinella 2>/dev/null || true
     fi
 
     # Best-effort probe: CGI may need to be enabled in lighttpd on some
@@ -478,7 +486,7 @@ if [ "$SKIP_CRON" != "1" ]; then
     }
 
     if command -v crontab >/dev/null 2>&1; then
-        CRON_TMP=/tmp/sentinella_cron.$$
+        CRON_TMP=$ADDON_DIR/state/.cron.$$
         crontab -l > "$CRON_TMP" 2>/dev/null || : > "$CRON_TMP"
         if cron_has_target "$CRON_TMP"; then
             printf 'Cron entry already present; crontab left untouched.\n'

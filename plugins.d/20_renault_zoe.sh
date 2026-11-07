@@ -20,7 +20,7 @@
 
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
-umask 022
+umask 077
 
 TEST_MODE=0
 if [ "${1:-}" = "--test" ]; then
@@ -51,6 +51,7 @@ if [ -z "$CONFIG_FILE" ]; then
 fi
 
 if [ -n "$CONFIG_FILE" ] && [ -r "$CONFIG_FILE" ]; then
+    chmod 600 "$CONFIG_FILE" 2>/dev/null || true
     # shellcheck source=/dev/null
     . "$CONFIG_FILE"
 fi
@@ -63,6 +64,37 @@ RENAULT_USER=$(trim_ws "${RENAULT_USER:-}")
 RENAULT_PASS=${RENAULT_PASS:-}
 RENAULT_VIN=$(trim_ws "${RENAULT_VIN:-}" | tr '[:lower:]' '[:upper:]')
 
+# Strict allowlists for every value that becomes part of a URL path or an HTTP
+# header. A poisoned response or a hand-edited env file must not be able to
+# redirect the authenticated Kamereon requests.
+is_safe_id() {
+    case "$1" in
+        ''|*[!A-Za-z0-9_-]*) return 1 ;;
+    esac
+    [ "${#1}" -le 128 ]
+}
+
+is_valid_vin() {
+    case "$1" in
+        ''|*[!A-Z0-9]*) return 1 ;;
+    esac
+    [ "${#1}" -ge 6 ] && [ "${#1}" -le 24 ]
+}
+
+is_safe_country() {
+    case "$1" in
+        [A-Z][A-Z]) return 0 ;;
+    esac
+    return 1
+}
+
+is_safe_token() {
+    case "$1" in
+        ''|*[!A-Za-z0-9._~+/=-]*) return 1 ;;
+    esac
+    [ "${#1}" -le 4096 ]
+}
+
 # Clean no-op when credentials are unset or incomplete
 if [ -z "$RENAULT_USER" ] || [ -z "$RENAULT_PASS" ] || [ -z "$RENAULT_VIN" ]; then
     if [ "$TEST_MODE" = "1" ]; then
@@ -72,11 +104,18 @@ if [ -z "$RENAULT_USER" ] || [ -z "$RENAULT_PASS" ] || [ -z "$RENAULT_VIN" ]; th
     exit 0
 fi
 
+if ! is_valid_vin "$RENAULT_VIN"; then
+    printf 'Renault VIN is invalid; plugin disabled.\n' >&2
+    [ "$TEST_MODE" = "1" ] && exit 2
+    exit 0
+fi
+
 GIGYA_API_KEY=${RENAULT_GIGYA_API_KEY:-3_VgdkgtIRH3AdHvJm-cjV2ug2EFE0lxt0IJzMC4MFqZjFpn_GYFXVdNZ19L7wZX0N}
 KAMEREON_API_KEY=${RENAULT_KAMEREON_API_KEY:-YjkKtHmGfaceeuExUDKGxrLZGGvtVS0J}
 GIGYA_URL=${RENAULT_GIGYA_URL:-https://accounts.eu1.gigya.com}
 KAMEREON_URL=${RENAULT_KAMEREON_URL:-https://api-wired-prod-1-euw1.wrd-aws.com}
 RENAULT_COUNTRY=${RENAULT_COUNTRY:-DE}
+is_safe_country "$RENAULT_COUNTRY" || RENAULT_COUNTRY=DE
 
 CONNECT_TIMEOUT=${RENAULT_CONNECT_TIMEOUT:-8}
 MAX_TIME=${RENAULT_MAX_TIME:-15}
@@ -85,8 +124,9 @@ CACHE_TTL=${RENAULT_CACHE_TTL:-21600}
 STATE_DIR=${RENAULT_STATE_DIR:-$ADDON_DIR/state/plugins}
 SESSION_FILE=${RENAULT_SESSION_FILE:-$STATE_DIR/.renault_session}
 OUT_FILE=${RENAULT_OUT_FILE:-$STATE_DIR/renault_zoe.json}
-TMP_AUTH=${TMPDIR:-/tmp}/sentinella_renault_auth.$$.json
-RAW_FILE=${TMPDIR:-/tmp}/sentinella_renault_bat.$$.json
+# Private scratch files live beside the state, never in world-writable /tmp.
+TMP_AUTH=$STATE_DIR/.renault_auth.$$.tmp
+RAW_FILE=$STATE_DIR/.renault_bat.$$.tmp
 
 log() {
     _ts=$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null)
@@ -98,7 +138,7 @@ log() {
 }
 
 cleanup() {
-    rm -f "$TMP_AUTH" "$RAW_FILE" "$OUT_FILE.tmp" "$SESSION_FILE.tmp.$$" 2>/dev/null || true
+    rm -f "$TMP_AUTH" "$RAW_FILE" "$OUT_FILE.tmp.$$" "$SESSION_FILE.tmp.$$" 2>/dev/null || true
 }
 trap cleanup EXIT HUP INT TERM
 
@@ -125,6 +165,11 @@ is_number() {
 
 shquote() {
     printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+# Escape a value for a quoted curl config item (--config - reads from stdin).
+curl_config_escape() {
+    printf '%s' "${1:-}" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
 }
 
 is_uint "$CONNECT_TIMEOUT" || CONNECT_TIMEOUT=8
@@ -178,6 +223,8 @@ load_cached_session() {
     . "$SESSION_FILE" 2>/dev/null || return 1
     [ -n "$ID_TOKEN" ] || return 1
     [ -n "$ACCOUNT_ID" ] || return 1
+    is_safe_token "$ID_TOKEN" || return 1
+    is_safe_id "$ACCOUNT_ID" || return 1
     is_uint "$TOKEN_TS" || return 1
     _now=$(date +%s 2>/dev/null)
     is_uint "$_now" || return 1
@@ -214,13 +261,21 @@ save_cached_session() {
 # ---------------------------------------------------------------------------
 authenticate_renault() {
     # 1. Gigya accounts.login -> sessionInfo.cookieValue
-    _login_code=$(curl -sS -o "$TMP_AUTH" -w '%{http_code}' \
-        --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME" \
-        -X POST \
-        --data-urlencode "apiKey=$GIGYA_API_KEY" \
-        --data-urlencode "loginID=$RENAULT_USER" \
-        --data-urlencode "password=$RENAULT_PASS" \
-        "$GIGYA_URL/accounts.login" 2>/dev/null) || _login_code=000
+    #    loginID and password travel through a curl config on stdin so they are
+    #    never visible in /proc/<pid>/cmdline.
+    _esc_user=$(curl_config_escape "$RENAULT_USER")
+    _esc_pass=$(curl_config_escape "$RENAULT_PASS")
+    _login_code=$(
+        {
+            printf 'data-urlencode = "loginID=%s"\n' "$_esc_user"
+            printf 'data-urlencode = "password=%s"\n' "$_esc_pass"
+        } | curl -sS -o "$TMP_AUTH" -w '%{http_code}' \
+            --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME" \
+            -X POST \
+            --data-urlencode "apiKey=$GIGYA_API_KEY" \
+            --config - \
+            "$GIGYA_URL/accounts.login" 2>/dev/null
+    ) || _login_code=000
 
     if [ "$_login_code" != "200" ] || [ ! -s "$TMP_AUTH" ]; then
         log "WARNING: Gigya accounts.login failed (HTTP $_login_code)"
@@ -236,14 +291,19 @@ authenticate_renault() {
     fi
 
     # 2. Gigya accounts.getJWT (multipart POST) -> id_token and data.personId
-    _jwt_code=$(curl -sS -o "$TMP_AUTH" -w '%{http_code}' \
-        --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME" \
-        -X POST \
-        --form "ApiKey=$GIGYA_API_KEY" \
-        --form "login_token=$COOKIE_VALUE" \
-        --form "fields=data.personId,data.gigyaDataCenter" \
-        --form "expiration=86400" \
-        "$GIGYA_URL/accounts.getJWT" 2>/dev/null) || _jwt_code=000
+    #    login_token is a credential and is supplied via the stdin config.
+    _esc_cookie=$(curl_config_escape "$COOKIE_VALUE")
+    _jwt_code=$(
+        printf 'form = "login_token=%s"\n' "$_esc_cookie" \
+        | curl -sS -o "$TMP_AUTH" -w '%{http_code}' \
+            --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME" \
+            -X POST \
+            --form "ApiKey=$GIGYA_API_KEY" \
+            --form "fields=data.personId,data.gigyaDataCenter" \
+            --form "expiration=86400" \
+            --config - \
+            "$GIGYA_URL/accounts.getJWT" 2>/dev/null
+    ) || _jwt_code=000
 
     if [ "$_jwt_code" != "200" ] || [ ! -s "$TMP_AUTH" ]; then
         log "WARNING: Gigya accounts.getJWT failed (HTTP $_jwt_code)"
@@ -279,14 +339,23 @@ authenticate_renault() {
         log "WARNING: Gigya getJWT response missing id_token or personId"
         return 1
     fi
+    if ! is_safe_token "$ID_TOKEN" || ! is_safe_id "$PERSON_ID"; then
+        log "WARNING: Gigya getJWT response contains an unsafe token or personId"
+        return 1
+    fi
 
     # 3. Kamereon persons/{personId}?country=DE -> MYRENAULT accountId
-    _person_code=$(curl -sS -o "$TMP_AUTH" -w '%{http_code}' \
-        --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME" \
-        -H "apikey: $KAMEREON_API_KEY" \
-        -H "x-gigya-id_token: $ID_TOKEN" \
-        "$KAMEREON_URL/commerce/v1/persons/$PERSON_ID?country=$RENAULT_COUNTRY" \
-        2>/dev/null) || _person_code=000
+    #    The bearer token is passed through the stdin config, not argv.
+    _esc_token=$(curl_config_escape "$ID_TOKEN")
+    _person_code=$(
+        printf 'header = "x-gigya-id_token: %s"\n' "$_esc_token" \
+        | curl -sS -o "$TMP_AUTH" -w '%{http_code}' \
+            --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME" \
+            -H "apikey: $KAMEREON_API_KEY" \
+            --config - \
+            "$KAMEREON_URL/commerce/v1/persons/$PERSON_ID?country=$RENAULT_COUNTRY" \
+            2>/dev/null
+    ) || _person_code=000
 
     if [ "$_person_code" != "200" ] || [ ! -s "$TMP_AUTH" ]; then
         log "WARNING: Kamereon person lookup failed (HTTP $_person_code)"
@@ -298,6 +367,10 @@ authenticate_renault() {
         log "WARNING: No MYRENAULT accountId found in Kamereon response"
         return 1
     fi
+    if ! is_safe_id "$ACCOUNT_ID"; then
+        log "WARNING: Kamereon response contains an unsafe accountId"
+        return 1
+    fi
 
     save_cached_session || true
     return 0
@@ -307,12 +380,14 @@ authenticate_renault() {
 # Step 4: Telemetry Fetch (/battery-status)
 # ---------------------------------------------------------------------------
 fetch_battery_status() {
-    curl -sS -o "$RAW_FILE" -w '%{http_code}' \
-        --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME" \
-        -H "apikey: $KAMEREON_API_KEY" \
-        -H "x-gigya-id_token: $ID_TOKEN" \
-        "$KAMEREON_URL/commerce/v1/accounts/$ACCOUNT_ID/kamereon/kca/car-adapter/v2/cars/$RENAULT_VIN/battery-status" \
-        2>/dev/null || printf '000'
+    _esc_token=$(curl_config_escape "$ID_TOKEN")
+    printf 'header = "x-gigya-id_token: %s"\n' "$_esc_token" \
+        | curl -sS -o "$RAW_FILE" -w '%{http_code}' \
+            --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME" \
+            -H "apikey: $KAMEREON_API_KEY" \
+            --config - \
+            "$KAMEREON_URL/commerce/v1/accounts/$ACCOUNT_ID/kamereon/kca/car-adapter/v2/cars/$RENAULT_VIN/battery-status" \
+            2>/dev/null || printf '000'
 }
 
 if [ -n "${RENAULT_MOCK_BATTERY_JSON:-}" ] && [ -r "${RENAULT_MOCK_BATTERY_JSON:-}" ]; then
@@ -403,7 +478,7 @@ esac
 
 NOW_ISO=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null) || NOW_ISO=
 
-cat > "$OUT_FILE.tmp" <<EOF
+cat > "$OUT_FILE.tmp.$$" <<EOF
 {
   "id": "renault_zoe",
   "layout": "stat",
@@ -423,11 +498,11 @@ cat > "$OUT_FILE.tmp" <<EOF
 }
 EOF
 
-if mv -f "$OUT_FILE.tmp" "$OUT_FILE" 2>/dev/null; then
+if mv -f "$OUT_FILE.tmp.$$" "$OUT_FILE" 2>/dev/null; then
     chmod 644 "$OUT_FILE" 2>/dev/null || true
     log "Renault Zoe card updated: SoC ${BATTERY_LEVEL}%, range ${BATTERY_AUTONOMY} km ($BADGE)"
 else
-    rm -f "$OUT_FILE.tmp" 2>/dev/null || true
+    rm -f "$OUT_FILE.tmp.$$" 2>/dev/null || true
     log "WARNING: could not publish $OUT_FILE"
     [ "$TEST_MODE" = "1" ] && exit 1
 fi
