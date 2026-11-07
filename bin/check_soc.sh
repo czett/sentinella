@@ -76,6 +76,7 @@ log() {
     printf '%s %s\n' "$_ts" "$*" >&2
     if [ -n "$LOG_FILE" ] && [ -n "$LOG_DIR" ] && [ -d "$LOG_DIR" ]; then
         printf '%s %s\n' "$_ts" "$*" >> "$LOG_FILE" 2>/dev/null || true
+        chmod 600 "$LOG_FILE" 2>/dev/null || true
     fi
     if command -v logger >/dev/null 2>&1; then
         logger -t sentinella "$*" 2>/dev/null || true
@@ -493,9 +494,10 @@ sma_login() {
     _pw=$(printf '%s' "$SMA_PASS" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
     _body='{"right":"'"$SMA_ROLE"'","pass":"'"$_pw"'"}'
 
-    _resp=$(sma_curl -X POST -H 'Content-Type: application/json' \
-        --data-binary "$_body" \
-        "https://$SMA_IP:$SMA_PORT/dyn/login.json") || return 1
+    _resp=$(printf '%s' "$_body" \
+        | sma_curl -X POST -H 'Content-Type: application/json' \
+            --data-binary @- \
+            "https://$SMA_IP:$SMA_PORT/dyn/login.json") || return 1
 
     SID=$(printf '%s' "$_resp" | tr -d '\r\n' \
         | sed -n 's/.*"sid"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
@@ -724,10 +726,12 @@ append_history() {
         log "WARNING: cannot append to history file $HISTORY_FILE"
         return 0
     fi
+    chmod 600 "$HISTORY_FILE" 2>/dev/null || true
     _lines=$(wc -l < "$HISTORY_FILE" 2>/dev/null | tr -d ' ')
     if is_uint "$_lines" && [ "$_lines" -gt "$WEB_HISTORY_POINTS" ]; then
         if tail -n "$WEB_HISTORY_POINTS" "$HISTORY_FILE" > "$HISTORY_FILE.tmp" 2>/dev/null; then
             mv -f "$HISTORY_FILE.tmp" "$HISTORY_FILE" 2>/dev/null || true
+            chmod 600 "$HISTORY_FILE" 2>/dev/null || true
         fi
     fi
 }

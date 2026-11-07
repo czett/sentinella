@@ -83,6 +83,7 @@ NOTIFY_SCRIPT=$ADDON_DIR/lib/notify_signal.sh
 TEST_RESULT=$STATE_DIR/notify_test.result
 TEST_LOG=$STATE_DIR/notify_test.log
 TEST_LOCK=$STATE_DIR/.test_signal.lock
+RENAULT_TEST_LOCK=$STATE_DIR/.test_renault.lock
 CONFIG_LOCK=$STATE_DIR/.config.lock
 TEST_WRAPPER=
 UI_LANGUAGE=en
@@ -136,10 +137,16 @@ is_signal_uuid() {
 }
 
 is_apikey_token() {
+    case "$1" in
+        *[![:print:]]*) return 1 ;;
+    esac
     printf '%s' "$1" | grep -Eq '^[A-Za-z0-9._:-]{1,128}$'
 }
 
 is_signal_recipient() {
+    case "$1" in
+        *[![:print:]]*) return 1 ;;
+    esac
     is_signal_uuid "$1" && return 0
     printf '%s' "$1" | grep -Eq '^\+?[0-9]{7,15}$'
 }
@@ -205,6 +212,9 @@ is_renault_user() {
 }
 
 is_renault_vin() {
+    case "$1" in
+        *[![:print:]]*) return 1 ;;
+    esac
     printf '%s' "$1" | grep -Eq '^[A-Z0-9]{6,24}$'
 }
 
@@ -333,6 +343,9 @@ cleanup() {
     if [ "${TEST_LOCK_OWNED:-0}" = "1" ]; then
         rm -rf "$TEST_LOCK" 2>/dev/null
     fi
+    if [ "${RENAULT_TEST_LOCK_OWNED:-0}" = "1" ]; then
+        rm -rf "$RENAULT_TEST_LOCK" 2>/dev/null
+    fi
     exit 0
 }
 trap cleanup EXIT HUP INT TERM
@@ -382,36 +395,83 @@ read_body() {
 }
 
 check_origin() {
-    [ -n "${HTTP_ORIGIN:-}" ] || return 0
-    case "$HTTP_ORIGIN" in
-        "http://${HTTP_HOST:-}"|"https://${HTTP_HOST:-}") return 0 ;;
+    # State-changing requests must be JSON. Browsers cannot send this media
+    # type cross-origin from a plain HTML form without a CORS preflight, which
+    # this endpoint never grants.
+    case "${CONTENT_TYPE:-}" in
+        application/json*) ;;
+        *) fail "400 Bad Request" "$(msg cross_origin)" ;;
     esac
-    fail "403 Forbidden" "$(msg cross_origin)"
+
+    # A present Origin must match this host exactly.
+    if [ -n "${HTTP_ORIGIN:-}" ]; then
+        case "$HTTP_ORIGIN" in
+            "http://${HTTP_HOST:-}"|"https://${HTTP_HOST:-}") return 0 ;;
+        esac
+        fail "403 Forbidden" "$(msg cross_origin)"
+    fi
+
+    # Otherwise fall back to Referer when the browser supplied one.
+    if [ -n "${HTTP_REFERER:-}" ]; then
+        case "$HTTP_REFERER" in
+            "http://${HTTP_HOST:-}/"*|"https://${HTTP_HOST:-}/"*) return 0 ;;
+        esac
+        fail "403 Forbidden" "$(msg cross_origin)"
+    fi
+
+    # Over HTTP (a Host header is present) require either the custom header set
+    # by app.js or one of the two origin headers above. CLI test harnesses do
+    # not set HTTP_HOST and remain allowed.
+    if [ -n "${HTTP_HOST:-}" ] && [ "${HTTP_X_REQUESTED_WITH:-}" != "XMLHttpRequest" ]; then
+        fail "403 Forbidden" "$(msg cross_origin)"
+    fi
+    return 0
 }
 
 # POST bodies are flat JSON. The UI sends exactly these keys; unknown keys are
-# ignored. Escaped quotes/backslashes are rejected by the validators.
+# ignored. body_lines splits the object on structural '{', '}' and ',' outside
+# of string literals, so a value containing a comma is never truncated and a
+# key name embedded inside another value is never matched.
+body_lines() {
+    printf '%s\n' "$BODY" | tr -d '\r\n' | awk '
+    {
+        s = $0; n = length(s); q = 0; esc = 0; out = ""
+        for (i = 1; i <= n; i++) {
+            c = substr(s, i, 1)
+            if (esc) { out = out c; esc = 0; continue }
+            if (c == "\\") { out = out c; esc = 1; continue }
+            if (c == "\"") { q = (!q); out = out c; continue }
+            if (!q && (c == "{" || c == "}" || c == ",")) {
+                out = out "\n"
+                continue
+            }
+            out = out c
+        }
+        printf "%s", out
+    }'
+}
+
 body_has() {
-    printf '%s' "$BODY" | grep -q "\"$1\"[[:space:]]*:"
+    body_lines | grep -Eq "^[[:space:]]*\"$1\"[[:space:]]*:"
 }
 
 body_str() {
-    printf '%s' "$BODY" \
-        | sed -n 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+    body_lines \
+        | sed -n 's/^[[:space:]]*"'"$1"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*$/\1/p' \
         | head -n 1
 }
 
 body_num() {
-    printf '%s' "$BODY" \
-        | sed -n 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*\(-\{0,1\}[0-9][0-9]*\).*/\1/p' \
+    body_lines \
+        | sed -n 's/^[[:space:]]*"'"$1"'"[[:space:]]*:[[:space:]]*\(-\{0,1\}[0-9][0-9]*\).*$/\1/p' \
         | head -n 1
 }
 
 body_bool() {
     _bool_raw=$(body_str "$1")
     if [ -z "$_bool_raw" ]; then
-        _bool_raw=$(printf '%s' "$BODY" \
-            | sed -n 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p' \
+        _bool_raw=$(body_lines \
+            | sed -n 's/^[[:space:]]*"'"$1"'"[[:space:]]*:[[:space:]]*\(true\|false\).*$/\1/p' \
             | head -n 1)
     fi
     case "$_bool_raw" in
@@ -560,7 +620,7 @@ save_renault_env() {
     _r_vin=$3
 
     mkdir -p "$RENAULT_CONFIG_DIR" 2>/dev/null || return 1
-    chmod 755 "$ADDON_DIR/config" "$RENAULT_CONFIG_DIR" 2>/dev/null || true
+    chmod 700 "$ADDON_DIR/config" "$RENAULT_CONFIG_DIR" 2>/dev/null || true
 
     RENAULT_TMP_FILE="$RENAULT_ENV_FILE.tmp.$$"
     (
@@ -862,6 +922,17 @@ test_lock_is_fresh() {
     [ $((_now - _started)) -lt 120 ]
 }
 
+renault_test_lock_is_fresh() {
+    [ -d "$RENAULT_TEST_LOCK" ] || return 1
+    _started=$(sed -n '1p' "$RENAULT_TEST_LOCK/started" 2>/dev/null)
+    is_uint "$_started" || return 1
+    _now=$(date +%s 2>/dev/null)
+    is_uint "$_now" || return 1
+    [ "$_now" -ge "$_started" ] || return 0
+    # The full auth chain can take up to four 15 s requests.
+    [ $((_now - _started)) -lt 180 ]
+}
+
 start_test() {
     load_env || fail "500 Internal Server Error" \
         "$(msg config_missing)"
@@ -895,6 +966,8 @@ start_test() {
     printf '%s\n' "$(date +%s 2>/dev/null)" > "$TEST_LOCK/started" 2>/dev/null || true
 
     rm -f "$TEST_RESULT" "$TEST_RESULT.tmp" 2>/dev/null || true
+    : > "$TEST_LOG" 2>/dev/null || true
+    chmod 600 "$TEST_LOG" 2>/dev/null || true
 
     TEST_WRAPPER="$STATE_DIR/.test_signal.$$.sh"
     {
@@ -988,14 +1061,32 @@ run_renault_test() {
     [ -x "$RENAULT_PLUGIN" ] || fail "500 Internal Server Error" \
         "$(msg renault_plugin_missing)"
 
+    # Serialize the synchronous connection test. Without this, a burst of POSTs
+    # spawns concurrent plugin runs that race on the session cache and can lock
+    # the upstream Gigya account.
+    if renault_test_lock_is_fresh; then
+        fail "409 Conflict" "$(msg test_running)"
+    fi
+    rm -rf "$RENAULT_TEST_LOCK" 2>/dev/null || true
+    mkdir -p "$STATE_DIR" 2>/dev/null \
+        || fail "500 Internal Server Error" "$(msg state_dir)"
+    mkdir "$RENAULT_TEST_LOCK" 2>/dev/null \
+        || fail "500 Internal Server Error" "$(msg test_lock)"
+    RENAULT_TEST_LOCK_OWNED=1
+    printf '%s\n' "$(date +%s 2>/dev/null)" > "$RENAULT_TEST_LOCK/started" 2>/dev/null || true
+
     rm -f "$RENAULT_SESSION_FILE" 2>/dev/null || true
 
     if RENAULT_ADDON_DIR="$ADDON_DIR" RENAULT_ENV="$RENAULT_ENV_FILE" \
         "$RENAULT_PLUGIN" --test >/dev/null 2>&1; then
+        RENAULT_TEST_LOCK_OWNED=0
+        rm -rf "$RENAULT_TEST_LOCK" 2>/dev/null || true
         emit_json "200 OK" \
             "{\"ok\":true,\"status\":\"connected\",\"message\":$(json_str "$(msg renault_test_ok)")}"
     fi
 
+    RENAULT_TEST_LOCK_OWNED=0
+    rm -rf "$RENAULT_TEST_LOCK" 2>/dev/null || true
     fail "502 Bad Gateway" "$(msg renault_test_failed)"
 }
 

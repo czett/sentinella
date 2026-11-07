@@ -47,17 +47,47 @@ resolve_addon_dir() {
 ADDON_DIR=$(resolve_addon_dir)
 PLUGINS_STATE_DIR=$ADDON_DIR/state/plugins
 
-# Output CGI HTTP headers
-printf 'Content-Type: application/json; charset=utf-8\r\n\r\n'
+# Only read-only methods are accepted. The endpoint never mutates state, so a
+# POST/PUT/DELETE is always a mistake or an attack attempt.
+REQUEST_METHOD=${REQUEST_METHOD:-GET}
+case "$REQUEST_METHOD" in
+    GET|HEAD) ;;
+    *)
+        printf 'Status: 405 Method Not Allowed\r\n'
+        printf 'Content-Type: application/json; charset=utf-8\r\n'
+        printf 'Cache-Control: no-store, max-age=0\r\n'
+        printf 'X-Content-Type-Options: nosniff\r\n'
+        printf 'Allow: GET, HEAD\r\n\r\n'
+        printf '{"ok":false,"error":"Use GET or HEAD for this endpoint."}\n'
+        exit 0
+        ;;
+esac
 
-# Scan and stream JSON array
+# Output CGI HTTP headers. Content-Type must remain the first line: the
+# integration harness and the deploy.sh probe read it as the status marker.
+printf 'Content-Type: application/json; charset=utf-8\r\n'
+printf 'Cache-Control: no-store, max-age=0\r\n'
+printf 'Pragma: no-cache\r\n'
+printf 'X-Content-Type-Options: nosniff\r\n'
+printf 'Referrer-Policy: same-origin\r\n\r\n'
+
+[ "$REQUEST_METHOD" = "HEAD" ] && exit 0
+
+# Scan and stream JSON array. Only regular, non-symlink files whose content is
+# a JSON object are published. A symlink dropped into state/plugins (possibly
+# pointing at .env or /etc/shadow) is never followed by this root CGI.
 printf '['
 
 first=1
 if [ -d "$PLUGINS_STATE_DIR" ]; then
     for f in "$PLUGINS_STATE_DIR"/*.json; do
         [ -f "$f" ] || continue
-        # Read content, trimming leading/trailing whitespace if needed, or stream directly
+        [ ! -L "$f" ] || continue
+        _trimmed=$(tr -d '\r\n\t ' < "$f" 2>/dev/null)
+        case "$_trimmed" in
+            '{'*'}') ;;
+            *) continue ;;
+        esac
         if [ "$first" -eq 1 ]; then
             first=0
         else

@@ -100,17 +100,22 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+sed_escape_repl() {
+    printf '%s' "${1:-}" | sed -e 's/[\\&|]/\\&/g'
+}
+
 render_template() {
     _tpl=$1
+    _host=$(sed_escape_repl "$SMA_IP")
     _out=$(printf '%s' "$_tpl" \
-        | sed -e "s/{SOC}/$SOC/g" \
-              -e "s/{TRIGGER_SOC}/$THRESHOLD_TRIGGER/g" \
-              -e "s/{RESET_SOC}/$THRESHOLD_RESET/g" \
-              -e "s/{HOST}/$SMA_IP/g" \
-              -e "s/%SOC%/$SOC/g" \
-              -e "s/%TRIGGER%/$THRESHOLD_TRIGGER/g" \
-              -e "s/%RESET%/$THRESHOLD_RESET/g" \
-              -e "s/%HOST%/$SMA_IP/g")
+        | sed -e "s|{SOC}|$SOC|g" \
+              -e "s|{TRIGGER_SOC}|$THRESHOLD_TRIGGER|g" \
+              -e "s|{RESET_SOC}|$THRESHOLD_RESET|g" \
+              -e "s|{HOST}|$_host|g" \
+              -e "s|%SOC%|$SOC|g" \
+              -e "s|%TRIGGER%|$THRESHOLD_TRIGGER|g" \
+              -e "s|%RESET%|$THRESHOLD_RESET|g" \
+              -e "s|%HOST%|$_host|g")
     # "%%" is an escaped literal percent sign (legacy templates).
     printf '%s' "$_out" | sed 's/%%/%/g'
 }
@@ -136,6 +141,12 @@ load_config() {
     THRESHOLD_TRIGGER=${THRESHOLD_TRIGGER:-95}
     THRESHOLD_RESET=${THRESHOLD_RESET:-90}
     SMA_IP=${SMA_IP:-}
+
+    # The thresholds and host end up inside a sed replacement and the message
+    # body. Normalise them here so a hand-edited .env cannot corrupt output.
+    case "$THRESHOLD_TRIGGER" in ''|*[!0-9]*) THRESHOLD_TRIGGER=95 ;; esac
+    case "$THRESHOLD_RESET" in ''|*[!0-9]*) THRESHOLD_RESET=90 ;; esac
+    case "$SMA_IP" in *[!A-Za-z0-9._:-]*) SMA_IP= ;; esac
 
     # UI_LANGUAGE selects the built-in notification text. Unknown values fall
     # back to English so a typo never silences an alert.
@@ -252,11 +263,19 @@ send_to_recipient() {
     while [ "$_attempt" -le "$SIGNAL_RETRIES" ]; do
         # -G (--get) + --data-urlencode passes the UUID and API key and
         # percent-encodes spaces and umlauts in the message text inside curl.
-        _resp=$(curl -fsS --connect-timeout 5 -m "$SIGNAL_TIMEOUT" -G \
-            --data-urlencode "phone=$_phone" \
-            --data-urlencode "apikey=$_apikey" \
-            --data-urlencode "text=$_text" \
-            "$SIGNAL_API_URL" 2>&1)
+        # The recipient and key are supplied through a curl config on stdin so
+        # they never appear in /proc/<pid>/cmdline (BusyBox printf is a builtin).
+        _esc_phone=$(printf '%s' "$_phone" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+        _esc_key=$(printf '%s' "$_apikey" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+        _resp=$(
+            {
+                printf 'data-urlencode = "phone=%s"\n' "$_esc_phone"
+                printf 'data-urlencode = "apikey=%s"\n' "$_esc_key"
+            } | curl -fsS --connect-timeout 5 -m "$SIGNAL_TIMEOUT" -G \
+                --config - \
+                --data-urlencode "text=$_text" \
+                "$SIGNAL_API_URL" 2>&1
+        )
         _rc=$?
         if [ "$_rc" -eq 0 ]; then
             return 0
