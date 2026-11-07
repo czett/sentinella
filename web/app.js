@@ -89,15 +89,17 @@
             resetLevel: "Reset level",
             resetSlider: "Reset level slider",
             signalAlerts: "Signal alerts",
-            sendNotifications: "Send notifications",
+            sendNotifications: "Signal Notifications",
             sendNotificationsNote: "Calls the CallMeBot Signal gateway when the signal changes.",
-            phoneLabel: "Signal Account UUID",
-            phoneAria: "Signal Account UUID",
+            phoneLabel: "Signal Account UUID / Phone",
+            phoneAria: "Signal Account UUID or phone number",
             apikeyLabel: "CallMeBot API key",
             quickSetupLabel: "CallMeBot Onboarding Message",
             quickSetupHint: "Paste activation message from CallMeBot to automatically extract UUID and API key.",
             quickSetupPlaceholder: "Paste the activation message here (e.g. 'The APIKey created for you is: 653590 ... phone=98526357-0cec...')",
             quickSetupButton: "Extract & Apply",
+            quickSetupAutoSaved: "Saved and active",
+            gatewayActive: "CallMeBot (active)",
             quickSetupSuccessBoth: "Extracted UUID & API Key successfully",
             quickSetupSuccessPhone: "Extracted Signal Account UUID successfully",
             quickSetupSuccessApikey: "Extracted API Key successfully",
@@ -231,15 +233,17 @@
             resetLevel: "Ausschaltschwelle",
             resetSlider: "Schieberegler Ausschaltschwelle",
             signalAlerts: "Signalbenachrichtigungen",
-            sendNotifications: "Benachrichtigungen senden",
+            sendNotifications: "Signal-Benachrichtigungen",
             sendNotificationsNote: "Sendet eine Signal-Nachricht über CallMeBot, wenn das Signal umschaltet.",
-            phoneLabel: "Signal Account UUID",
-            phoneAria: "Signal Account UUID",
+            phoneLabel: "Signal Account UUID / Phone",
+            phoneAria: "Signal Account UUID oder Telefonnummer",
             apikeyLabel: "CallMeBot-API-Schlüssel",
             quickSetupLabel: "CallMeBot-Aktivierungsnachricht",
             quickSetupHint: "Nachricht vom CallMeBot hier einfügen, um UUID und API-Key automatisch zu übernehmen.",
             quickSetupPlaceholder: "Aktivierungsnachricht hier einfügen (z. B. 'The APIKey created for you is: 653590 ... phone=98526357-0cec...')",
             quickSetupButton: "Extrahieren & Übernehmen",
+            quickSetupAutoSaved: "Gespeichert und aktiv",
+            gatewayActive: "CallMeBot (aktiv)",
             quickSetupSuccessBoth: "UUID & API-Schlüssel erfolgreich extrahiert",
             quickSetupSuccessPhone: "Signal Account UUID erfolgreich extrahiert",
             quickSetupSuccessApikey: "API-Schlüssel erfolgreich extrahiert",
@@ -391,7 +395,8 @@
         triggerRange: $("trigger-range"),
         resetSoc: $("reset-soc"),
         resetRange: $("reset-range"),
-        signalEnabled: $("signal-enabled"),
+        signalEnabled: $("signal_enabled"),
+        signalGroup: $("signal_credentials_group"),
         signalPhone: $("signal-phone"),
         signalApikey: $("signal-apikey"),
         apikeyHint: $("apikey-hint"),
@@ -796,7 +801,13 @@
         el.metaSignalVar.textContent = data.variables && data.variables.signal
             ? data.variables.signal
             : "—";
-        el.metaNotify.textContent = data.signal_notifications ? t("enabled") : t("disabled");
+        var gateway = data.signal_gateway || "";
+        if (gateway === "CallMeBot (aktiv)") {
+            gateway = t("gatewayActive");
+        } else if (gateway === "Deaktiviert") {
+            gateway = t("disabled");
+        }
+        el.metaNotify.textContent = gateway || (data.signal_notifications ? t("enabled") : t("disabled"));
         el.metaLast.textContent = last;
 
         el.historyCount.textContent = history.length
@@ -1075,6 +1086,7 @@
             signal: false,
             signal_state: "reset",
             signal_notifications: false,
+            signal_gateway: "Deaktiviert",
             thresholds: { trigger: 95, reset: 90 },
             variables: { soc: "SV_Batterie_SoC", signal: "SV_Batterie_95_Signal" },
             ccu_status: "ok",
@@ -1152,7 +1164,7 @@
     function setSettingsBusy(busy) {
         settingsBusy = busy;
         el.settingsSave.disabled = busy;
-        el.settingsTest.disabled = busy;
+        el.settingsTest.disabled = busy || (el.signalEnabled && !el.signalEnabled.checked);
         el.settingsForm.setAttribute("aria-busy", busy ? "true" : "false");
     }
 
@@ -1160,30 +1172,94 @@
         return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || "").trim());
     }
 
+    function isSignalRecipient(value) {
+        var token = String(value || "").trim();
+        return isSignalUuid(token) || /^\+?[0-9]{7,15}$/.test(token);
+    }
+
+    function isSignalPhoneList(value) {
+        var tokens = String(value || "").trim().split(/[\s,;]+/).filter(Boolean);
+        if (!tokens.length) {
+            return false;
+        }
+        return tokens.every(function (token) {
+            var parts = token.split(":");
+            if (parts.length === 1) {
+                return isSignalRecipient(parts[0]);
+            }
+            if (parts.length === 2) {
+                return isSignalRecipient(parts[0]) && /^[A-Za-z0-9._-]+$/.test(parts[1]);
+            }
+            return false;
+        });
+    }
+
     function parseCallMeBotMessage(raw) {
         var text = String(raw || "");
         var apikey = "";
         var phone = "";
+        var uuidPattern = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
+        var uuidRe = new RegExp(uuidPattern);
 
-        var keyQueryMatch = text.match(/[?&]apikey=([a-zA-Z0-9]+)/i);
-        var keyCreatedMatch = text.match(/API\s*Key\s+created\s+for\s+you\s+is\s*:\s*([a-zA-Z0-9]+)/i);
-        var keyColonMatch = text.match(/\bapikey\s*[:=]\s*([a-zA-Z0-9]+)/i);
-
-        if (keyQueryMatch) {
-            apikey = keyQueryMatch[1];
-        } else if (keyCreatedMatch) {
-            apikey = keyCreatedMatch[1];
-        } else if (keyColonMatch) {
-            apikey = keyColonMatch[1];
+        function clean(value) {
+            return String(value == null ? "" : value)
+                .replace(/^[\s"'`<>()\[\]{}]+/, "")
+                .replace(/[\s"'`<>()\[\]{},.;:!?]+$/, "");
         }
 
-        var phoneUuidMatch = text.match(/phone=([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/);
-        var anyUuidMatch = text.match(/\b([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\b/);
+        function normalizePhone(value) {
+            var cleaned = clean(value);
+            if (!cleaned) {
+                return "";
+            }
+            if (uuidRe.test(cleaned)) {
+                var uuidMatch = cleaned.match(uuidRe);
+                return uuidMatch ? uuidMatch[0] : "";
+            }
+            var digits = cleaned.replace(/[\s().\-\/]/g, "");
+            if (/^\+[0-9]{7,15}$/.test(digits) || /^[0-9]{7,15}$/.test(digits)) {
+                return digits;
+            }
+            return "";
+        }
 
-        if (phoneUuidMatch) {
-            phone = phoneUuidMatch[1];
-        } else if (anyUuidMatch) {
-            phone = anyUuidMatch[1];
+        var pairMatch = text.match(new RegExp("\\b(" + uuidPattern + "):([A-Za-z0-9._-]+)"));
+        if (pairMatch) {
+            return {
+                phone: pairMatch[1],
+                apikey: clean(pairMatch[2])
+            };
+        }
+
+        var phoneParamMatch = text.match(/\bphone["'`]?\s*[:=]\s*["'`]?\s*([^"'`&\n\r,;]+)/i);
+        if (phoneParamMatch) {
+            phone = normalizePhone(phoneParamMatch[1]);
+        }
+        if (!phone) {
+            var anyUuidMatch = text.match(uuidRe);
+            if (anyUuidMatch) {
+                phone = anyUuidMatch[0];
+            }
+        }
+
+        var keyPatterns = [
+            /[?&]apikey\s*=\s*["'`]?([A-Za-z0-9._-]+)/i,
+            /API\s*Key\s+created\s+for\s+you\s+is\s*[:=]?\s*["'`]?([A-Za-z0-9._-]+)/i,
+            /\bapi[_-\s]*key["'`]?\s*[:=]\s*["'`]?([A-Za-z0-9._-]+)/i
+        ];
+        for (var i = 0; i < keyPatterns.length && !apikey; i += 1) {
+            var keyMatch = text.match(keyPatterns[i]);
+            if (keyMatch) {
+                apikey = clean(keyMatch[1]);
+            }
+        }
+
+        if (!apikey && phone) {
+            var withoutPhone = text.split(phone).join(" ").replace(new RegExp(uuidPattern, "g"), " ");
+            var pureTokenMatch = withoutPhone.match(/(?:^|[\s,;])([0-9]{5,12}|[A-Za-z0-9]{6,32})(?=$|[\s,;])/);
+            if (pureTokenMatch) {
+                apikey = clean(pureTokenMatch[1]);
+            }
         }
 
         return {
@@ -1225,6 +1301,72 @@
         }, 2400);
     }
 
+    function isMaskedApiKey(value) {
+        var text = String(value || "").trim();
+        return text !== "" && /^[\u2022\u00b7*.]+$/.test(text);
+    }
+
+    function setSignalLocked(locked) {
+        var group = el.signalGroup;
+        if (el.signalEnabled) {
+            el.signalEnabled.disabled = false;
+        }
+        if (group) {
+            group.classList.toggle("is-locked", locked);
+            var controls = group.querySelectorAll("input, textarea, button, select");
+            for (var i = 0; i < controls.length; i += 1) {
+                controls[i].disabled = locked;
+            }
+        }
+        if (el.settingsTest) {
+            el.settingsTest.disabled = locked;
+        }
+    }
+
+    function autoSaveParsedCredentials(phone, apikey) {
+        if (demoRequested || !settingsAvailable) {
+            var localMsg = t("quickSetupSuccessBoth");
+            showQuickSetupFeedback("success", localMsg);
+            showSettingsStatus("success", localMsg);
+            showToast("success", localMsg);
+            return Promise.resolve(null);
+        }
+
+        if (el.signalEnabled) {
+            el.signalEnabled.checked = true;
+        }
+        setSignalLocked(false);
+
+        var payload = {
+            signal_phone: phone,
+            signal_apikey: apikey,
+            signal_enabled: true
+        };
+
+        setSettingsBusy(true);
+        return requestJSON(CONFIG_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        }).then(function (data) {
+            fillSettingsForm(data);
+            adoptConfig(data);
+            var savedMsg = t("quickSetupAutoSaved");
+            showQuickSetupFeedback("success", savedMsg);
+            showSettingsStatus("success", savedMsg);
+            showToast("success", savedMsg);
+            load();
+            return data;
+        }).catch(function (error) {
+            showQuickSetupFeedback("error", error.message);
+            showSettingsStatus("error", error.message);
+            showToast("error", error.message);
+            return null;
+        }).finally(function () {
+            setSettingsBusy(false);
+        });
+    }
+
     function applyCallMeBotMessage(raw, silentIfEmpty) {
         var parsed = parseCallMeBotMessage(raw);
         if (!parsed.phone && !parsed.apikey) {
@@ -1248,12 +1390,19 @@
             el.callmebotPaste.value = "";
         }
 
-        var messageKey = parsed.phone && parsed.apikey
-            ? "quickSetupSuccessBoth"
-            : (parsed.phone ? "quickSetupSuccessPhone" : "quickSetupSuccessApikey");
-        var message = t(messageKey);
-
         flashExtractedFields(updatedFields);
+
+        if (parsed.phone && parsed.apikey) {
+            if (el.signalEnabled) {
+                el.signalEnabled.checked = true;
+            }
+            setSignalLocked(false);
+            autoSaveParsedCredentials(parsed.phone, parsed.apikey);
+            return true;
+        }
+
+        var messageKey = parsed.phone ? "quickSetupSuccessPhone" : "quickSetupSuccessApikey";
+        var message = t(messageKey);
         showQuickSetupFeedback("success", message);
         showSettingsStatus("success", message);
         showToast("success", message);
@@ -1271,6 +1420,7 @@
         el.signalApikey.value = "";
         el.signalApikey.placeholder = data.signal_apikey_set ? t("unchanged") : t("required");
         el.apikeyHint.hidden = !data.signal_apikey_set;
+        setSignalLocked(!el.signalEnabled.checked);
 
         el.smaIp.value = data.sma_ip || "";
         el.smaPort.value = String(data.sma_port || 443);
@@ -1301,6 +1451,11 @@
                 reset: data.reset_soc
             };
             current.signal_notifications = data.signal_enabled === true;
+            if (data.signal_phone && (data.signal_apikey_set === true || String(data.signal_phone).indexOf(":") !== -1)) {
+                current.signal_gateway = "CallMeBot (aktiv)";
+            } else if (data.signal_phone === "" || data.signal_apikey_set === false) {
+                current.signal_gateway = "Deaktiviert";
+            }
             render(current);
         }
     }
@@ -1331,7 +1486,7 @@
         }
 
         var phone = el.signalPhone.value.trim();
-        if (phone && !isSignalUuid(phone)) {
+        if (phone && !isSignalPhoneList(phone)) {
             return {
                 field: "signal-phone",
                 text: t("phoneInvalid")
@@ -1347,7 +1502,8 @@
                     text: t("phoneRequired")
                 };
             }
-            if (!apikey && !(liveConfig && liveConfig.signal_apikey_set)) {
+            var hasInlineKey = phone.indexOf(":") >= 0;
+            if (!hasInlineKey && !apikey && !(liveConfig && liveConfig.signal_apikey_set)) {
                 return {
                     field: "signal-apikey",
                     text: t("apikeyRequired")
@@ -1388,7 +1544,7 @@
         };
 
         var apikey = el.signalApikey.value.trim();
-        if (apikey) {
+        if (apikey && !isMaskedApiKey(apikey)) {
             payload.signal_apikey = apikey;
         }
         var password = el.smaPassword.value;
@@ -1695,9 +1851,26 @@
     el.settingsBackdrop.addEventListener("click", closeSettings);
     el.settingsTest.addEventListener("click", runTest);
 
+    if (el.signalEnabled) {
+        el.signalEnabled.addEventListener("change", function () {
+            setSignalLocked(!el.signalEnabled.checked);
+        });
+        setSignalLocked(!el.signalEnabled.checked);
+    }
+
     if (el.callmebotExtract && el.callmebotPaste) {
         el.callmebotExtract.addEventListener("click", function () {
             applyCallMeBotMessage(el.callmebotPaste.value, false);
+        });
+        el.callmebotPaste.addEventListener("input", function () {
+            var val = el.callmebotPaste.value;
+            if (!val) {
+                return;
+            }
+            var parsed = parseCallMeBotMessage(val);
+            if (parsed.phone && parsed.apikey) {
+                applyCallMeBotMessage(val, true);
+            }
         });
         el.callmebotPaste.addEventListener("paste", function (event) {
             var pasted = "";

@@ -367,6 +367,11 @@ def main() -> int:
         check(status["signal"] is True, "status.json signal", failures)
         check(status["signal_state"] == "triggered", "status.json signal state", failures)
         check(status["ccu_status"] == "ok", "status.json CCU status", failures)
+        check(
+            status.get("signal_gateway") == "CallMeBot (aktiv)",
+            "status.json reports an active CallMeBot gateway",
+            failures,
+        )
 
         print("\n2. hold at 92 %")
         sma_state.soc = 92
@@ -652,6 +657,7 @@ def main() -> int:
         required = {
             "soc", "signal", "signal_state", "thresholds", "history",
             "ccu_status", "generated_at", "variables", "charging",
+            "signal_gateway",
         }
         check(required.issubset(status.keys()), "all required fields present", failures)
         check(status.get("ui_language") == "en", "status.json reports the UI language", failures)
@@ -684,7 +690,6 @@ def main() -> int:
             ({"reset_soc": -1}, "reset_soc"),
             ({"trigger_soc": 80, "reset_soc": 90}, "trigger_soc"),
             ({"signal_phone": "not-a-uuid"}, "signal_phone"),
-            ({"signal_phone": "+491701234567"}, "signal_phone"),
             ({"signal_phone": "0171 1234567"}, "signal_phone"),
             ({"sma_ip": "192.168.1.1/24"}, "sma_ip"),
             ({"sma_port": 70000}, "sma_port"),
@@ -699,6 +704,25 @@ def main() -> int:
                 failures,
             )
         check(env_path.read_text() == env_before, "rejected input leaves .env unchanged", failures)
+
+        result = run_cgi(addon2, "POST", body=json.dumps({
+            "signal_phone": "+491701234567",
+            "signal_api_key": "alias-key-99",
+        }))
+        status_code, saved = parse_cgi(result)
+        env_text = env_path.read_text()
+        check(
+            status_code == "200 OK" and saved.get("signal_phone") == "+491701234567",
+            "accepts an E.164 phone number as Signal recipient",
+            failures,
+        )
+        check(
+            "SIGNAL_APIKEY='alias-key-99'" in env_text,
+            "signal_api_key alias is persisted to .env",
+            failures,
+        )
+        # Restore the fixture key for the later atomic-write assertions.
+        run_cgi(addon2, "POST", body=json.dumps({"signal_apikey": "test-key"}))
 
         print("\n15. valid settings are written atomically")
         env_path.write_text("# preserved comment\n" + env_path.read_text())
@@ -722,7 +746,11 @@ def main() -> int:
         check(f"SIGNAL_PHONE='{UPDATED_UUID}'" in env_text, "UUID written to .env", failures)
         check("# preserved comment" in env_text, "comments preserved during rewrite", failures)
         check("SMA_PASS='test-secret'" in env_text, "existing secret preserved", failures)
-        check("SIGNAL_APIKEY=\"test-key\"" in env_text, "existing API key preserved", failures)
+        check(
+            "SIGNAL_APIKEY='test-key'" in env_text or 'SIGNAL_APIKEY="test-key"' in env_text,
+            "existing API key preserved",
+            failures,
+        )
         check((env_path.stat().st_mode & 0o777) == 0o600, ".env stays mode 600", failures)
         check(not list(addon2.glob(".env.tmp*")), "no temporary files left behind", failures)
         check(not (addon2 / "state" / ".config.lock").exists(), "config lock released", failures)
@@ -771,6 +799,72 @@ def main() -> int:
                 "gateway receives exact UUID",
                 failures,
             )
+
+        print("\n15c. status.json gateway state follows stored credentials")
+        addon5 = make_addon(tmp, sma_port, rega_port, signal_port, True, name="addon5")
+        reset_state(addon5)
+        env5 = addon5 / ".env"
+        lines = []
+        for line in env5.read_text().splitlines():
+            if line.startswith("SIGNAL_PHONE="):
+                line = 'SIGNAL_PHONE=""'
+            elif line.startswith("SIGNAL_APIKEY="):
+                line = 'SIGNAL_APIKEY=""'
+            elif line.startswith("SIGNAL_ENABLED="):
+                line = 'SIGNAL_ENABLED="false"'
+            lines.append(line)
+        env5.write_text("\n".join(lines) + "\n")
+        sma_state.soc = 90
+        result = run_check(addon5)
+        check(result.returncode == 0, "run without Signal credentials exits 0", failures)
+        check(
+            read_status(addon5).get("signal_gateway") == "Deaktiviert",
+            "status.json reports the gateway as disabled without credentials",
+            failures,
+        )
+        with env5.open("a") as env_file:
+            env_file.write(f'SIGNAL_PHONE="{DEFAULT_UUID}"\nSIGNAL_APIKEY="test-key"\n')
+        result = run_check(addon5)
+        check(result.returncode == 0, "run with Signal credentials exits 0", failures)
+        check(
+            read_status(addon5).get("signal_gateway") == "CallMeBot (aktiv)",
+            "status.json reports the gateway as active with credentials",
+            failures,
+        )
+
+        print("\n15d. signal_enabled accepts on/off/1/0 and empty API keys never erase the stored key")
+        addon6 = make_addon(tmp, sma_port, rega_port, signal_port, True, name="addon6")
+        reset_state(addon6)
+        env6 = addon6 / ".env"
+        for raw, expected in (("on", "true"), ("1", "true"), ("off", "false"), ("0", "false")):
+            result = run_cgi(addon6, "POST", body=json.dumps({"signal_enabled": raw}))
+            status_code, saved = parse_cgi(result)
+            env_text = env6.read_text()
+            check(
+                status_code == "200 OK" and saved.get("signal_enabled") == (expected == "true"),
+                f"signal_enabled={raw!r} normalizes to {expected}",
+                failures,
+            )
+            check(
+                f"SIGNAL_ENABLED='{expected}'" in env_text
+                or f'SIGNAL_ENABLED="{expected}"' in env_text,
+                f"SIGNAL_ENABLED written as {expected} for {raw!r}",
+                failures,
+            )
+        result = run_cgi(addon6, "POST", body=json.dumps({
+            "signal_phone": DEFAULT_UUID,
+            "signal_api_key": "",
+            "signal_enabled": "on",
+        }))
+        status_code, saved = parse_cgi(result)
+        env_text = env6.read_text()
+        check(status_code == "200 OK", "empty signal_api_key payload is accepted", failures)
+        check(saved.get("signal_apikey_set") is True, "stored API key still reported as set", failures)
+        check(
+            "test-key" in env_text,
+            "empty signal_api_key does not erase the stored key",
+            failures,
+        )
 
         print("\n16. test notification is dispatched in the background")
         signal_before = (addon2 / "state" / "signal").read_text()
@@ -838,8 +932,33 @@ const samples = [
     },
     {
         input: "apikey: 445566\\nphone=+491711234567",
-        phone: "",
+        phone: "+491711234567",
         apikey: "445566"
+    },
+    {
+        input: "ApiKey: '778899'\\nPhone: '+49 171 1234567'",
+        phone: "+491711234567",
+        apikey: "778899"
+    },
+    {
+        input: "{ \\"apikey\\": \\"123456\\", \\"phone\\": \\"+491701234567\\" }",
+        phone: "+491701234567",
+        apikey: "123456"
+    },
+    {
+        input: "apikey=445566&phone=98526357-0cec-4e7f-9d60-d854432414d3&text=Hello",
+        phone: "98526357-0cec-4e7f-9d60-d854432414d3",
+        apikey: "445566"
+    },
+    {
+        input: "apikey: 445566.\\nphone: +491711234567!",
+        phone: "+491711234567",
+        apikey: "445566"
+    },
+    {
+        input: "Send to 98526357-0cec-4e7f-9d60-d854432414d3:abc123XYZ, thanks",
+        phone: "98526357-0cec-4e7f-9d60-d854432414d3",
+        apikey: "abc123XYZ"
     }
 ];
 for (const s of samples) {
@@ -886,8 +1005,8 @@ assertEq(I18N.en.thresholdCorridor, "Thresholds", "EN slider title");
 assertEq(I18N.de.thresholdCorridor, "Schaltschwellen", "DE slider title");
 assertEq(I18N.en.legendBounds, "Thresholds", "EN chart bounds");
 assertEq(I18N.de.legendBounds, "Schaltschwellen", "DE chart bounds");
-assertEq(I18N.en.phoneLabel, "Signal Account UUID", "EN phoneLabel");
-assertEq(I18N.de.phoneLabel, "Signal Account UUID", "DE phoneLabel");
+assertEq(I18N.en.phoneLabel, "Signal Account UUID / Phone", "EN phoneLabel");
+assertEq(I18N.de.phoneLabel, "Signal Account UUID / Phone", "DE phoneLabel");
 assertEq(I18N.en.quickSetupLabel, "CallMeBot Onboarding Message", "EN quickSetupLabel");
 assertEq(I18N.en.quickSetupHint, "Paste activation message from CallMeBot to automatically extract UUID and API key.", "EN quickSetupHint");
 assertEq(I18N.de.quickSetupHint, "Nachricht vom CallMeBot hier einfügen, um UUID und API-Key automatisch zu übernehmen.", "DE quickSetupHint");
@@ -918,6 +1037,39 @@ if (!html.includes("<span>SENTINELLA · CCU3</span>") || html.includes("footerTa
             check(
                 i18n_res.returncode == 0,
                 f"EN/DE UI strings and footer match streamlined copy ({i18n_res.stderr.strip() or 'ok'})",
+                failures,
+            )
+
+            print("\n19. Signal notifications toggle locks credentials until enabled")
+            toggle_script = """
+const fs = require("fs");
+const code = fs.readFileSync(process.argv[1], "utf8");
+const html = fs.readFileSync(process.argv[2], "utf8");
+const fail = (label) => { console.error(label); process.exit(1); };
+if (!/id="signal_enabled"/.test(html)) fail("signal_enabled toggle id missing");
+if (!/for="signal_enabled"/.test(html)) fail("signal_enabled label target missing");
+if (!/id="signal_credentials_group"/.test(html)) fail("signal_credentials_group container missing");
+const groupMatch = html.match(/id="signal_credentials_group"[\\s\\S]*?<\\/fieldset>/);
+if (!groupMatch) fail("signal_credentials_group is not closed before the fieldset ends");
+for (const id of ["callmebot-paste", "signal-phone", "signal-apikey"]) {
+    if (!groupMatch[0].includes('id="' + id + '"')) fail(id + " is outside the locked group");
+}
+if (!/data-signal-control/.test(html)) fail("test notification is not marked as a Signal control");
+if (!/function setSignalLocked\\(/.test(code)) fail("setSignalLocked missing");
+if (!/group\\.querySelectorAll\\("input, textarea, button, select"\\)/.test(code)) fail("lock does not disable grouped controls");
+if (!/signal_enabled:\\s*true/.test(code)) fail("auto-save does not force signal_enabled true");
+if (!/isMaskedApiKey\\(/.test(code)) fail("masked API key guard missing");
+if (/payload\\.signal_enabled = el\\.signalEnabled\\.checked/.test(code)) fail("auto-save still copies an unchecked toggle");
+"""
+            toggle_res = subprocess.run(
+                ["node", "-e", toggle_script, str(ROOT / "web" / "app.js"), str(ROOT / "web" / "index.html")],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            check(
+                toggle_res.returncode == 0,
+                f"toggle gates credentials, auto-save forces enabled and preserves masked keys ({toggle_res.stderr.strip() or 'ok'})",
                 failures,
             )
     finally:

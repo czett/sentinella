@@ -80,9 +80,11 @@ html[data-theme="dark"] {
 html,
 body {
     width: 100%;
+    max-width: 100%;
     height: 100%;
     margin: 0;
     overflow: hidden;
+    overflow-x: hidden;
 }
 
 body {
@@ -146,6 +148,8 @@ a {
 .app {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
+    width: 100%;
+    max-width: 100vw;
     height: 100vh;
     height: 100dvh;
     overflow: hidden;
@@ -1579,6 +1583,26 @@ body.drawer-open {
     transform: translateX(24px);
 }
 
+.signal-credentials {
+    transition: opacity 150ms var(--ease);
+}
+
+.signal-credentials.is-locked {
+    opacity: 0.45;
+    pointer-events: none;
+}
+
+.signal-credentials.is-locked .input,
+.signal-credentials.is-locked .quick-setup-button {
+    cursor: not-allowed;
+}
+
+.switch:disabled,
+.button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
 .quick-setup {
     margin-top: 18px;
     border: var(--rule);
@@ -1701,7 +1725,7 @@ body.drawer-open {
 }
 
 .toast[data-tone="success"] {
-    border-left: 8px solid var(--blue);
+    border-left: 8px solid var(--green);
 }
 
 .toast[data-tone="error"] {
@@ -1759,14 +1783,22 @@ body.drawer-open {
         --header-h: 60px;
     }
 
+    /* The dashboard collapses to one column well before 600px so no panel is
+       ever squeezed below its usable minimum width. */
+    .poster-grid,
+    .lower-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
     .bar {
-        gap: 10px;
+        gap: 10px 14px;
         padding-left: 14px;
         padding-right: 14px;
     }
 
     .brand {
         gap: 10px;
+        min-width: 0;
     }
 
     .brand-name {
@@ -1775,6 +1807,7 @@ body.drawer-open {
 
     .bar-right {
         gap: 8px;
+        margin-left: auto;
     }
 
     .brand-sub {
@@ -1820,15 +1853,243 @@ body.drawer-open {
     }
 }
 
-@media (max-width: 420px) {
-    .field-row,
-    .drawer-actions {
+/* --------------------------------------------------------------------------
+   Narrow phones (iPhone XS / SE, 375px and below)
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 480px) {
+    .app {
+        overflow: hidden;
+    }
+
+    /* Header: allow the brand and the control cluster to wrap onto separate
+       rows instead of colliding, and trim the horizontal padding. */
+    .bar {
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 12px;
+        min-height: calc(var(--header-h) + env(safe-area-inset-top));
+        padding: calc(6px + env(safe-area-inset-top)) 0.75rem 6px;
+    }
+
+    .brand {
+        gap: 8px;
+    }
+
+    .brand-name {
+        font-size: 13px;
+        letter-spacing: -0.01em;
+    }
+
+    .bar-right {
+        gap: 6px;
+    }
+
+    .lang-option,
+    .theme-option {
+        min-width: 34px;
+        min-height: 44px;
+        padding: 0 5px;
+    }
+
+    .theme-option {
+        padding: 0;
+    }
+
+    .settings-trigger {
+        min-height: 44px;
+        padding: 0 10px;
+    }
+
+    /* Hero: the giant readout must never push the percent sign out of the
+       blue panel or force a horizontal scrollbar. */
+    .poster-blue {
+        min-height: auto;
+        padding: clamp(20px, 6vw, 32px) var(--pad);
+    }
+
+    .poster-meta {
+        gap: 10px;
+    }
+
+    .state-tag {
+        margin-left: 0;
+    }
+
+    .soc {
+        margin: 20px 0;
+    }
+
+    .soc-value {
+        font-size: clamp(3rem, 15vw, 6rem);
+    }
+
+    .soc-unit {
+        font-size: clamp(1.5rem, 6vw, 2.25rem);
+    }
+
+    .poster-caption {
+        font-size: 14px;
+    }
+
+    /* One metric per row: two columns leave too little room for values such
+       as "Discharging 1.2 kW". */
+    .metrics {
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    .metric {
+        padding: 14px var(--pad);
+    }
+
+    .metric:nth-child(odd) {
+        border-right: 0;
+    }
+
+    .metric:not(:last-child) {
+        border-bottom: var(--rule);
+    }
+
+    .section-head {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .sample-count {
+        margin-left: 0;
+    }
+
+    .chart-legend {
+        gap: 8px 16px;
     }
 
     .chart-range {
         flex-basis: 100%;
         margin-left: 0;
+    }
+
+    .footer {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    /* Settings drawer becomes a full-width sheet with finger-friendly
+       internal padding. */
+    .drawer {
+        width: 100vw;
+        max-width: 100vw;
+        border-left: 0;
+    }
+
+    .drawer-head {
+        padding: calc(16px + env(safe-area-inset-top)) 1rem 14px;
+    }
+
+    .drawer-head h2 {
+        font-size: 24px;
+    }
+
+    .settings-form {
+        padding: 0 1rem calc(24px + env(safe-area-inset-bottom));
+    }
+
+    .drawer-status {
+        margin: 14px 1rem 0;
+    }
+
+    .field-row,
+    .drawer-actions {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .input,
+    .quick-setup-textarea,
+    textarea.input {
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
+    .quick-setup-status {
+        flex-basis: 100%;
+    }
+
+    .notice {
+        flex-wrap: wrap;
+    }
+
+    .notice .button {
+        width: 100%;
+    }
+}
+
+@media (max-width: 400px) {
+    /* Percentage tags live at the ends of the rail; a little extra lateral
+       padding keeps the 0% and 100% labels inside the panel. */
+    .rail-panel {
+        padding-left: 22px;
+        padding-right: 22px;
+    }
+
+    .rail-threshold-tag {
+        font-size: 10px;
+    }
+
+    .rail-marker-label {
+        font-size: 10px;
+    }
+
+    /* Long register values (host, variable names) stack under their label
+       instead of fighting for a single line. */
+    .meta-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+        padding: 11px 0;
+    }
+
+    .meta-row dd {
+        max-width: 100%;
+        text-align: left;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+    }
+
+    .quick-setup-footer {
+        align-items: stretch;
+    }
+
+    .quick-setup-button {
+        width: 100%;
+    }
+}
+
+@media (max-width: 380px) {
+    .brand-name {
+        font-size: 12px;
+    }
+
+    .brand-mark {
+        width: 18px;
+        height: 18px;
+    }
+
+    .lang-option,
+    .theme-option {
+        min-width: 32px;
+    }
+
+    .settings-trigger {
+        padding: 0 8px;
+    }
+
+    .soc-value {
+        font-size: clamp(2.75rem, 15vw, 5rem);
+    }
+
+    .rail-panel {
+        padding-left: 24px;
+        padding-right: 24px;
     }
 }
 

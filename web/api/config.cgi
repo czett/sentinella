@@ -126,8 +126,43 @@ is_signal_uuid() {
         '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
 }
 
-is_apikey() {
+is_apikey_token() {
     printf '%s' "$1" | grep -Eq '^[A-Za-z0-9._:-]{1,128}$'
+}
+
+is_signal_recipient() {
+    is_signal_uuid "$1" && return 0
+    printf '%s' "$1" | grep -Eq '^\+?[0-9]{7,15}$'
+}
+
+is_signal_phone_list() {
+    _list=$(printf '%s' "${1:-}" | tr ',;' '  ')
+    _count=0
+    for _item in $_list; do
+        _count=$((_count + 1))
+        case "$_item" in
+            *:*)
+                _u=${_item%%:*}
+                _k=${_item#*:}
+                is_signal_recipient "$_u" || return 1
+                is_apikey_token "$_k" || return 1
+                ;;
+            *)
+                is_signal_recipient "$_item" || return 1
+                ;;
+        esac
+    done
+    [ "$_count" -ge 1 ]
+}
+
+is_apikey() {
+    _list=$(printf '%s' "${1:-}" | tr ',;' '  ')
+    _count=0
+    for _item in $_list; do
+        _count=$((_count + 1))
+        is_apikey_token "$_item" || return 1
+    done
+    [ "$_count" -ge 1 ]
 }
 
 is_password() {
@@ -170,8 +205,8 @@ msg() {
         en:trigger_order) printf 'Trigger level must be greater than reset level.' ;;
         de:signal_bool) printf 'Signalbenachrichtigungen müssen aktiviert oder deaktiviert sein.' ;;
         en:signal_bool) printf 'Signal alerts must be either enabled or disabled.' ;;
-        de:phone_invalid) printf 'Geben Sie eine gültige Signal Account UUID ein (zum Beispiel 98526357-0cec-4e7f-9d60-d854432414d3).' ;;
-        en:phone_invalid) printf 'Enter a valid Signal Account UUID (for example 98526357-0cec-4e7f-9d60-d854432414d3).' ;;
+        de:phone_invalid) printf 'Geben Sie eine gültige Signal Account UUID oder Telefonnummer im E.164-Format ein (zum Beispiel 98526357-0cec-4e7f-9d60-d854432414d3 oder +491701234567).' ;;
+        en:phone_invalid) printf 'Enter a valid Signal Account UUID or E.164 phone number (for example 98526357-0cec-4e7f-9d60-d854432414d3 or +491701234567).' ;;
         de:apikey_invalid) printf 'Der CallMeBot-API-Schlüssel darf nur Buchstaben, Ziffern, Punkt, Bindestrich, Unterstrich und Doppelpunkt enthalten.' ;;
         en:apikey_invalid) printf 'The CallMeBot API key may only contain letters, digits, dot, dash, underscore and colon.' ;;
         de:phone_required) printf 'Wenn Benachrichtigungen aktiviert sind, ist eine Signal Account UUID erforderlich.' ;;
@@ -325,9 +360,17 @@ body_num() {
 }
 
 body_bool() {
-    printf '%s' "$BODY" \
-        | sed -n 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p' \
-        | head -n 1
+    _bool_raw=$(body_str "$1")
+    if [ -z "$_bool_raw" ]; then
+        _bool_raw=$(printf '%s' "$BODY" \
+            | sed -n 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p' \
+            | head -n 1)
+    fi
+    case "$_bool_raw" in
+        true|TRUE|True|1|on|ON|On|yes|YES) printf 'true' ;;
+        false|FALSE|False|0|off|OFF|Off|no|NO) printf 'false' ;;
+        *) printf '' ;;
+    esac
 }
 
 # ---------------------------------------------------------------------------
@@ -342,7 +385,7 @@ load_env() {
     case "${THRESHOLD_RESET:-}" in ''|*[!0-9]*) THRESHOLD_RESET=90 ;; esac
     SIGNAL_ENABLED=${SIGNAL_ENABLED:-false}
     SIGNAL_PHONE=$(trim_ws "${SIGNAL_PHONE:-}")
-    SIGNAL_APIKEY=${SIGNAL_APIKEY:-}
+    SIGNAL_APIKEY=$(trim_ws "${SIGNAL_APIKEY:-${SIGNAL_API_KEY:-}}")
     SMA_IP=${SMA_IP:-}
     SMA_PORT=${SMA_PORT:-443}
     SMA_PASS=${SMA_PASS:-}
@@ -519,7 +562,7 @@ save_config() {
 
     if body_has signal_phone; then
         _phone=$(trim_ws "$(body_str signal_phone)")
-        if [ -n "$_phone" ] && ! is_signal_uuid "$_phone"; then
+        if [ -n "$_phone" ] && ! is_signal_phone_list "$_phone"; then
             fail "400 Bad Request" \
                 "$(msg phone_invalid)" \
                 "signal_phone"
@@ -527,12 +570,18 @@ save_config() {
         _want_phone=1
     fi
 
+    _key_field=
     if body_has signal_apikey; then
-        _newkey=$(body_str signal_apikey)
+        _key_field=signal_apikey
+    elif body_has signal_api_key; then
+        _key_field=signal_api_key
+    fi
+    if [ -n "$_key_field" ]; then
+        _newkey=$(trim_ws "$(body_str "$_key_field")")
         if [ -n "$_newkey" ]; then
             is_apikey "$_newkey" || fail "400 Bad Request" \
                 "$(msg apikey_invalid)" \
-                "signal_apikey"
+                "$_key_field"
             _apikey=$_newkey
             _want_apikey=1
         fi
@@ -544,9 +593,14 @@ save_config() {
         [ -n "$_phone" ] || fail "400 Bad Request" \
             "$(msg phone_required)" \
             "signal_phone"
-        [ -n "$_apikey" ] || fail "400 Bad Request" \
-            "$(msg apikey_required)" \
-            "signal_apikey"
+        case "$_phone" in
+            *:*) ;;
+            *)
+                [ -n "$_apikey" ] || fail "400 Bad Request" \
+                    "$(msg apikey_required)" \
+                    "signal_apikey"
+                ;;
+        esac
     fi
 
     if body_has sma_ip; then
@@ -652,10 +706,19 @@ start_test() {
     [ -x "$NOTIFY_SCRIPT" ] || fail "500 Internal Server Error" \
         "$(msg notify_missing)"
 
-    if [ -z "$SIGNAL_PHONE" ] || [ -z "$SIGNAL_APIKEY" ]; then
+    if [ -z "$SIGNAL_PHONE" ]; then
         fail "400 Bad Request" \
             "$(msg test_credentials)"
     fi
+    case "$SIGNAL_PHONE" in
+        *:*) ;;
+        *)
+            if [ -z "$SIGNAL_APIKEY" ]; then
+                fail "400 Bad Request" \
+                    "$(msg test_credentials)"
+            fi
+            ;;
+    esac
 
     if test_lock_is_fresh; then
         fail "409 Conflict" "$(msg test_running)"

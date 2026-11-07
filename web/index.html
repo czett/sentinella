@@ -301,15 +301,16 @@
             <fieldset class="field-group">
                 <legend><span class="group-index">02</span><span data-i18n="signalAlerts">Signal alerts</span></legend>
 
-                <label class="switch-row" for="signal-enabled">
+                <label class="switch-row" for="signal_enabled">
                     <span>
-                        <span class="field-label" data-i18n="sendNotifications">Send notifications</span>
+                        <span class="field-label" data-i18n="sendNotifications">Signal notifications</span>
                         <span class="field-note" data-i18n="sendNotificationsNote">Calls the CallMeBot Signal gateway when the signal changes.</span>
                     </span>
-                    <input class="switch" id="signal-enabled" name="signal_enabled" type="checkbox" role="switch"
-                           aria-label="Send Signal notifications" data-i18n-aria="sendNotifications">
+                    <input class="switch" id="signal_enabled" name="signal_enabled" type="checkbox" role="switch"
+                           aria-label="Signal notifications" data-i18n-aria="sendNotifications">
                 </label>
 
+                <div class="signal-credentials" id="signal_credentials_group">
                 <div class="quick-setup" id="callmebot-quick-setup">
                     <label class="quick-setup-header" for="callmebot-paste">
                         <span class="field-label" data-i18n="quickSetupLabel">CallMeBot Onboarding Message</span>
@@ -329,10 +330,10 @@
                 </div>
 
                 <label class="field" for="signal-phone">
-                    <span class="field-label" data-i18n="phoneLabel">Signal Account UUID</span>
+                    <span class="field-label" data-i18n="phoneLabel">Signal Account UUID / Phone</span>
                     <input class="input" id="signal-phone" name="signal_phone" type="text"
                            autocomplete="off" spellcheck="false"
-                           aria-label="Signal Account UUID" data-i18n-aria="phoneAria"
+                           aria-label="Signal Account UUID or phone number" data-i18n-aria="phoneAria"
                            placeholder="98526357-0cec-4e7f-9d60-d854432414d3">
                 </label>
 
@@ -344,6 +345,7 @@
                            placeholder="Required" data-i18n-placeholder="required">
                 </label>
                 <p class="field-hint" id="apikey-hint" hidden data-i18n="storedKeepHint">An API key is stored. Leave the field empty to keep it.</p>
+                </div>
             </fieldset>
 
             <fieldset class="field-group">
@@ -375,7 +377,8 @@
             </fieldset>
 
             <div class="drawer-actions">
-                <button class="button button-outline" id="settings-test" type="button" data-i18n="testNotification">Test notification</button>
+                <button class="button button-outline" id="settings-test" type="button" data-i18n="testNotification"
+                        data-signal-control>Test notification</button>
                 <button class="button button-primary" id="settings-save" type="submit" data-i18n="saveSettings">Save settings</button>
             </div>
 

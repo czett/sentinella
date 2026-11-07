@@ -128,7 +128,7 @@ load_config() {
 
     SIGNAL_ENABLED=${SIGNAL_ENABLED:-false}
     SIGNAL_PHONE=$(trim_ws "${SIGNAL_PHONE:-}")
-    SIGNAL_APIKEY=${SIGNAL_APIKEY:-}
+    SIGNAL_APIKEY=$(trim_ws "${SIGNAL_APIKEY:-${SIGNAL_API_KEY:-}}")
     SIGNAL_API_URL=${SIGNAL_API_URL:-https://signal.callmebot.com/signal/send.php}
     SIGNAL_TIMEOUT=${SIGNAL_TIMEOUT:-15}
     SIGNAL_RETRIES=${SIGNAL_RETRIES:-2}
@@ -242,8 +242,10 @@ acquire_lock() {
     return 1
 }
 
-send_message() {
-    _text=$1
+send_to_recipient() {
+    _phone=$1
+    _apikey=$2
+    _text=$3
     _attempt=1
     _resp=
 
@@ -251,8 +253,8 @@ send_message() {
         # -G (--get) + --data-urlencode passes the UUID and API key and
         # percent-encodes spaces and umlauts in the message text inside curl.
         _resp=$(curl -fsS --connect-timeout 5 -m "$SIGNAL_TIMEOUT" -G \
-            --data-urlencode "phone=$SIGNAL_PHONE" \
-            --data-urlencode "apikey=$SIGNAL_APIKEY" \
+            --data-urlencode "phone=$_phone" \
+            --data-urlencode "apikey=$_apikey" \
             --data-urlencode "text=$_text" \
             "$SIGNAL_API_URL" 2>&1)
         _rc=$?
@@ -266,8 +268,72 @@ send_message() {
         _attempt=$((_attempt + 1))
     done
 
-    log "ERROR: notification failed ($EVENT, SoC ${SOC}%): $(printf '%s' "$_resp" | tr -d '\r\n' | cut -c1-160)"
+    log "ERROR: notification failed for recipient $_phone ($EVENT, SoC ${SOC}%): $(printf '%s' "$_resp" | tr -d '\r\n' | cut -c1-160)"
     return 1
+}
+
+send_message() {
+    _text=$1
+    _phones_norm=$(printf '%s' "$SIGNAL_PHONE" | tr ',;' '  ')
+    _keys_norm=$(printf '%s' "$SIGNAL_APIKEY" | tr ',;' '  ')
+
+    _p_count=0
+    for _p in $_phones_norm; do
+        _p_count=$((_p_count + 1))
+    done
+
+    _k_count=0
+    _first_key=
+    for _k in $_keys_norm; do
+        [ -n "$_first_key" ] || _first_key=$_k
+        _k_count=$((_k_count + 1))
+    done
+
+    if [ "$_p_count" -eq 0 ]; then
+        log "ERROR: no Signal recipient configured"
+        return 1
+    fi
+
+    _idx=0
+    _failures=0
+    for _p in $_phones_norm; do
+        _idx=$((_idx + 1))
+        _rec_phone=$_p
+        _rec_key=
+
+        case "$_p" in
+            *:*)
+                _rec_phone=${_p%%:*}
+                _rec_key=${_p#*:}
+                ;;
+            *)
+                if [ "$_k_count" -eq 1 ]; then
+                    _rec_key=$_first_key
+                else
+                    _j=0
+                    for _k in $_keys_norm; do
+                        _j=$((_j + 1))
+                        if [ "$_j" -eq "$_idx" ]; then
+                            _rec_key=$_k
+                            break
+                        fi
+                    done
+                fi
+                ;;
+        esac
+
+        if [ -z "$_rec_phone" ] || [ -z "$_rec_key" ]; then
+            log "ERROR: missing UUID or API key for recipient #$_idx ($_p)"
+            _failures=$((_failures + 1))
+            continue
+        fi
+
+        if ! send_to_recipient "$_rec_phone" "$_rec_key" "$_text"; then
+            _failures=$((_failures + 1))
+        fi
+    done
+
+    [ "$_failures" -eq 0 ]
 }
 
 main() {
@@ -316,10 +382,19 @@ main() {
     load_config || return $?
 
     if [ "$TEST" = "1" ]; then
-        if [ -z "$SIGNAL_PHONE" ] || [ -z "$SIGNAL_APIKEY" ]; then
+        if [ -z "$SIGNAL_PHONE" ]; then
             log "ERROR: SIGNAL_PHONE and SIGNAL_APIKEY must be set"
             return 2
         fi
+        case "$SIGNAL_PHONE" in
+            *:*) ;;
+            *)
+                if [ -z "$SIGNAL_APIKEY" ]; then
+                    log "ERROR: SIGNAL_PHONE and SIGNAL_APIKEY must be set"
+                    return 2
+                fi
+                ;;
+        esac
         if [ "$SIGNAL_ENABLED" != "true" ]; then
             log "WARNING: SIGNAL_ENABLED is not 'true'; sending the explicit --test message anyway"
         fi
@@ -334,10 +409,19 @@ main() {
     if [ "$SIGNAL_ENABLED" != "true" ]; then
         return 0
     fi
-    if [ -z "$SIGNAL_PHONE" ] || [ -z "$SIGNAL_APIKEY" ]; then
+    if [ -z "$SIGNAL_PHONE" ]; then
         log "ERROR: SIGNAL_PHONE and SIGNAL_APIKEY must be set"
         return 2
     fi
+    case "$SIGNAL_PHONE" in
+        *:*) ;;
+        *)
+            if [ -z "$SIGNAL_APIKEY" ]; then
+                log "ERROR: SIGNAL_PHONE and SIGNAL_APIKEY must be set"
+                return 2
+            fi
+            ;;
+    esac
 
     if ! acquire_lock; then
         log "notification already in progress; skipping duplicate ($EVENT, SoC ${SOC}%)"

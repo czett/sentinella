@@ -252,7 +252,7 @@ load_config() {
     # Notifications
     SIGNAL_ENABLED=${SIGNAL_ENABLED:-false}
     SIGNAL_PHONE=$(trim_ws "${SIGNAL_PHONE:-}")
-    SIGNAL_APIKEY=${SIGNAL_APIKEY:-}
+    SIGNAL_APIKEY=$(trim_ws "${SIGNAL_APIKEY:-${SIGNAL_API_KEY:-}}")
     SIGNAL_API_URL=${SIGNAL_API_URL:-https://signal.callmebot.com/signal/send.php}
     SIGNAL_MESSAGE_OVERFLOW=${SIGNAL_MESSAGE_OVERFLOW:-}
     SIGNAL_MESSAGE_RESET=${SIGNAL_MESSAGE_RESET:-}
@@ -350,10 +350,19 @@ load_config() {
         return 2
     fi
     if [ "$SIGNAL_ENABLED" = "true" ]; then
-        if [ -z "$SIGNAL_PHONE" ] || [ -z "$SIGNAL_APIKEY" ]; then
+        if [ -z "$SIGNAL_PHONE" ]; then
             log "ERROR: SIGNAL_PHONE and SIGNAL_APIKEY are required when SIGNAL_ENABLED=true"
             return 2
         fi
+        case "$SIGNAL_PHONE" in
+            *:*) ;;
+            *)
+                if [ -z "$SIGNAL_APIKEY" ]; then
+                    log "ERROR: SIGNAL_PHONE and SIGNAL_APIKEY are required when SIGNAL_ENABLED=true"
+                    return 2
+                fi
+                ;;
+        esac
         case "$SIGNAL_API_URL" in
             http://*|https://*) ;;
             *) log "ERROR: SIGNAL_API_URL must start with http:// or https://"; return 2 ;;
@@ -782,7 +791,7 @@ determine_charge_state() {
 
 status_json() {
     cat <<EOF
-{"schema":1,"ui_language":"$UI_LANGUAGE","generated_at":"$_j_generated","generated_epoch":$NOW,"host":"$_j_host","soc":$SOC,"previous_soc":$_j_prev,"delta":$_j_delta,"charging":"$CHARGE_STATE","charge_power_w":$_j_charge,"discharge_power_w":$_j_discharge,"signal":$_j_signal,"signal_state":"$SIGNAL_STATE","signal_notifications":$_j_notify,"thresholds":{"trigger":$THRESHOLD_TRIGGER,"reset":$THRESHOLD_RESET},"variables":{"soc":"$SV_SOC_NAME","signal":"$SV_SIGNAL_NAME"},"ccu_status":"$_j_ccu","history":$_j_history}
+{"schema":1,"ui_language":"$UI_LANGUAGE","generated_at":"$_j_generated","generated_epoch":$NOW,"host":"$_j_host","soc":$SOC,"previous_soc":$_j_prev,"delta":$_j_delta,"charging":"$CHARGE_STATE","charge_power_w":$_j_charge,"discharge_power_w":$_j_discharge,"signal":$_j_signal,"signal_state":"$SIGNAL_STATE","signal_notifications":$_j_notify,"signal_gateway":"$_j_gateway","thresholds":{"trigger":$THRESHOLD_TRIGGER,"reset":$THRESHOLD_RESET},"variables":{"soc":"$SV_SOC_NAME","signal":"$SV_SIGNAL_NAME"},"ccu_status":"$_j_ccu","history":$_j_history}
 EOF
 }
 
@@ -794,6 +803,15 @@ write_status() {
     _j_signal=$(json_bool_or_null "$SIGNAL")
     _j_notify=false
     [ "$SIGNAL_ENABLED" = "true" ] && _j_notify=true
+    _j_gateway="Deaktiviert"
+    if [ -n "$SIGNAL_PHONE" ]; then
+        case "$SIGNAL_PHONE" in
+            *:*) _j_gateway="CallMeBot (aktiv)" ;;
+            *)
+                [ -n "$SIGNAL_APIKEY" ] && _j_gateway="CallMeBot (aktiv)"
+                ;;
+        esac
+    fi
     _j_history=$(history_json)
     _j_host=$(json_escape "$SMA_IP")
     _j_generated=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null)
