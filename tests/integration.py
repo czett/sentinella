@@ -1119,34 +1119,43 @@ if (/payload\\.signal_enabled = el\\.signalEnabled\\.checked/.test(code)) fail("
         check(status_line == "Content-Type: application/json; charset=utf-8", "plugins headers correct", failures)
         check(empty_plugins == [], f"empty plugins dir returns [] (got {empty_plugins})", failures)
 
-        # Subcase B: 2 plugin JSON files exist -> returns valid array [ {...}, {...} ]
+        # Subcase B: test fixtures are copied into the isolated test add-on only,
+        # never into the repository's production state/plugins directory.
+        fixture_dir = ROOT / "tests" / "fixtures" / "plugins"
+        fixture_names = ["01_zoe.json", "02_forecast.json", "03_wallbox.json"]
         plugins_state = addon2 / "state" / "plugins"
         plugins_state.mkdir(parents=True, exist_ok=True)
-        plugin1_data = {
-            "id": "tibber",
-            "name": "Tibber Pulse",
-            "timestamp": "2026-11-07T15:30:00Z",
-            "data": {"current_power_w": 1450, "price_eur_kwh": 0.285}
-        }
-        plugin2_data = {
-            "id": "heatpump",
-            "name": "SG-Ready Heat Pump",
-            "timestamp": "2026-11-07T15:30:05Z",
-            "data": {"status": "boost", "target_temp_c": 55.0}
-        }
-        (plugins_state / "10_tibber.json").write_text(json.dumps(plugin1_data) + "\n")
-        (plugins_state / "20_heatpump.json").write_text(json.dumps(plugin2_data) + "\n")
+        fixture_payloads = {}
+        for name in fixture_names:
+            source = fixture_dir / name
+            check(source.is_file(), f"test fixture {name} exists", failures)
+            if not source.is_file():
+                continue
+            shutil.copy2(source, plugins_state / name)
+            fixture_payloads[name] = json.loads(source.read_text())
 
         plugins_res = run_cgi(addon2, "GET", "plugins")
         status_line, plugins_array = parse_cgi(plugins_res)
         check(isinstance(plugins_array, list), "plugins response is a JSON list", failures)
-        check(len(plugins_array) == 2, f"plugins response has 2 entries (got {len(plugins_array)})", failures)
+        check(
+            len(plugins_array) == len(fixture_payloads),
+            f"plugins response has {len(fixture_payloads)} entries (got {len(plugins_array)})",
+            failures,
+        )
         plugin_ids = {p.get("id") for p in plugins_array if isinstance(p, dict)}
-        check(plugin_ids == {"tibber", "heatpump"}, f"plugin IDs match expected (got {plugin_ids})", failures)
-        tibber_entry = next((p for p in plugins_array if p.get("id") == "tibber"), None)
-        heatpump_entry = next((p for p in plugins_array if p.get("id") == "heatpump"), None)
-        check(tibber_entry == plugin1_data, "tibber plugin JSON matches original object", failures)
-        check(heatpump_entry == plugin2_data, "heatpump plugin JSON matches original object", failures)
+        expected_ids = {p.get("id") for p in fixture_payloads.values()}
+        check(plugin_ids == expected_ids, f"plugin IDs match fixtures (got {plugin_ids})", failures)
+        for payload in fixture_payloads.values():
+            check(
+                any(entry == payload for entry in plugins_array),
+                f"fixture {payload.get('id')} JSON matches original object",
+                failures,
+            )
+        check(
+            not any((ROOT / "state" / "plugins" / name).exists() for name in fixture_names),
+            "plugins.cgi test does not pollute production state/plugins",
+            failures,
+        )
 
         if shutil.which("node"):
             print("\n21. web/app.js and web/index.html plugins grid validation")
@@ -1257,7 +1266,7 @@ eval(mockEnv);
                 failures,
             )
 
-        print("\n22. forecast.solar plugin and demo fixtures")
+        print("\n22. forecast.solar plugin and test fixtures")
         plugin_path = ROOT / "plugins.d" / "30_forecast_solar.sh"
         check(plugin_path.is_file(), "plugins.d/30_forecast_solar.sh exists", failures)
         syntax_res = subprocess.run(
@@ -1358,7 +1367,7 @@ eval(mockEnv);
             failures,
         )
 
-        fixtures_dir = ROOT / "fixtures" / "dev"
+        fixtures_dir = ROOT / "tests" / "fixtures" / "plugins"
         expected_fixtures = {
             "01_zoe.json": ("stat", "LÄDT"),
             "02_forecast.json": ("delta", "OPTIMAL"),
@@ -1366,9 +1375,7 @@ eval(mockEnv);
         }
         for name, (layout, badge) in expected_fixtures.items():
             fixture = fixtures_dir / name
-            check(fixture.is_file(), f"{name} exists", failures)
-            state_copy = ROOT / "state" / "plugins" / name
-            check(state_copy.is_file(), f"{name} mirrored in state/plugins", failures)
+            check(fixture.is_file(), f"{name} exists in tests/fixtures/plugins", failures)
             if not fixture.is_file():
                 continue
             payload = json.loads(fixture.read_text())
@@ -1379,12 +1386,21 @@ eval(mockEnv);
                 f"{name} has secondary metrics",
                 failures,
             )
-            if state_copy.is_file():
-                check(
-                    json.loads(state_copy.read_text()) == payload,
-                    f"{name} state/plugins mirror matches the fixture",
-                    failures,
-                )
+            check(
+                not (ROOT / "state" / "plugins" / name).exists(),
+                f"{name} is not shipped in production state/plugins",
+                failures,
+            )
+        check(
+            (ROOT / "state" / "plugins" / ".gitkeep").is_file(),
+            "state/plugins keeps only .gitkeep",
+            failures,
+        )
+        check(
+            not (ROOT / "fixtures" / "dev").exists(),
+            "legacy fixtures/dev directory is gone",
+            failures,
+        )
     finally:
         sma.shutdown()
         rega.shutdown()

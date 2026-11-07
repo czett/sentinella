@@ -15,6 +15,7 @@
 *.log.*
 state/*
 !state/plugins/
+state/plugins/*.json
 !state/plugins/.gitkeep
 .lock/
 *.pid
