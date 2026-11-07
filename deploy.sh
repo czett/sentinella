@@ -35,6 +35,7 @@ SKIP_CRON=0
 SKIP_VARS=0
 SKIP_WEB=0
 SKIP_TEST=0
+DEMO=0
 DRY_RUN=0
 
 usage() {
@@ -53,6 +54,7 @@ Options:
       --skip-vars        Do not create the ReGa system variables
       --skip-web         Do not install the dashboard files
       --skip-test        Do not run a first check after deployment
+      --demo             Install the three sample plugin cards into state/plugins
   -h, --help             Show this help
 
 Examples:
@@ -118,6 +120,10 @@ while [ "$#" -gt 0 ]; do
             SKIP_TEST=1
             shift
             ;;
+        --demo)
+            DEMO=1
+            shift
+            ;;
         -h|--help)
             usage
             exit 0
@@ -171,6 +177,10 @@ for tool in ssh tar; do
 done
 
 for file in .env bin/check_soc.sh lib/notify_signal.sh setup_variables.sh \
+            plugins.d/30_forecast_solar.sh \
+            config/plugins/forecast_solar.env.example \
+            fixtures/dev/01_zoe.json fixtures/dev/02_forecast.json \
+            fixtures/dev/03_wallbox.json \
             web/index.html web/style.css web/app.js \
             web/api/config.cgi web/api/test_signal.cgi web/api/plugins.cgi; do
     [ -f "$ROOT/$file" ] || die "missing required file: $file"
@@ -201,6 +211,9 @@ Dry run - nothing will be changed.
   Settings API  : $([ "$SKIP_WEB" -eq 1 ] && echo skipped || echo "install + probe via lighttpd")
   First check   : $([ "$SKIP_TEST" -eq 1 ] && echo skipped || echo "run")
   Signal test   : $([ "$SKIP_TEST" -eq 1 ] && echo skipped || echo "run when SIGNAL_ENABLED=true")
+  Plugins       : sync plugins.d/ (mode 755)
+  Forecast cfg  : install forecast_solar.env.example, keep existing .env
+  Demo cards    : $([ "$DEMO" -eq 1 ] && echo "install 3 sample cards" || echo "not installed (use --demo)")
   Remote .env   : keep existing credentials, install only when missing
 EOF
     exit 0
@@ -212,10 +225,18 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-mkdir -p "$STAGE/bin" "$STAGE/lib" "$STAGE/web/api"
+mkdir -p "$STAGE/bin" "$STAGE/lib" "$STAGE/web/api" \
+         "$STAGE/plugins.d" "$STAGE/config/plugins" "$STAGE/fixtures/dev"
 install -m 700 "$ROOT/bin/check_soc.sh"      "$STAGE/bin/check_soc.sh"
 install -m 700 "$ROOT/lib/notify_signal.sh"  "$STAGE/lib/notify_signal.sh"
 install -m 700 "$ROOT/setup_variables.sh"    "$STAGE/setup_variables.sh"
+install -m 755 "$ROOT/plugins.d/30_forecast_solar.sh" \
+    "$STAGE/plugins.d/30_forecast_solar.sh"
+install -m 644 "$ROOT/config/plugins/forecast_solar.env.example" \
+    "$STAGE/config/plugins/forecast_solar.env.example"
+for _fixture in 01_zoe.json 02_forecast.json 03_wallbox.json; do
+    install -m 644 "$ROOT/fixtures/dev/$_fixture" "$STAGE/fixtures/dev/$_fixture"
+done
 # Staged separately: an existing remote .env keeps its credentials.
 install -m 600 "$ROOT/.env"                  "$STAGE/.env.new"
 install -m 644 "$ROOT/web/index.html"        "$STAGE/web/index.html"
@@ -243,12 +264,44 @@ tar -cf - -C "$STAGE" . \
 info "configuring permissions, dashboard, cron and system variables"
 # shellcheck disable=SC2029  # the paths are intentionally expanded locally
 ssh_ccu "$REMOTE" \
-    "ADDON_DIR='$ADDON_DIR' WEB_DIR='$WEB_DIR' SKIP_CRON='$SKIP_CRON' SKIP_VARS='$SKIP_VARS' SKIP_WEB='$SKIP_WEB' SKIP_TEST='$SKIP_TEST' sh -s" <<'REMOTE_SCRIPT'
+    "ADDON_DIR='$ADDON_DIR' WEB_DIR='$WEB_DIR' SKIP_CRON='$SKIP_CRON' SKIP_VARS='$SKIP_VARS' SKIP_WEB='$SKIP_WEB' SKIP_TEST='$SKIP_TEST' DEMO='$DEMO' sh -s" <<'REMOTE_SCRIPT'
 set -e
 
-mkdir -p "$ADDON_DIR/state" "$ADDON_DIR/plugins.d" "$ADDON_DIR/config/plugins" "$ADDON_DIR/state/plugins"
-chmod 755 "$ADDON_DIR" "$ADDON_DIR/bin" "$ADDON_DIR/lib" "$ADDON_DIR/state" "$ADDON_DIR/plugins.d" "$ADDON_DIR/config" "$ADDON_DIR/config/plugins" "$ADDON_DIR/state/plugins"
+mkdir -p "$ADDON_DIR/state" "$ADDON_DIR/plugins.d" "$ADDON_DIR/config/plugins" \
+         "$ADDON_DIR/state/plugins" "$ADDON_DIR/fixtures/dev"
+chmod 755 "$ADDON_DIR" "$ADDON_DIR/bin" "$ADDON_DIR/lib" "$ADDON_DIR/state" \
+    "$ADDON_DIR/plugins.d" "$ADDON_DIR/config" "$ADDON_DIR/config/plugins" \
+    "$ADDON_DIR/state/plugins" "$ADDON_DIR/fixtures" "$ADDON_DIR/fixtures/dev"
 chmod 755 "$ADDON_DIR/bin/check_soc.sh" "$ADDON_DIR/lib/notify_signal.sh" "$ADDON_DIR/setup_variables.sh"
+
+# Plugins are independently executable. Glob so future plugins inherit 755
+# without another deploy.sh edit.
+for _plugin in "$ADDON_DIR/plugins.d"/*.sh; do
+    [ -f "$_plugin" ] || continue
+    chmod 755 "$_plugin"
+done
+
+# Ship the plugin defaults as an example only. An operator's
+# forecast_solar.env must survive every redeployment untouched.
+if [ -f "$ADDON_DIR/config/plugins/forecast_solar.env.example" ]; then
+    chmod 644 "$ADDON_DIR/config/plugins/forecast_solar.env.example"
+    if [ ! -f "$ADDON_DIR/config/plugins/forecast_solar.env" ]; then
+        printf 'Plugin defaults available in %s/config/plugins/forecast_solar.env.example\n' \
+            "$ADDON_DIR"
+    fi
+fi
+
+if [ "$DEMO" = "1" ]; then
+    mkdir -p "$ADDON_DIR/state/plugins"
+    for _fixture in "$ADDON_DIR/fixtures/dev"/*.json; do
+        [ -f "$_fixture" ] || continue
+        _name=${_fixture##*/}
+        cp -f "$_fixture" "$ADDON_DIR/state/plugins/$_name"
+        chmod 644 "$ADDON_DIR/state/plugins/$_name"
+    done
+    chown root:root "$ADDON_DIR/state/plugins/"*.json 2>/dev/null || true
+    printf 'Demo plugin cards installed in %s/state/plugins\n' "$ADDON_DIR"
+fi
 
 # Redeployments must never overwrite live credentials. Only the first install
 # (or an intentionally removed .env) receives the workstation copy.
@@ -454,6 +507,16 @@ if [ "$SKIP_TEST" != "1" ]; then
         printf 'First check completed successfully.\n'
     else
         printf 'WARNING: first check failed; see log or run the script manually.\n' >&2
+    fi
+
+    # Populate the forecast card immediately. The plugin exits 0 when offline
+    # and keeps any card that is already present, so this cannot fail a deploy.
+    if [ -x "$ADDON_DIR/plugins.d/30_forecast_solar.sh" ]; then
+        if "$ADDON_DIR/plugins.d/30_forecast_solar.sh"; then
+            printf 'forecast.solar plugin refreshed.\n'
+        else
+            printf 'WARNING: forecast.solar plugin failed; existing card kept.\n' >&2
+        fi
     fi
 
     # A --test message validates phone/apikey without touching state/signal.

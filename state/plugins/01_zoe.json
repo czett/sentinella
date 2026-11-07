@@ -1,0 +1,17 @@
+{
+  "id": "zoe",
+  "layout": "stat",
+  "title": "Renault Zoe",
+  "status_badge": "LÄDT",
+  "status_color": "green",
+  "timestamp": "2026-11-07T14:30:00Z",
+  "primary": {
+    "value": 78,
+    "unit": "%",
+    "label": "Batterie SoC"
+  },
+  "secondary_metrics": [
+    { "label": "Reichweite", "value": 214, "unit": "km" },
+    { "label": "Ladeleistung", "value": 7.4, "unit": "kW" }
+  ]
+}

@@ -1,0 +1,257 @@
+#!/bin/sh
+# =============================================================================
+#  Sentinella - plugin: forecast.solar
+# =============================================================================
+#  Publishes a dashboard card with the expected solar yield for today and
+#  tomorrow from the free forecast.solar REST API. No API key is required.
+#
+#  Target : Homematic CCU3 / RaspberryMatic (Buildroot, BusyBox ash)
+#  Needs  : /bin/sh, curl, sed, awk, tr, date, mv
+#  Install: <addon>/plugins.d/30_forecast_solar.sh, mode 755, owner root
+#  Config : <addon>/config/plugins/forecast_solar.env (optional)
+#
+#  The card is written atomically to <addon>/state/plugins/forecast_solar.json.
+#  A failed request never removes an existing card; if no card exists yet, a
+#  neutral "OFFLINE" card is published so the dashboard stays consistent.
+#
+#  Exit codes:
+#    0  success, or a handled network/parse failure (existing card kept)
+# =============================================================================
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+umask 022
+
+APP_DIR=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)
+[ -n "$APP_DIR" ] || APP_DIR=/usr/local/addons/sentinella
+
+# ---------------------------------------------------------------------------
+# Configuration (first readable file wins)
+# ---------------------------------------------------------------------------
+CONFIG_FILE=${FORECAST_SOLAR_ENV:-}
+if [ -z "$CONFIG_FILE" ]; then
+    for _candidate in \
+        "$APP_DIR/config/plugins/forecast_solar.env" \
+        /usr/local/addons/sentinella/config/plugins/forecast_solar.env
+    do
+        if [ -r "$_candidate" ]; then
+            CONFIG_FILE=$_candidate
+            break
+        fi
+    done
+fi
+if [ -n "$CONFIG_FILE" ] && [ -r "$CONFIG_FILE" ]; then
+    # shellcheck source=/dev/null
+    . "$CONFIG_FILE"
+fi
+
+FORECAST_LAT=${FORECAST_LAT:-51.43}
+FORECAST_LON=${FORECAST_LON:-7.76}
+FORECAST_DEC=${FORECAST_DEC:-35}
+FORECAST_AZ=${FORECAST_AZ:-0}
+FORECAST_KWP=${FORECAST_KWP:-10}
+API_BASE=${FORECAST_API_URL:-https://api.forecast.solar/estimate}
+CONNECT_TIMEOUT=${FORECAST_CONNECT_TIMEOUT:-5}
+MAX_TIME=${FORECAST_MAX_TIME:-20}
+
+STATE_DIR=${FORECAST_STATE_DIR:-$APP_DIR/state/plugins}
+OUT_FILE=$STATE_DIR/forecast_solar.json
+RAW_FILE=${TMPDIR:-/tmp}/sentinella_forecast.$$.json
+
+log() {
+    _ts=$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null)
+    [ -n "$_ts" ] || _ts=-
+    printf '%s %s\n' "$_ts" "$*" >&2
+    if command -v logger >/dev/null 2>&1; then
+        logger -t sentinella-forecast "$*" 2>/dev/null || true
+    fi
+}
+
+cleanup() {
+    rm -f "$RAW_FILE" "$OUT_FILE.tmp" 2>/dev/null || true
+}
+trap cleanup EXIT HUP INT TERM
+
+# ---------------------------------------------------------------------------
+# Validation helpers
+# ---------------------------------------------------------------------------
+is_number() {
+    case "$1" in
+        ''|*[!0-9.-]*) return 1 ;;
+    esac
+    _rest=${1#-}
+    case "$_rest" in
+        ''|*[!0-9.]*|*.*.*|*..*|*.|*.-*|*--*) return 1 ;;
+    esac
+    return 0
+}
+
+is_uint() {
+    case "$1" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    return 0
+}
+
+is_number "$FORECAST_LAT" || FORECAST_LAT=51.43
+is_number "$FORECAST_LON" || FORECAST_LON=7.76
+is_number "$FORECAST_DEC" || FORECAST_DEC=35
+is_number "$FORECAST_AZ" || FORECAST_AZ=0
+is_number "$FORECAST_KWP" || FORECAST_KWP=10
+if ! awk -v k="$FORECAST_KWP" 'BEGIN { exit !(k > 0) }'; then
+    FORECAST_KWP=10
+fi
+is_uint "$CONNECT_TIMEOUT" || CONNECT_TIMEOUT=5
+is_uint "$MAX_TIME" || MAX_TIME=20
+
+mkdir -p "$STATE_DIR" 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
+# Neutral fallback card
+# ---------------------------------------------------------------------------
+write_neutral() {
+    _ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null) || _ts=
+    cat > "$OUT_FILE.tmp" <<EOF
+{
+  "id": "forecast_solar",
+  "layout": "delta",
+  "title": "Solarprognose",
+  "status_badge": "OFFLINE",
+  "status_color": "neutral",
+  "timestamp": "$_ts",
+  "primary": { "value": 0, "unit": "kWh", "label": "Heute" },
+  "delta": { "direction": "neutral", "value": "", "comparison": "Keine Verbindung zu forecast.solar" },
+  "secondary_metrics": []
+}
+EOF
+    if mv -f "$OUT_FILE.tmp" "$OUT_FILE" 2>/dev/null; then
+        return 0
+    fi
+    rm -f "$OUT_FILE.tmp" 2>/dev/null || true
+    return 1
+}
+
+keep_or_neutral() {
+    log "WARNING: $1; keeping existing forecast card"
+    if [ -f "$OUT_FILE" ]; then
+        exit 0
+    fi
+    write_neutral || true
+    exit 0
+}
+
+# ---------------------------------------------------------------------------
+# Single lightweight request
+# ---------------------------------------------------------------------------
+URL="$API_BASE/$FORECAST_LAT/$FORECAST_LON/$FORECAST_DEC/$FORECAST_AZ/$FORECAST_KWP"
+HTTP_CODE=$(curl -s -o "$RAW_FILE" -w '%{http_code}' \
+    --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME" \
+    "$URL" 2>/dev/null) || HTTP_CODE=000
+
+case "$HTTP_CODE" in
+    200) ;;
+    *) keep_or_neutral "forecast.solar request failed (HTTP $HTTP_CODE)" ;;
+esac
+[ -s "$RAW_FILE" ] || keep_or_neutral "forecast.solar returned an empty response"
+
+# ---------------------------------------------------------------------------
+# Extract "watt_hours_day": { "YYYY-MM-DD": Wh, ... }
+# ---------------------------------------------------------------------------
+extract_day_map() {
+    tr -d '\r\n' < "$RAW_FILE" |
+        sed -e "s/.*\"$1\"[[:space:]]*:[[:space:]]*{//" -e 's/}.*//' |
+        tr ',' '\n' |
+        sed -n 's/^[[:space:]]*"\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\)"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*$/\1 \2/p'
+}
+
+DAY_MAP=$(extract_day_map watt_hours_day)
+[ -n "$DAY_MAP" ] || keep_or_neutral "forecast.solar response has no daily yield data"
+
+TODAY=$(date '+%Y-%m-%d' 2>/dev/null) || TODAY=
+TODAY_KEY=$TODAY
+TODAY_WH=$(printf '%s\n' "$DAY_MAP" | awk -v d="$TODAY" '$1 == d { print $2; exit }')
+if ! is_uint "$TODAY_WH"; then
+    # The API timezone can be one day ahead/behind the CCU clock: use the
+    # first available day rather than dropping the whole card.
+    TODAY_KEY=$(printf '%s\n' "$DAY_MAP" | awk 'NR == 1 { print $1; exit }')
+    TODAY_WH=$(printf '%s\n' "$DAY_MAP" | awk 'NR == 1 { print $2; exit }')
+fi
+is_uint "$TODAY_WH" || keep_or_neutral "forecast.solar daily yield is not numeric"
+
+TOMORROW_WH=$(printf '%s\n' "$DAY_MAP" | awk -v d="$TODAY_KEY" '$1 > d { print $2; exit }')
+is_uint "$TOMORROW_WH" || TOMORROW_WH=0
+
+# ---------------------------------------------------------------------------
+# Layout values (awk keeps the float maths portable)
+# ---------------------------------------------------------------------------
+CALC=$(awk -v t="$TODAY_WH" -v m="$TOMORROW_WH" -v k="$FORECAST_KWP" 'BEGIN {
+    tk = t / 1000;
+    mk = m / 1000;
+    d = mk - tk;
+
+    if (d > 0.049) dir = "up";
+    else if (d < -0.049) dir = "down";
+    else dir = "neutral";
+
+    if (d > 0.049) ds = sprintf("+%.1f kWh", d);
+    else if (d < -0.049) ds = sprintf("%.1f kWh", d);
+    else ds = "0.0 kWh";
+
+    ratio = (k > 0) ? tk / k : 0;
+    if (t <= 0) { badge = "KEINE SONNE"; color = "neutral"; }
+    else if (ratio >= 2.5) { badge = "OPTIMAL"; color = "green"; }
+    else if (ratio >= 1.0) { badge = "GUT"; color = "blue"; }
+    else { badge = "WENIG"; color = "neutral"; }
+
+    printf "%.1f|%.1f|%s|%s|%s|%s|%.2f\n",
+        tk, mk, dir, ds, badge, color, ratio;
+}')
+
+IFS='|' read -r TODAY_KWH TOMORROW_KWH DELTA_DIR DELTA_VALUE BADGE COLOR RATIO <<EOF
+$CALC
+EOF
+
+case "$DELTA_DIR" in
+    up|down|neutral) ;;
+    *) DELTA_DIR=neutral ;;
+esac
+case "$COLOR" in
+    green|blue|red|neutral) ;;
+    *) COLOR=neutral ;;
+esac
+[ -n "$BADGE" ] || BADGE="KEINE DATEN"
+
+NOW_ISO=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null) || NOW_ISO=
+
+# ---------------------------------------------------------------------------
+# Atomic publish
+# ---------------------------------------------------------------------------
+cat > "$OUT_FILE.tmp" <<EOF
+{
+  "id": "forecast_solar",
+  "layout": "delta",
+  "title": "Solarprognose",
+  "status_badge": "$BADGE",
+  "status_color": "$COLOR",
+  "timestamp": "$NOW_ISO",
+  "primary": { "value": $TODAY_KWH, "unit": "kWh", "label": "Heute" },
+  "delta": {
+    "direction": "$DELTA_DIR",
+    "value": "$DELTA_VALUE",
+    "comparison": "vs. morgen"
+  },
+  "secondary_metrics": [
+    { "label": "Morgen", "value": "$TOMORROW_KWH", "unit": "kWh" },
+    { "label": "Spezifisch", "value": "$RATIO", "unit": "kWh/kWp" }
+  ]
+}
+EOF
+
+if mv -f "$OUT_FILE.tmp" "$OUT_FILE" 2>/dev/null; then
+    log "forecast card updated: today ${TODAY_KWH} kWh, tomorrow ${TOMORROW_KWH} kWh"
+else
+    rm -f "$OUT_FILE.tmp" 2>/dev/null || true
+    log "WARNING: could not publish $OUT_FILE"
+fi
+
+exit 0

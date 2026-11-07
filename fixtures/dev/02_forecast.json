@@ -1,0 +1,22 @@
+{
+  "id": "forecast_solar",
+  "layout": "delta",
+  "title": "Solarprognose",
+  "status_badge": "OPTIMAL",
+  "status_color": "green",
+  "timestamp": "2026-11-07T14:30:00Z",
+  "primary": {
+    "value": 18.4,
+    "unit": "kWh",
+    "label": "Heute"
+  },
+  "delta": {
+    "direction": "up",
+    "value": "+3.2 kWh",
+    "comparison": "vs. Gestern"
+  },
+  "secondary_metrics": [
+    { "label": "Morgen", "value": "15.2", "unit": "kWh" },
+    { "label": "Spezifisch", "value": "1.84", "unit": "kWh/kWp" }
+  ]
+}

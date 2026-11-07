@@ -22,6 +22,7 @@ import sys
 import tempfile
 import threading
 import time
+from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -50,6 +51,7 @@ class State:
         self.get_requests = 0
         self.rega_bodies: list[str] = []
         self.signal_requests: list[str] = []
+        self.forecast_requests: list[str] = []
 
     def reset_requests(self) -> None:
         with self.lock:
@@ -58,6 +60,7 @@ class State:
             self.get_requests = 0
             self.rega_bodies = []
             self.signal_requests = []
+            self.forecast_requests = []
 
 
 class SmaHandler(BaseHTTPRequestHandler):
@@ -140,6 +143,37 @@ class RegaHandler(BaseHTTPRequestHandler):
         body = b"SMA_SETUP_OK\nSMA_SOC_OK\n"
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+class ForecastHandler(BaseHTTPRequestHandler):
+    """Minimal forecast.solar estimate endpoint using live-relative dates."""
+
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, *_args) -> None:
+        pass
+
+    def do_GET(self) -> None:  # noqa: N802
+        state: State = self.server.state  # type: ignore[attr-defined]
+        with state.lock:
+            state.forecast_requests.append(self.path)
+        today = date.today()
+        tomorrow = today + timedelta(days=1)
+        payload = {
+            "result": {
+                "watt_hours_day": {
+                    today.isoformat(): 18400,
+                    tomorrow.isoformat(): 15200,
+                }
+            },
+            "message": {"code": 0, "type": "success", "text": ""},
+        }
+        body = json.dumps(payload).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -346,9 +380,12 @@ def main() -> int:
     rega = start_server(RegaHandler, rega_state)
     signal_state = State()
     sig = start_server(SignalHandler, signal_state)
+    forecast_state = State()
+    fc = start_server(ForecastHandler, forecast_state)
     sma_port = sma.server_address[1]
     rega_port = rega.server_address[1]
     signal_port = sig.server_address[1]
+    forecast_port = fc.server_address[1]
 
     try:
         print("\n1. trigger at 96 %")
@@ -1219,13 +1256,144 @@ eval(mockEnv);
                 f"web/app.js & web/index.html plugin layout and XSS checks pass ({fe_res.stderr.strip() or 'ok'})",
                 failures,
             )
+
+        print("\n22. forecast.solar plugin and demo fixtures")
+        plugin_path = ROOT / "plugins.d" / "30_forecast_solar.sh"
+        check(plugin_path.is_file(), "plugins.d/30_forecast_solar.sh exists", failures)
+        syntax_res = subprocess.run(
+            ["sh", "-n", str(plugin_path)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        check(
+            syntax_res.returncode == 0,
+            f"30_forecast_solar.sh passes sh -n ({syntax_res.stderr.strip() or 'ok'})",
+            failures,
+        )
+
+        fc_addon = tmp / "forecast-addon"
+        (fc_addon / "plugins.d").mkdir(parents=True)
+        (fc_addon / "config" / "plugins").mkdir(parents=True)
+        fc_script = fc_addon / "plugins.d" / "30_forecast_solar.sh"
+        shutil.copy2(plugin_path, fc_script)
+        fc_script.chmod(0o755)
+        (fc_addon / "config" / "plugins" / "forecast_solar.env").write_text(
+            'FORECAST_LAT="51.43"\n'
+            'FORECAST_LON="7.76"\n'
+            'FORECAST_DEC="35"\n'
+            'FORECAST_AZ="0"\n'
+            'FORECAST_KWP="10"\n'
+        )
+
+        fc_env = os.environ.copy()
+        fc_env["FORECAST_API_URL"] = f"http://127.0.0.1:{forecast_port}/estimate"
+        fc_env.pop("FORECAST_STATE_DIR", None)
+        forecast_state.reset_requests()
+        fc_result = subprocess.run(
+            [str(fc_script)], env=fc_env, capture_output=True, text=True, timeout=20
+        )
+        check(
+            fc_result.returncode == 0,
+            f"forecast plugin exits 0 (got {fc_result.returncode})",
+            failures,
+        )
+        check(bool(forecast_state.forecast_requests), "forecast API queried once", failures)
+        fc_json_path = fc_addon / "state" / "plugins" / "forecast_solar.json"
+        check(fc_json_path.is_file(), "forecast_solar.json written", failures)
+        fc_data = json.loads(fc_json_path.read_text()) if fc_json_path.is_file() else {}
+        check(fc_data.get("layout") == "delta", "forecast card uses delta layout", failures)
+        check(fc_data.get("id") == "forecast_solar", "forecast card id", failures)
+        check(fc_data.get("title") == "Solarprognose", "forecast card title", failures)
+        check(
+            fc_data.get("status_badge") in {"OPTIMAL", "GUT", "WENIG", "KEINE SONNE"},
+            f"forecast badge set (got {fc_data.get('status_badge')!r})",
+            failures,
+        )
+        check(
+            fc_data.get("status_color") in {"green", "blue", "neutral"},
+            "forecast badge color valid",
+            failures,
+        )
+        fc_primary = fc_data.get("primary") or {}
+        fc_delta = fc_data.get("delta") or {}
+        fc_metrics = fc_data.get("secondary_metrics") or []
+        check(
+            isinstance(fc_primary.get("value"), (int, float))
+            and abs(float(fc_primary["value"]) - 18.4) < 0.06,
+            f"today's yield is 18.4 kWh (got {fc_primary.get('value')!r})",
+            failures,
+        )
+        check(fc_primary.get("unit") == "kWh", "primary unit is kWh", failures)
+        check(fc_delta.get("direction") == "down", "delta points down vs. tomorrow", failures)
+        check(fc_delta.get("value") == "-3.2 kWh", "delta value is -3.2 kWh", failures)
+        check(fc_delta.get("comparison") == "vs. morgen", "delta comparison label", failures)
+        fc_labels = {m.get("label") for m in fc_metrics if isinstance(m, dict)}
+        check({"Morgen", "Spezifisch"}.issubset(fc_labels), "secondary metrics present", failures)
+
+        # Offline must keep the last good card byte-for-byte.
+        before = fc_json_path.read_text()
+        fc_env_offline = os.environ.copy()
+        fc_env_offline["FORECAST_API_URL"] = "http://127.0.0.1:1/estimate"
+        fc_env_offline.pop("FORECAST_STATE_DIR", None)
+        offline_res = subprocess.run(
+            [str(fc_script)], env=fc_env_offline, capture_output=True, text=True, timeout=20
+        )
+        check(offline_res.returncode == 0, "offline run still exits 0", failures)
+        check(fc_json_path.read_text() == before, "existing card kept when offline", failures)
+
+        # Without a previous card the plugin publishes a neutral badge instead.
+        fc_json_path.unlink()
+        offline_res = subprocess.run(
+            [str(fc_script)], env=fc_env_offline, capture_output=True, text=True, timeout=20
+        )
+        check(offline_res.returncode == 0, "offline fallback exits 0", failures)
+        check(fc_json_path.is_file(), "offline fallback writes a card", failures)
+        neutral = json.loads(fc_json_path.read_text()) if fc_json_path.is_file() else {}
+        check(neutral.get("status_badge") == "OFFLINE", "offline badge is neutral", failures)
+        check(neutral.get("layout") == "delta", "offline card keeps the delta layout", failures)
+        check(
+            isinstance(neutral.get("secondary_metrics"), list),
+            "offline card has a metrics list",
+            failures,
+        )
+
+        fixtures_dir = ROOT / "fixtures" / "dev"
+        expected_fixtures = {
+            "01_zoe.json": ("stat", "LÄDT"),
+            "02_forecast.json": ("delta", "OPTIMAL"),
+            "03_wallbox.json": ("list", "BEREIT"),
+        }
+        for name, (layout, badge) in expected_fixtures.items():
+            fixture = fixtures_dir / name
+            check(fixture.is_file(), f"{name} exists", failures)
+            state_copy = ROOT / "state" / "plugins" / name
+            check(state_copy.is_file(), f"{name} mirrored in state/plugins", failures)
+            if not fixture.is_file():
+                continue
+            payload = json.loads(fixture.read_text())
+            check(payload.get("layout") == layout, f"{name} layout is {layout}", failures)
+            check(payload.get("status_badge") == badge, f"{name} badge is {badge}", failures)
+            check(
+                isinstance(payload.get("secondary_metrics"), list),
+                f"{name} has secondary metrics",
+                failures,
+            )
+            if state_copy.is_file():
+                check(
+                    json.loads(state_copy.read_text()) == payload,
+                    f"{name} state/plugins mirror matches the fixture",
+                    failures,
+                )
     finally:
         sma.shutdown()
         rega.shutdown()
         sig.shutdown()
+        fc.shutdown()
         sma.server_close()
         rega.server_close()
         sig.server_close()
+        fc.server_close()
         if not failures:
             shutil.rmtree(tmp, ignore_errors=True)
 

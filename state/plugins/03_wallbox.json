@@ -1,0 +1,14 @@
+{
+  "id": "wallbox",
+  "layout": "list",
+  "title": "Wallbox Go-e",
+  "status_badge": "BEREIT",
+  "status_color": "blue",
+  "timestamp": "2026-11-07T14:30:00Z",
+  "secondary_metrics": [
+    { "label": "Phasen", "value": 3, "unit": "" },
+    { "label": "Strom", "value": 16, "unit": "A" },
+    { "label": "Verbunden", "value": "Ja", "unit": "" },
+    { "label": "Ladeleistung", "value": 11.0, "unit": "kW" }
+  ]
+}
