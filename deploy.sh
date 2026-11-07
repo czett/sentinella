@@ -172,7 +172,7 @@ done
 
 for file in .env bin/check_soc.sh lib/notify_signal.sh setup_variables.sh \
             web/index.html web/style.css web/app.js \
-            web/api/config.cgi web/api/test_signal.cgi; do
+            web/api/config.cgi web/api/test_signal.cgi web/api/plugins.cgi; do
     [ -f "$ROOT/$file" ] || die "missing required file: $file"
 done
 
@@ -223,6 +223,7 @@ install -m 644 "$ROOT/web/style.css"         "$STAGE/web/style.css"
 install -m 644 "$ROOT/web/app.js"            "$STAGE/web/app.js"
 install -m 755 "$ROOT/web/api/config.cgi"     "$STAGE/web/api/config.cgi"
 install -m 755 "$ROOT/web/api/test_signal.cgi" "$STAGE/web/api/test_signal.cgi"
+install -m 755 "$ROOT/web/api/plugins.cgi"     "$STAGE/web/api/plugins.cgi"
 
 ssh_ccu() {
     ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
@@ -245,8 +246,8 @@ ssh_ccu "$REMOTE" \
     "ADDON_DIR='$ADDON_DIR' WEB_DIR='$WEB_DIR' SKIP_CRON='$SKIP_CRON' SKIP_VARS='$SKIP_VARS' SKIP_WEB='$SKIP_WEB' SKIP_TEST='$SKIP_TEST' sh -s" <<'REMOTE_SCRIPT'
 set -e
 
-mkdir -p "$ADDON_DIR/state"
-chmod 755 "$ADDON_DIR" "$ADDON_DIR/bin" "$ADDON_DIR/lib" "$ADDON_DIR/state"
+mkdir -p "$ADDON_DIR/state" "$ADDON_DIR/plugins.d" "$ADDON_DIR/config/plugins" "$ADDON_DIR/state/plugins"
+chmod 755 "$ADDON_DIR" "$ADDON_DIR/bin" "$ADDON_DIR/lib" "$ADDON_DIR/state" "$ADDON_DIR/plugins.d" "$ADDON_DIR/config" "$ADDON_DIR/config/plugins" "$ADDON_DIR/state/plugins"
 chmod 755 "$ADDON_DIR/bin/check_soc.sh" "$ADDON_DIR/lib/notify_signal.sh" "$ADDON_DIR/setup_variables.sh"
 
 # Redeployments must never overwrite live credentials. Only the first install
@@ -340,7 +341,7 @@ if [ "$SKIP_WEB" != "1" ]; then
 
     # The CGI needs to find the add-on even though lighttpd serves it from a
     # different directory. The path is written once at deploy time.
-    for file in config.cgi test_signal.cgi; do
+    for file in config.cgi test_signal.cgi plugins.cgi; do
         cp -f "$ADDON_DIR/web/api/$file" "$WEB_DIR/api/$file"
         chmod 755 "$WEB_DIR/api/$file"
     done
@@ -359,7 +360,7 @@ if [ "$SKIP_WEB" != "1" ]; then
         cp -f "$ADDON_DIR/web/$file" "$ADDON_DIR/$file"
         chmod 644 "$ADDON_DIR/$file"
     done
-    for file in config.cgi test_signal.cgi; do
+    for file in config.cgi test_signal.cgi plugins.cgi; do
         cp -f "$ADDON_DIR/web/api/$file" "$ADDON_DIR/api/$file"
         chmod 755 "$ADDON_DIR/api/$file"
     done

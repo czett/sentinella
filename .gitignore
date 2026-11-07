@@ -13,7 +13,9 @@
 # ---------------------------------------------------------------------------
 *.log
 *.log.*
-state/
+state/*
+!state/plugins/
+!state/plugins/.gitkeep
 .lock/
 *.pid
 *.state

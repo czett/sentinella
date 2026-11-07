@@ -301,8 +301,10 @@ def run_cgi(addon: Path, method: str = "GET", action: str = "config",
             "SMA_MONITOR_ENV": str(addon / ".env"),
         }
     )
+    script_name = f"{action}.cgi"
+    script_path = ROOT / "web" / "api" / script_name
     return subprocess.run(
-        ["sh", str(ROOT / "web" / "api" / "config.cgi")],
+        ["sh", str(script_path)],
         input=body,
         env=env,
         capture_output=True,
@@ -1072,6 +1074,42 @@ if (/payload\\.signal_enabled = el\\.signalEnabled\\.checked/.test(code)) fail("
                 f"toggle gates credentials, auto-save forces enabled and preserves masked keys ({toggle_res.stderr.strip() or 'ok'})",
                 failures,
             )
+
+        print("\n20. plugins API returns concatenated JSON array of modular plugins")
+        # Subcase A: No plugins exist -> returns []
+        empty_plugins_res = run_cgi(addon2, "GET", "plugins")
+        status_line, empty_plugins = parse_cgi(empty_plugins_res)
+        check(status_line == "Content-Type: application/json; charset=utf-8", "plugins headers correct", failures)
+        check(empty_plugins == [], f"empty plugins dir returns [] (got {empty_plugins})", failures)
+
+        # Subcase B: 2 plugin JSON files exist -> returns valid array [ {...}, {...} ]
+        plugins_state = addon2 / "state" / "plugins"
+        plugins_state.mkdir(parents=True, exist_ok=True)
+        plugin1_data = {
+            "id": "tibber",
+            "name": "Tibber Pulse",
+            "timestamp": "2026-11-07T15:30:00Z",
+            "data": {"current_power_w": 1450, "price_eur_kwh": 0.285}
+        }
+        plugin2_data = {
+            "id": "heatpump",
+            "name": "SG-Ready Heat Pump",
+            "timestamp": "2026-11-07T15:30:05Z",
+            "data": {"status": "boost", "target_temp_c": 55.0}
+        }
+        (plugins_state / "10_tibber.json").write_text(json.dumps(plugin1_data) + "\n")
+        (plugins_state / "20_heatpump.json").write_text(json.dumps(plugin2_data) + "\n")
+
+        plugins_res = run_cgi(addon2, "GET", "plugins")
+        status_line, plugins_array = parse_cgi(plugins_res)
+        check(isinstance(plugins_array, list), "plugins response is a JSON list", failures)
+        check(len(plugins_array) == 2, f"plugins response has 2 entries (got {len(plugins_array)})", failures)
+        plugin_ids = {p.get("id") for p in plugins_array if isinstance(p, dict)}
+        check(plugin_ids == {"tibber", "heatpump"}, f"plugin IDs match expected (got {plugin_ids})", failures)
+        tibber_entry = next((p for p in plugins_array if p.get("id") == "tibber"), None)
+        heatpump_entry = next((p for p in plugins_array if p.get("id") == "heatpump"), None)
+        check(tibber_entry == plugin1_data, "tibber plugin JSON matches original object", failures)
+        check(heatpump_entry == plugin2_data, "heatpump plugin JSON matches original object", failures)
     finally:
         sma.shutdown()
         rega.shutdown()
