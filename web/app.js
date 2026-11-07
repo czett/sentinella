@@ -1184,10 +1184,14 @@
         var card = document.createElement("div");
         card.className = "plugin-card";
 
-        var layout = (plugin && plugin.layout) || "stat";
+        var rawLayout = (plugin && plugin.layout) || "stat";
+        var layout = (rawLayout === "stat" || rawLayout === "delta" || rawLayout === "list")
+            ? rawLayout : "stat";
         var title = escapeHtml((plugin && plugin.title) || "");
         var badgeText = (plugin && plugin.status_badge) ? escapeHtml(plugin.status_badge) : "";
-        var badgeColor = escapeHtml((plugin && plugin.status_color) || "neutral");
+        var rawColor = String((plugin && plugin.status_color) || "neutral");
+        var badgeColor = (rawColor === "green" || rawColor === "blue" ||
+            rawColor === "red" || rawColor === "neutral") ? rawColor : "neutral";
 
         var badgeHtml = badgeText ? (
             '<span class="plugin-badge" data-color="' + badgeColor + '">' + badgeText + '</span>'
@@ -1204,7 +1208,10 @@
 
         if (layout === "delta") {
             var delta = (plugin && plugin.delta) || {};
-            var deltaDir = escapeHtml(delta.direction || "neutral");
+            var rawDir = String(delta.direction || "neutral");
+            rawDir = (rawDir === "up" || rawDir === "down" || rawDir === "neutral")
+                ? rawDir : "neutral";
+            var deltaDir = escapeHtml(rawDir);
             var deltaVal = escapeHtml((delta.value !== undefined) ? String(delta.value) : "");
             var deltaComp = escapeHtml(delta.comparison || "");
 
@@ -1314,6 +1321,13 @@
         var opts = Object.assign(
             { cache: "no-store", credentials: "same-origin" },
             options || {}
+        );
+        // Always carry a custom header. HTML forms cannot set it, so a
+        // cross-site form POST to the CGI endpoints is rejected even when the
+        // browser omits Origin.
+        opts.headers = Object.assign(
+            { "X-Requested-With": "XMLHttpRequest" },
+            (options && options.headers) || {}
         );
 
         return fetch(url.toString(), opts).then(function (response) {

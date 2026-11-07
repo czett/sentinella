@@ -1814,6 +1814,258 @@ eval(mockEnv);
             "web/app.js wires settings.cgi, test_renault.cgi, and masked password placeholder",
             failures,
         )
+        print("\n24. security hardening (SEN-01..SEN-11)")
+
+        sec_addon = make_addon(
+            tmp, sma_port, rega_port, signal_port, False, name="sec-addon"
+        )
+        sec_env_path = sec_addon / ".env"
+
+        def cgi_sec(method, action, body="", extra=None):
+            env = os.environ.copy()
+            for key in ("HTTP_ORIGIN", "HTTP_REFERER", "HTTP_HOST",
+                        "HTTP_X_REQUESTED_WITH"):
+                env.pop(key, None)
+            env.update(
+                {
+                    "REQUEST_METHOD": method,
+                    "SCRIPT_NAME": f"/addons/sentinella/api/{action}.cgi",
+                    "PATH_INFO": "",
+                    "CONTENT_LENGTH": str(len(body.encode())),
+                    "CONTENT_TYPE": "application/json",
+                    "SMA_MONITOR_ADDON_DIR": str(sec_addon),
+                    "SMA_MONITOR_ENV": str(sec_env_path),
+                }
+            )
+            env.update(extra or {})
+            return subprocess.run(
+                ["sh", str(ROOT / "web" / "api" / f"{action}.cgi")],
+                input=body,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+
+        # 24a. CSRF / Origin / Content-Type enforcement
+        original_env = sec_env_path.read_text()
+        r_bad_origin = cgi_sec(
+            "POST", "config", json.dumps({"trigger_soc": 80}),
+            {"HTTP_HOST": "ccu.local", "HTTP_ORIGIN": "http://evil.example"},
+        )
+        st, _ = parse_cgi(r_bad_origin)
+        check(st == "403 Forbidden", f"cross-origin POST rejected (got {st})", failures)
+        r_bad_ref = cgi_sec(
+            "POST", "config", json.dumps({"trigger_soc": 80}),
+            {"HTTP_HOST": "ccu.local", "HTTP_REFERER": "http://evil.example/x"},
+        )
+        st, _ = parse_cgi(r_bad_ref)
+        check(st == "403 Forbidden", f"cross-origin Referer rejected (got {st})", failures)
+        r_bad_type = cgi_sec(
+            "POST", "config", json.dumps({"trigger_soc": 80}),
+            {"CONTENT_TYPE": "text/plain"},
+        )
+        st, _ = parse_cgi(r_bad_type)
+        check(st == "400 Bad Request", f"non-JSON POST rejected (got {st})", failures)
+        check(
+            sec_env_path.read_text() == original_env,
+            "rejected requests leave .env untouched",
+            failures,
+        )
+        r_good_origin = cgi_sec(
+            "POST", "config", json.dumps({"ui_language": "de"}),
+            {"HTTP_HOST": "ccu.local", "HTTP_ORIGIN": "http://ccu.local"},
+        )
+        st, _ = parse_cgi(r_good_origin)
+        check(st == "200 OK", f"same-origin POST accepted (got {st})", failures)
+        check(
+            'UI_LANGUAGE=\'de\'' in sec_env_path.read_text(),
+            "same-origin POST persisted the change",
+            failures,
+        )
+        r_custom_header = cgi_sec(
+            "POST", "config", json.dumps({"ui_language": "en"}),
+            {"HTTP_HOST": "ccu.local", "HTTP_X_REQUESTED_WITH": "XMLHttpRequest"},
+        )
+        st, _ = parse_cgi(r_custom_header)
+        check(st == "200 OK", f"X-Requested-With POST accepted (got {st})", failures)
+
+        # 24b. Flat JSON parsing: commas in values and key spoofing
+        r_comma = cgi_sec(
+            "POST", "config", json.dumps({"sma_password": "pa,ss"}),
+            {"HTTP_HOST": "ccu.local", "HTTP_ORIGIN": "http://ccu.local"},
+        )
+        st, _ = parse_cgi(r_comma)
+        check(st == "200 OK", f"password containing a comma accepted (got {st})", failures)
+        check(
+            "SMA_PASS='pa,ss'" in sec_env_path.read_text(),
+            "comma inside a JSON string is preserved",
+            failures,
+        )
+        cgi_sec(
+            "POST", "config", json.dumps({"sma_password": "xxui_language"}),
+            {"HTTP_HOST": "ccu.local", "HTTP_ORIGIN": "http://ccu.local"},
+        )
+        check(
+            'UI_LANGUAGE=\'en\'' in sec_env_path.read_text(),
+            "key name embedded in a value does not spoof another key",
+            failures,
+        )
+        pwn_path = tmp / "sen24-pwned"
+        cgi_sec(
+            "POST", "config", json.dumps({"sma_password": f"$(touch {pwn_path})"}),
+            {"HTTP_HOST": "ccu.local", "HTTP_ORIGIN": "http://ccu.local"},
+        )
+        sourced_password = subprocess.run(
+            ["sh", "-c", '. "$1"; printf %s "$SMA_PASS"', "sh", str(sec_env_path)],
+            capture_output=True, text=True, timeout=10,
+        ).stdout
+        check(
+            not pwn_path.exists() and sourced_password == f"$(touch {pwn_path})",
+            "shell metacharacters in a password stay literal after sourcing",
+            failures,
+        )
+
+        # 24c. plugins.cgi method, symlink and envelope guards
+        r_plugin_post = cgi_sec("POST", "plugins", "{}")
+        st, _ = parse_cgi(r_plugin_post)
+        check(st == "405 Method Not Allowed", f"plugins.cgi rejects POST (got {st})", failures)
+        sec_plugins = sec_addon / "state" / "plugins"
+        sec_plugins.mkdir(parents=True, exist_ok=True)
+        os.symlink(sec_env_path, sec_plugins / "leak.json")
+        (sec_plugins / "bad.json").write_text("SMA_PASS='leaked'\n")
+        (sec_plugins / "ok.json").write_text('{"id":"ok"}\n')
+        r_plugin_get = cgi_sec("GET", "plugins")
+        check(
+            "test-secret" not in r_plugin_get.stdout
+            and "SMA_PASS='leaked'" not in r_plugin_get.stdout
+            and '"id":"ok"' in r_plugin_get.stdout,
+            "plugins.cgi skips symlinks and non-JSON files",
+            failures,
+        )
+
+        # 24d. secrets never in curl argv; private log/history modes
+        check_soc_text = (ROOT / "bin" / "check_soc.sh").read_text()
+        notify_text = (ROOT / "lib" / "notify_signal.sh").read_text()
+        renault_text = (ROOT / "plugins.d" / "20_renault_zoe.sh").read_text()
+        forecast_text = (ROOT / "plugins.d" / "30_forecast_solar.sh").read_text()
+        check(
+            '--data-binary @-' in check_soc_text.split("sma_login()", 1)[1]
+            .split("sma_logout()", 1)[0]
+            and '--data-binary "$_body"' not in check_soc_text.split("sma_login()", 1)[1]
+            .split("sma_logout()", 1)[0],
+            "SMA_PASS is streamed to curl via stdin",
+            failures,
+        )
+        check(
+            '--config -' in notify_text
+            and '--data-urlencode "apikey=' not in notify_text,
+            "Signal phone/apikey do not appear in curl argv",
+            failures,
+        )
+        check(
+            '--config -' in renault_text
+            and '--data-urlencode "password=' not in renault_text
+            and '-H "x-gigya-id_token:' not in renault_text,
+            "Renault password and token do not appear in curl argv",
+            failures,
+        )
+        check(
+            "/tmp/sentinella_" not in renault_text
+            and "/tmp/sentinella_" not in forecast_text,
+            "plugins no longer use predictable /tmp scratch files",
+            failures,
+        )
+        reset_state(sec_addon)
+        write_config(sec_addon, sma_port, rega_port, signal_port, False)
+        run_check(sec_addon)
+        sec_log = sec_addon / "state" / "test.log"
+        sec_hist = sec_addon / "state" / "history.csv"
+        check(
+            sec_log.is_file() and (sec_log.stat().st_mode & 0o777) == 0o600,
+            "check_soc.log is mode 600",
+            failures,
+        )
+        check(
+            sec_hist.is_file() and (sec_hist.stat().st_mode & 0o777) == 0o600,
+            "history.csv is mode 600",
+            failures,
+        )
+
+        # 24e. Renault VIN / session path traversal
+        trav_addon = tmp / "trav-addon"
+        (trav_addon / "plugins.d").mkdir(parents=True)
+        (trav_addon / "config" / "plugins").mkdir(parents=True)
+        (trav_addon / "state" / "plugins").mkdir(parents=True)
+        trav_script = trav_addon / "plugins.d" / "20_renault_zoe.sh"
+        shutil.copy2(ROOT / "plugins.d" / "20_renault_zoe.sh", trav_script)
+        trav_script.chmod(0o755)
+        trav_env_file = trav_addon / "config" / "plugins" / "renault.env"
+        trav_env_file.write_text(
+            "RENAULT_USER='zoe@example.com'\n"
+            "RENAULT_PASS='renault-secret-42'\n"
+            "RENAULT_VIN='../../etc/passwd'\n"
+        )
+        trav_env_file.chmod(0o600)
+        trav_env = os.environ.copy()
+        trav_env["RENAULT_GIGYA_URL"] = f"http://127.0.0.1:{renault_port}"
+        trav_env["RENAULT_KAMEREON_URL"] = f"http://127.0.0.1:{renault_port}"
+        renault_state.reset_requests()
+        trav_res = subprocess.run(
+            [str(trav_script)], env=trav_env, capture_output=True, text=True, timeout=20
+        )
+        check(
+            trav_res.returncode == 0
+            and not (trav_addon / "state" / "plugins" / "renault_zoe.json").exists()
+            and renault_state.renault_login_calls == 0,
+            "invalid RENAULT_VIN is rejected before any request",
+            failures,
+        )
+        trav_env_file.write_text(
+            "RENAULT_USER='zoe@example.com'\n"
+            "RENAULT_PASS='renault-secret-42'\n"
+            "RENAULT_VIN='VF1AG000012345678'\n"
+        )
+        trav_env_file.chmod(0o600)
+        trav_session = trav_addon / "state" / "plugins" / ".renault_session"
+        trav_session.write_text(
+            "ID_TOKEN='jwt-id-token-valid-999'\n"
+            "ACCOUNT_ID='../../pwn'\n"
+            f"TOKEN_TS='{int(time.time())}'\n"
+        )
+        trav_session.chmod(0o600)
+        renault_state.reset_requests()
+        trav_res2 = subprocess.run(
+            [str(trav_script)], env=trav_env, capture_output=True, text=True, timeout=20
+        )
+        check(
+            trav_res2.returncode == 0
+            and renault_state.renault_login_calls >= 1,
+            "poisoned session ACCOUNT_ID is rejected and re-authentication happens",
+            failures,
+        )
+
+        # 24f. frontend defence in depth
+        app_sec = (ROOT / "web" / "app.js").read_text()
+        html_sec = (ROOT / "web" / "index.html").read_text()
+        check(
+            '"X-Requested-With": "XMLHttpRequest"' in app_sec,
+            "app.js sends X-Requested-With on API calls",
+            failures,
+        )
+        check(
+            'rawLayout === "delta"' in app_sec
+            and 'rawColor === "green"' in app_sec
+            and 'rawDir === "up"' in app_sec,
+            "plugin layout/color/direction values are allowlisted",
+            failures,
+        )
+        check(
+            'http-equiv="Content-Security-Policy"' in html_sec,
+            "index.html ships a Content Security Policy",
+            failures,
+        )
+
     finally:
         sma.shutdown()
         rega.shutdown()
