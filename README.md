@@ -4,6 +4,12 @@
 
 Sentinella queries an SMA Sunny Tripower or Sunny Boy Storage inverter every two minutes over its local WebConnect API, updates two HomeMatic CCU3 / RaspberryMatic system variables (`SV_Batterie_SoC` and `SV_Batterie_95_Signal`), and optionally sends a Signal alert via CallMeBot when the configured thresholds are crossed.
 
+## Feature Highlights
+
+- **Modulares Plugin-System** — Standalone POSIX shell scripts in `plugins.d/` publish standardized JSON telemetry into a dynamic dashboard grid. No Python, Node.js, or build step on the CCU.
+- **Integrated extensions** — `forecast.solar` (daily solar yield, zero API key) and Renault Zoe (MY Renault Gigya/Kamereon API with battery SoC, range, and charge state; token cache with automatic refresh).
+- **Swiss-Poster Design System** — Pure CSS dark/light theme with monospace hero figures and a strict typographic grid. Zero UI libraries, no external CDN.
+
 ## Architecture
 
 - Runs directly on a stock CCU3 or RaspberryMatic using `/bin/sh`, BusyBox `ash`, `curl`, `sed`, and `lighttpd`.
@@ -30,6 +36,27 @@ Sentinella queries an SMA Sunny Tripower or Sunny Boy Storage inverter every two
 - **Resident RAM:** 0 MB (stateless, on-demand execution via BusyBox crontab)
 - **CPU Overhead:** ~0.59s per cycle (0.43s user, 0.16s sys)
 - **Duty Cycle:** Active ~1.9% of the time, dormant for 98.1%
+
+### Plugin contract
+
+Plugins are independent executables: read optional config, run once, write one JSON card atomically. The WebUI never calls plugin code.
+
+```
+/usr/local/addons/sentinella/
+├── plugins.d/         # Executable plugin scripts (chmod 755)
+├── config/plugins/    # Per-plugin env configs (mode 600)
+└── state/plugins/     # JSON telemetry ingested by webui
+```
+
+`web/api/plugins.cgi` concatenates `state/plugins/*.json` into one array; `web/app.js` renders each file as a card in dashboard section **05 Extensions**. A card appears on the next 30-second refresh.
+
+Every card shares `id`, `layout`, `title`, `status_badge`, `status_color` (`green`, `blue`, `red`, or `neutral`), and `timestamp`. Three layouts are available:
+
+| Layout | Fields | Typical use |
+|---|---|---|
+| `stat` | `primary: {value, unit, label}`, `secondary_metrics[]` | SoC, power, temperatures |
+| `delta` | `primary`, `delta: {direction, value, comparison}`, `secondary_metrics[]` | Forecasts, pricing, trends |
+| `list` | `secondary_metrics[]` | Wallbox phases, charger status |
 
 ## Requirements
 
@@ -101,7 +128,7 @@ Add the cron entry (`crontab -e`, see [`examples/crontab.txt`](examples/crontab.
 
 Open `http://<ccu-ip>/addons/sentinella/` (`?demo=1` loads preview data when testing locally).
 
-The Web UI is a zero-dependency Swiss-style dashboard served directly by the CCU3's native `lighttpd`. It refreshes `status.json` every 30 seconds and provides live SoC telemetry, hysteresis switch status, a manual dark mode toggle (light default), an **EN / DE** language toggle (persisted to `.env` via `api/config.cgi`), and a settings drawer for thresholds, CallMeBot Signal onboarding, and inverter credentials.
+The Web UI is a zero-dependency Swiss-style dashboard served directly by the CCU3's native `lighttpd`. It refreshes `status.json` every 30 seconds and provides live SoC telemetry, hysteresis switch status, a manual dark mode toggle (light default), an **EN / DE** language toggle (persisted to `.env` via `api/config.cgi`), a settings drawer for thresholds, CallMeBot Signal onboarding, inverter credentials, and Renault Zoe access, and a dynamic plugin grid in section **05 Extensions**.
 
 `status.json` schema:
 
@@ -224,6 +251,22 @@ Test Signal delivery from the shell without altering battery state:
 | `LOG_FILE` | `/usr/local/addons/sentinella/state/check_soc.log` | Log file path (empty logs to syslog only) |
 | `LOG_MAX_BYTES` | `262144` | Log rotation threshold in bytes |
 
+## Plugin Configuration
+
+Plugins are optional. Unconfigured plugins exit `0` before any network request, so they produce no log line and no dashboard card. Configuration is read from `config/plugins/<name>.env`; the WebUI Settings drawer writes the same files.
+
+### Renault Zoe
+
+Set `RENAULT_USER`, `RENAULT_PASS`, and `RENAULT_VIN` in the Settings drawer under **RENAULT ZOE**, or copy `config/plugins/renault.env.example` to `config/plugins/renault.env` and set mode `600`. The plugin caches the Gigya `id_token` and Kamereon `accountId` in `state/plugins/.renault_session` for 6 hours and refreshes them automatically on `401`/`403`.
+
+```sh
+/usr/local/addons/sentinella/plugins.d/20_renault_zoe.sh --test; echo "exit=$?"
+```
+
+### forecast.solar
+
+No API key is required. The plugin works with built-in defaults; override latitude, longitude, roof geometry, and peak power in `config/plugins/forecast_solar.env` (see the `.example` file).
+
 ## SMA WebConnect Quick Reference
 
 Full protocol notes are in [docs/PROTOCOL.md](docs/PROTOCOL.md).
@@ -263,6 +306,23 @@ curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8181/tclrega.exe
 | `no numeric value` | Battery offline or firmware uses a different channel key; see [docs/PROTOCOL.md](docs/PROTOCOL.md). |
 | `CCU3 ReGa request failed` | ReGaHSS not reachable on `CCU_REGA_PORT` (`8181`), or variables missing (`sh setup_variables.sh`). |
 | No Signal message | Run `lib/notify_signal.sh --test`; verify `SIGNAL_PHONE` and `SIGNAL_APIKEY`. |
+
+## Developer Quickstart: Eigenes Plugin schreiben
+
+A plugin is a POSIX shell script with no arguments. Write one JSON object atomically to `state/plugins/<id>.json`; the dashboard picks it up without a restart.
+
+```sh
+#!/bin/sh
+APP_DIR=$(cd "$(dirname "$0")/.." && pwd)
+OUT="$APP_DIR/state/plugins/example.json"
+mkdir -p "${OUT%/*}"
+printf '%s\n' '{"id":"example","layout":"stat","title":"Example",' \
+  '"status_badge":"OK","status_color":"green",' \
+  '"primary":{"value":42,"unit":"W","label":"Leistung"}}' > "$OUT.tmp"
+mv -f "$OUT.tmp" "$OUT"
+```
+
+Save as `plugins.d/40_example.sh`, run `chmod 755`, execute it once, and reload the dashboard. Use `delta` for trend badges, `list` for key-value rows, and keep non-secret defaults in `config/plugins/example.env` (mode `600` for credentials). A failing request should keep the existing card and exit `0`; reserve non-zero exits for `--test` runs.
 
 ## Tests & Development
 
