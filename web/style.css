@@ -498,6 +498,8 @@ a {
     overflow: hidden;
     pointer-events: none;
     z-index: 1;
+    contain: paint;
+    isolation: isolate;
 }
 
 .soc-fx-backdrop > * {
@@ -506,44 +508,48 @@ a {
 }
 
 /* STATE 1: Charging (.state-charging .soc-fx-backdrop) */
-/* Prominent fluid wave layer (two SVG/curved layers with 18% & 12% white opacity)
-   flowing horizontally with vertical ebb at bottom 25% of card */
+/* Two organic liquid curves rising through the bottom 30% of the tile.
+   The taller back wave carries 15% white, the shorter front wave 22%,
+   so the surface reads as a lit body of liquid rather than a stripe. */
 .soc-fx-wave {
-    bottom: 0;
+    bottom: -1px;
     left: 0;
     width: 200%;
-    will-change: transform;
     background-repeat: repeat-x;
+    will-change: transform, opacity;
     opacity: 0;
-    transition: opacity 0.6s ease;
+    transition: opacity 800ms var(--ease);
     animation-play-state: paused;
 }
 
 .soc-fx-wave-1 {
-    height: clamp(85px, 25%, 115px);
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120' preserveAspectRatio='none'%3E%3Cpath d='M0,50 C150,20 450,80 600,50 C750,20 1050,80 1200,50 L1200,120 L0,120 Z' fill='rgba(255,255,255,0.18)'/%3E%3C/svg%3E");
+    height: 30%;
+    min-height: 94px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120' preserveAspectRatio='none'%3E%3Cpath d='M0,58 C120,26 240,86 360,56 C480,26 600,80 720,54 C840,28 960,82 1080,52 C1140,38 1180,44 1200,54 L1200,120 L0,120 Z' fill='rgba(255,255,255,0.15)'/%3E%3C/svg%3E");
     background-size: 50% 100%;
-    animation: soc-fx-wave-flow-1 7s linear infinite;
+    animation: soc-fx-wave-flow-1 9s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
     animation-play-state: paused;
 }
 
 .soc-fx-wave-2 {
-    height: clamp(70px, 20%, 90px);
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120' preserveAspectRatio='none'%3E%3Cpath d='M0,65 C150,85 450,35 600,65 C750,85 1050,35 1200,65 L1200,120 L0,120 Z' fill='rgba(255,255,255,0.12)'/%3E%3C/svg%3E");
+    height: 22%;
+    min-height: 70px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120' preserveAspectRatio='none'%3E%3Cpath d='M0,64 C100,86 220,34 340,60 C470,88 590,38 720,62 C850,86 970,36 1100,60 C1140,68 1180,60 1200,58 L1200,120 L0,120 Z' fill='rgba(255,255,255,0.22)'/%3E%3C/svg%3E");
     background-size: 50% 100%;
-    animation: soc-fx-wave-flow-2 11s linear infinite;
+    animation: soc-fx-wave-flow-2 13s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
     animation-play-state: paused;
 }
 
-/* Subtle upward glow/shimmer */
+/* Subtle upward glow/shimmer that lights the liquid surface */
 .soc-fx-glow {
-    inset: 0;
+    inset: auto 0 0;
+    height: 36%;
     will-change: transform, opacity;
     opacity: 0;
-    background: radial-gradient(ellipse 110% 65% at 50% 100%, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.06) 50%, transparent 80%);
-    animation: soc-fx-glow-rise 5s ease-in-out infinite alternate;
+    background: radial-gradient(ellipse 72% 100% at 50% 100%, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.05) 52%, transparent 78%);
+    animation: soc-fx-glow-rise 8s ease-in-out infinite alternate;
     animation-play-state: paused;
-    transition: opacity 0.6s ease;
+    transition: opacity 800ms var(--ease);
 }
 
 @keyframes soc-fx-wave-flow-1 {
@@ -551,7 +557,7 @@ a {
         transform: translate3d(0, 0, 0);
     }
     50% {
-        transform: translate3d(-25%, 8px, 0);
+        transform: translate3d(-25%, 4px, 0);
     }
     100% {
         transform: translate3d(-50%, 0, 0);
@@ -560,24 +566,22 @@ a {
 
 @keyframes soc-fx-wave-flow-2 {
     0% {
-        transform: translate3d(-50%, 6px, 0);
+        transform: translate3d(-50%, 0, 0);
     }
     50% {
-        transform: translate3d(-25%, -6px, 0);
+        transform: translate3d(-25%, -5px, 0);
     }
     100% {
-        transform: translate3d(0, 6px, 0);
+        transform: translate3d(0, 0, 0);
     }
 }
 
 @keyframes soc-fx-glow-rise {
     0% {
-        transform: translate3d(0, 6%, 0);
-        opacity: 0.45;
+        transform: translate3d(0, 8%, 0);
     }
     100% {
-        transform: translate3d(0, -6%, 0);
-        opacity: 0.85;
+        transform: translate3d(0, -4%, 0);
     }
 }
 
@@ -599,39 +603,32 @@ a {
 }
 
 /* STATE 2: Discharging (.state-discharging .soc-fx-backdrop) */
-/* Downward draining shimmer effect (soft gradient pulse descending from top to bottom every 4s) */
+/* One sleek sheen cascading from above the tile to below it every 5s. */
 .soc-fx-drain {
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 55%;
+    top: -30%;
+    left: -8%;
+    right: -8%;
+    height: 60%;
     will-change: transform, opacity;
     opacity: 0;
     background: linear-gradient(180deg,
         rgba(255, 255, 255, 0) 0%,
-        rgba(255, 255, 255, 0.08) 25%,
-        rgba(255, 255, 255, 0.22) 50%,
-        rgba(255, 255, 255, 0.08) 75%,
+        rgba(255, 255, 255, 0.02) 24%,
+        rgba(255, 255, 255, 0.15) 46%,
+        rgba(255, 255, 255, 0.05) 62%,
         rgba(255, 255, 255, 0) 100%
     );
-    animation: soc-fx-drain-pulse 4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    animation: soc-fx-drain-pulse 5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
     animation-play-state: paused;
+    transition: opacity 700ms var(--ease);
 }
 
 @keyframes soc-fx-drain-pulse {
     0% {
-        transform: translate3d(0, -110%, 0);
-        opacity: 0;
-    }
-    18% {
-        opacity: 0.95;
-    }
-    82% {
-        opacity: 0.95;
+        transform: translate3d(0, -95%, 0);
     }
     100% {
-        transform: translate3d(0, 240%, 0);
-        opacity: 0;
+        transform: translate3d(0, 225%, 0);
     }
 }
 
@@ -643,28 +640,44 @@ a {
 }
 
 /* STATE 3: Idle (.state-idle .soc-fx-backdrop) */
-/* Calm, steady state with a very slow 7s breathing opacity pulse (0.88 -> 1.0) on the hero container border/shadow */
+/* Deep glass sheen: an oversized radial wash drifting almost imperceptibly
+   for 16s. Only transform animates, so the tile edge stays perfectly still. */
 .soc-fx-idle {
-    inset: 0;
-    will-change: opacity;
+    inset: -35%;
+    will-change: transform, opacity;
     opacity: 0;
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35), inset 0 0 28px rgba(255, 255, 255, 0.15);
-    animation: soc-fx-idle-breathe 7s ease-in-out infinite;
+    background:
+        radial-gradient(ellipse 46% 58% at 32% 28%,
+            rgba(255, 255, 255, 0.22) 0%,
+            rgba(255, 255, 255, 0.07) 34%,
+            transparent 68%),
+        radial-gradient(ellipse 40% 52% at 74% 74%,
+            rgba(255, 255, 255, 0.13) 0%,
+            transparent 66%),
+        radial-gradient(ellipse 90% 80% at 50% 50%,
+            transparent 40%,
+            rgba(5, 12, 54, 0.2) 100%);
+    animation: soc-fx-idle-sheen 16s cubic-bezier(0.42, 0, 0.58, 1) infinite alternate;
     animation-play-state: paused;
+    transition: opacity 900ms var(--ease);
 }
 
-@keyframes soc-fx-idle-breathe {
-    0%, 100% {
-        opacity: 0.88;
+@keyframes soc-fx-idle-sheen {
+    0% {
+        transform: translate3d(-2.5%, -1.5%, 0) scale(1.02);
     }
     50% {
-        opacity: 1.0;
+        transform: translate3d(1.5%, 2%, 0) scale(1.06);
+    }
+    100% {
+        transform: translate3d(3%, -2.5%, 0) scale(1.03);
     }
 }
 
 .state-idle .soc-fx-backdrop .soc-fx-idle,
 #hero-card.state-idle .soc-fx-backdrop .soc-fx-idle,
 #hero-block.state-idle .soc-fx-backdrop .soc-fx-idle {
+    opacity: 1;
     animation-play-state: running;
 }
 
@@ -677,6 +690,7 @@ a {
     opacity: 0;
     transition: opacity 0.8s ease;
     z-index: 1;
+    contain: paint;
 }
 
 .soc-wave {
@@ -684,7 +698,7 @@ a {
     bottom: 0;
     left: 0;
     width: 200%;
-    will-change: transform;
+    will-change: transform, opacity;
     pointer-events: none;
     animation-play-state: paused;
     background-repeat: repeat-x;
@@ -1858,6 +1872,7 @@ body.drawer-open {
     height: 100vh;
     height: 100dvh;
     overflow: hidden;
+    scrollbar-gutter: stable;
     border-left: var(--rule-heavy);
     background: var(--white);
     color: var(--ink);
@@ -1958,6 +1973,7 @@ body.drawer-open {
     flex: 1 1 auto;
     overflow-y: auto;
     overscroll-behavior: contain;
+    scrollbar-gutter: stable;
     padding: 0 26px calc(28px + env(safe-area-inset-bottom));
     scrollbar-width: thin;
     scrollbar-color: var(--ink) transparent;
@@ -2702,15 +2718,16 @@ body.drawer-open {
     }
 }
 
-/* Setting Override: disabled or reduced-motion */
+/* Setting Override: animations disabled.
+   Only the decorative canvas is removed. Transitions on buttons, switches,
+   the drawer and every other UI surface stay intact so toggling the setting
+   never strips transitions from the open drawer (which used to reflow and
+   flicker for a few frames). */
 body.disable-animations .soc-fx-backdrop,
-body.disable-animations .soc-wave-backdrop {
+body.disable-animations .soc-wave-backdrop,
+html.disable-animations .soc-fx-backdrop,
+html.disable-animations .soc-wave-backdrop {
     display: none !important;
-}
-
-body.disable-animations * {
-    animation: none !important;
-    transition: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2719,15 +2736,19 @@ body.disable-animations * {
         display: none !important;
     }
 
-    * {
-        animation: none !important;
-        transition: none !important;
-    }
-
-    .soc-wave,
-    .soc-fx-wave {
+    .soc-fx-wave,
+    .soc-fx-glow,
+    .soc-fx-drain,
+    .soc-fx-idle,
+    .soc-wave {
         animation: none !important;
         transform: none !important;
         will-change: auto !important;
+    }
+
+    .soc.is-charging,
+    .soc-value.is-charging,
+    .plugin-stat-hero.is-charging {
+        animation: none !important;
     }
 }

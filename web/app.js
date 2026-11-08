@@ -59,11 +59,18 @@
     } catch (error) {
         animationsEnabled = true;
     }
-    if (!animationsEnabled) {
-        document.body.classList.add("disable-animations");
-    } else {
-        document.body.classList.remove("disable-animations");
+    function applyAnimationPreference(enabled) {
+        var disabled = !enabled;
+        if (disabled) {
+            document.body.classList.add("disable-animations");
+            document.documentElement.classList.add("disable-animations");
+        } else {
+            document.body.classList.remove("disable-animations");
+            document.documentElement.classList.remove("disable-animations");
+        }
     }
+
+    applyAnimationPreference(animationsEnabled);
 
     var I18N = {
         en: {
@@ -2747,11 +2754,7 @@
             try {
                 window.localStorage.setItem(ANIMATIONS_KEY, enabled ? "on" : "off");
             } catch (error) {}
-            if (enabled) {
-                document.body.classList.remove("disable-animations");
-            } else {
-                document.body.classList.add("disable-animations");
-            }
+            applyAnimationPreference(enabled);
         });
     }
 
