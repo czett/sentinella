@@ -2546,6 +2546,7 @@ if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SON
         # 26c2. Odometer fallback, hvac_active, --stop-hvac and CGI stop routing
         zoe_dir_state = zoe_addon / "state" / "plugins"
         hvac_marker = zoe_dir_state / ".renault_hvac_active"
+        hvac_stopped_marker = zoe_dir_state / ".renault_hvac_stopped"
         renault_state.renault_mileage = None
         subprocess.run([str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20)
         card_nomile = json.loads(zoe_card_path.read_text())
@@ -2584,24 +2585,48 @@ if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SON
         check(
             renault_state.renault_hvac_calls == 1
             and '"action":"cancel"' in renault_state.renault_hvac_bodies[-1]
-            and not hvac_marker.exists(),
-            "--stop-hvac POSTs cancel payload and clears local marker",
+            and not hvac_marker.exists()
+            and hvac_stopped_marker.is_file(),
+            "--stop-hvac POSTs cancel payload, clears active marker, and writes stopped marker",
             failures,
         )
-        subprocess.run([str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20)
         check(
             json.loads(zoe_card_path.read_text()).get("hvac_active") is False,
-            "card exposes hvac_active=false after stop",
+            "--stop-hvac immediately updates renault_zoe.json to hvac_active=false",
             failures,
         )
+
+        # Stale cloud status lag: hvacStatus "on" is suppressed during 180s stop window
         renault_state.renault_hvac_status = "on"
         subprocess.run([str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20)
         check(
-            json.loads(zoe_card_path.read_text()).get("hvac_active") is True,
-            "hvac-status 'on' sets hvac_active=true",
+            json.loads(zoe_card_path.read_text()).get("hvac_active") is False,
+            "--stop-hvac suppresses stale cloud 'on' response within 180s window",
             failures,
         )
+
+        # Once stopped marker is older than 180 seconds, it expires and cloud "on" is accepted again
+        old_stop_ts = int(time.time()) - 181
+        hvac_stopped_marker.write_text(f"{old_stop_ts}\n")
+        subprocess.run([str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20)
+        check(
+            json.loads(zoe_card_path.read_text()).get("hvac_active") is True,
+            "expired stopped marker (>180s) is removed and cloud 'on' status accepted",
+            failures,
+        )
+        check(not hvac_stopped_marker.exists(), "expired stopped marker removed", failures)
         renault_state.renault_hvac_status = None
+
+        # --start-hvac removes stopped marker and sets hvac_active: true immediately
+        hvac_stopped_marker.write_text(f"{int(time.time())}\n")
+        subprocess.run([str(zoe_script), "--start-hvac"], env=zoe_env, capture_output=True, text=True, timeout=20)
+        check(not hvac_stopped_marker.exists(), "--start-hvac removes stopped marker", failures)
+        check(
+            json.loads(zoe_card_path.read_text()).get("hvac_active") is True,
+            "--start-hvac immediately updates renault_zoe.json to hvac_active=true",
+            failures,
+        )
+        subprocess.run([str(zoe_script), "--stop-hvac"], env=zoe_env, capture_output=True, text=True, timeout=20)
 
         # CGI: start sets lock, stop bypasses cooldown, cancels and clears lock
         renault_state.reset_requests()

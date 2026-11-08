@@ -195,9 +195,11 @@ TMP_AUTH=$STATE_DIR/.renault_auth.$$.tmp
 RAW_FILE=$STATE_DIR/.renault_bat.$$.tmp
 COCKPIT_FILE=$STATE_DIR/.renault_cockpit.$$.tmp
 HVAC_STATUS_FILE=$STATE_DIR/.renault_hvacst.$$.tmp
-# Local pre-conditioning marker (epoch of start); Renault runs for 10 minutes.
+# Local pre-conditioning markers (epoch timestamps); Renault runs for 10 minutes.
 HVAC_ACTIVE_FILE=${RENAULT_HVAC_ACTIVE_FILE:-$STATE_DIR/.renault_hvac_active}
+HVAC_STOPPED_FILE=${RENAULT_HVAC_STOPPED_FILE:-$STATE_DIR/.renault_hvac_stopped}
 HVAC_DURATION=600
+HVAC_STOP_WINDOW=180
 
 log() {
     _ts=$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null)
@@ -506,11 +508,22 @@ if [ "$HVAC_MODE" = "1" ]; then
         200|201|202)
             if [ "$HVAC_ACTION" = "cancel" ]; then
                 rm -f "$HVAC_ACTIVE_FILE" 2>/dev/null || true
+                _hnow=$(date +%s 2>/dev/null)
+                is_uint "$_hnow" && printf '%s\n' "$_hnow" > "$HVAC_STOPPED_FILE" 2>/dev/null
+                if [ -f "$OUT_FILE" ]; then
+                    sed 's/"hvac_active"[[:space:]]*:[[:space:]]*true/"hvac_active":false/' "$OUT_FILE" > "$OUT_FILE.tmp.$$" 2>/dev/null \
+                        && mv -f "$OUT_FILE.tmp.$$" "$OUT_FILE" 2>/dev/null || rm -f "$OUT_FILE.tmp.$$" 2>/dev/null
+                fi
                 log "Renault Zoe HVAC pre-conditioning cancelled for $RENAULT_VIN"
                 printf '{"ok":true,"action":"hvac_stopped"}\n'
             else
+                rm -f "$HVAC_STOPPED_FILE" 2>/dev/null || true
                 _hnow=$(date +%s 2>/dev/null)
                 is_uint "$_hnow" && printf '%s\n' "$_hnow" > "$HVAC_ACTIVE_FILE" 2>/dev/null
+                if [ -f "$OUT_FILE" ]; then
+                    sed 's/"hvac_active"[[:space:]]*:[[:space:]]*false/"hvac_active":true/' "$OUT_FILE" > "$OUT_FILE.tmp.$$" 2>/dev/null \
+                        && mv -f "$OUT_FILE.tmp.$$" "$OUT_FILE" 2>/dev/null || rm -f "$OUT_FILE.tmp.$$" 2>/dev/null
+                fi
                 log "Renault Zoe HVAC pre-conditioning started for $RENAULT_VIN"
                 printf '{"ok":true,"action":"hvac_started"}\n'
             fi
@@ -677,6 +690,18 @@ if [ "$HVAC_ACTIVE" != "true" ] && [ -r "$HVAC_ACTIVE_FILE" ]; then
         HVAC_ACTIVE=true
     else
         rm -f "$HVAC_ACTIVE_FILE" 2>/dev/null || true
+    fi
+fi
+
+# Override: if recently stopped via --stop-hvac, suppress stale cloud "on" response for 180s.
+if [ -r "$HVAC_STOPPED_FILE" ]; then
+    _hstop=$(sed -n '1p' "$HVAC_STOPPED_FILE" 2>/dev/null | tr -cd '0-9')
+    _hnow=$(date +%s 2>/dev/null)
+    if is_uint "$_hstop" && is_uint "$_hnow" && [ "$_hnow" -ge "$_hstop" ] \
+        && [ $((_hnow - _hstop)) -lt "$HVAC_STOP_WINDOW" ]; then
+        HVAC_ACTIVE=false
+    else
+        rm -f "$HVAC_STOPPED_FILE" 2>/dev/null || true
     fi
 fi
 

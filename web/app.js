@@ -1557,6 +1557,13 @@
 
         function done(res) {
             setHvacButtonState(button, finalState);
+            if (stopping && Array.isArray(currentPlugins)) {
+                currentPlugins.forEach(function (card) {
+                    if (card && (card.id === "renault_zoe" || (card.title && card.title.toUpperCase() === "RENAULT ZOE"))) {
+                        card.hvac_active = false;
+                    }
+                });
+            }
             var okText = stopping ? "KLIMATISIERUNG STARTEN" : "KLIMA LÄUFT (STOPPEN)";
             showToast("success", (res && res.message) || translatePluginText(okText, currentLanguage));
             if (!stopping) {
