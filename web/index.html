@@ -28,6 +28,11 @@
             if (scheme) {
                 scheme.setAttribute("content", theme);
             }
+            try {
+                if (window.localStorage.getItem("sentinella_animations") === "off") {
+                    document.documentElement.classList.add("disable-animations");
+                }
+            } catch (error) {}
         })();
     </script>
     <link rel="stylesheet" href="./style.css">
@@ -99,7 +104,13 @@
 
             <section class="poster-grid" aria-labelledby="instrument-title">
                 <div class="poster-blue hero-card" id="hero-card" data-charge="unknown">
-                    <div class="soc-wave-backdrop" aria-hidden="true"><div class="soc-wave soc-wave-1"></div><div class="soc-wave soc-wave-2"></div></div>
+                    <div class="soc-fx-backdrop" aria-hidden="true">
+                        <div class="soc-fx-wave soc-fx-wave-1"></div>
+                        <div class="soc-fx-wave soc-fx-wave-2"></div>
+                        <div class="soc-fx-glow"></div>
+                        <div class="soc-fx-drain"></div>
+                        <div class="soc-fx-idle"></div>
+                    </div>
                     <div class="poster-meta">
                         <span class="poster-index">01</span>
                         <h1 class="poster-eyebrow" id="instrument-title" data-i18n="stateOfCharge">State of charge</h1>
@@ -421,6 +432,18 @@
                     <button class="button button-outline quick-setup-button" id="renault-test" type="button" data-i18n="testRenaultConnection">Verbindung testen</button>
                     <p class="quick-setup-status" id="renault-test-status" role="status" aria-live="polite" hidden></p>
                 </div>
+            </fieldset>
+
+            <fieldset class="field-group" id="appearance-group">
+                <legend><span class="group-index">05</span><span data-i18n="displaySection">Display</span></legend>
+                <label class="switch-row" for="animations-toggle">
+                    <span>
+                        <span class="field-label" data-i18n="animationsLabel">ANIMATIONS</span>
+                        <span class="field-note" id="animations-status-note" data-i18n="animationsDesc">(On / Off)</span>
+                    </span>
+                    <input class="switch" id="animations-toggle" name="animations_toggle" type="checkbox" role="switch"
+                           checked aria-label="ANIMATIONS" data-i18n-aria="animationsLabel">
+                </label>
             </fieldset>
 
             <div class="drawer-actions">

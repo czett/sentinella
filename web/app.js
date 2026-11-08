@@ -50,6 +50,21 @@
     var THEME_KEY = "sentinella_theme";
     var currentTheme = "light";
 
+    var ANIMATIONS_KEY = "sentinella_animations";
+    var animationsEnabled = true;
+    try {
+        if (window.localStorage.getItem(ANIMATIONS_KEY) === "off") {
+            animationsEnabled = false;
+        }
+    } catch (error) {
+        animationsEnabled = true;
+    }
+    if (!animationsEnabled) {
+        document.body.classList.add("disable-animations");
+    } else {
+        document.body.classList.remove("disable-animations");
+    }
+
     var I18N = {
         en: {
             pageTitle: "Sentinella",
@@ -138,6 +153,12 @@
             saveSettings: "Save settings",
             footnotePrefix: "Values are written to",
             footnoteSuffix: "on the CCU. The next monitor run applies them within two minutes.",
+            displaySection: "Display",
+            animations: "ANIMATIONS",
+            animationsLabel: "ANIMATIONS",
+            animationsDesc: "(On / Off)",
+            animationsOn: "On",
+            animationsOff: "Off",
 
             charging: "Charging",
             discharging: "Discharging",
@@ -295,6 +316,12 @@
             saveSettings: "Einstellungen speichern",
             footnotePrefix: "Werte werden in",
             footnoteSuffix: "auf der CCU gespeichert und beim nächsten Lauf (innerhalb von zwei Minuten) übernommen.",
+            displaySection: "Darstellung",
+            animations: "ANIMATIONEN",
+            animationsLabel: "ANIMATIONEN",
+            animationsDesc: "(Ein / Aus)",
+            animationsOn: "Ein",
+            animationsOff: "Aus",
 
             charging: "Lädt",
             discharging: "Entlädt",
@@ -453,6 +480,7 @@
         renaultVin: $("renault-vin"),
         renaultTest: $("renault-test"),
         renaultTestStatus: $("renault-test-status"),
+        animationsToggle: $("animations-toggle"),
 
         toast: $("toast")
     };
@@ -838,6 +866,40 @@
         if (el.socValue) {
             el.socValue.classList.toggle("is-charging", isCharging);
         }
+
+        /* Inverter state classes: .state-charging, .state-discharging, .state-idle */
+        var power = NaN;
+        if (data.battery_power != null && !isNaN(Number(data.battery_power))) {
+            power = Number(data.battery_power);
+        } else if (data.charge_power_w != null || data.discharge_power_w != null) {
+            var cp = Number(data.charge_power_w) || 0;
+            var dp = Number(data.discharge_power_w) || 0;
+            power = cp - dp;
+        }
+
+        var statusUpper = String(data.status || data.status_badge || data.charging || "").toUpperCase();
+
+        var isStateCharging = (!isNaN(power) && power > 50) ||
+            statusUpper === "LADEN" || statusUpper === "CHARGING" ||
+            (data.charging === "charging" && (isNaN(power) || power > 0));
+
+        var isStateDischarging = !isStateCharging && (
+            (!isNaN(power) && power < -50) ||
+            statusUpper === "ENTLADEN" || statusUpper === "DISCHARGING" ||
+            (data.charging === "discharging" && (isNaN(power) || power < 0))
+        );
+
+        var heroTargets = [el.heroCard, el.heroBlock].filter(Boolean);
+        heroTargets.forEach(function (card) {
+            card.classList.remove("state-charging", "state-discharging", "state-idle");
+            if (isStateCharging) {
+                card.classList.add("state-charging");
+            } else if (isStateDischarging) {
+                card.classList.add("state-discharging");
+            } else {
+                card.classList.add("state-idle");
+            }
+        });
 
         el.socValue.textContent = String(soc);
         el.socState.textContent = chargeTag(charge);
@@ -2676,6 +2738,21 @@
             setSignalLocked(!el.signalEnabled.checked);
         });
         setSignalLocked(!el.signalEnabled.checked);
+    }
+
+    if (el.animationsToggle) {
+        el.animationsToggle.checked = animationsEnabled;
+        el.animationsToggle.addEventListener("change", function () {
+            var enabled = el.animationsToggle.checked;
+            try {
+                window.localStorage.setItem(ANIMATIONS_KEY, enabled ? "on" : "off");
+            } catch (error) {}
+            if (enabled) {
+                document.body.classList.remove("disable-animations");
+            } else {
+                document.body.classList.add("disable-animations");
+            }
+        });
     }
 
     if (el.callmebotExtract && el.callmebotPaste) {
