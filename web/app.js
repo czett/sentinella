@@ -13,6 +13,7 @@
     var SETTINGS_URL = new URL("./api/settings.cgi", window.location.href);
     var TEST_URL = new URL("./api/test_signal.cgi", window.location.href);
     var TEST_RENAULT_URL = new URL("./api/test_renault.cgi", window.location.href);
+    var ACTION_ZOE_URL = new URL("./api/action_zoe.cgi", window.location.href);
     var PLUGINS_URL = new URL("./api/plugins.cgi", window.location.href);
 
     var POLL_MS = 30000;
@@ -1476,6 +1477,18 @@
             var rawStatLabel = primaryStat.label ? String(primaryStat.label) : "";
             var statLabel = rawStatLabel ? escapeHtml(translatePluginText(rawStatLabel, currentLanguage)) : "";
             var heroClass = pluginCharging ? "plugin-stat-hero is-charging" : "plugin-stat-hero";
+            var isRenaultZoe = Boolean(
+                (plugin && plugin.id === "renault_zoe") ||
+                rawTitle.toUpperCase() === "RENAULT ZOE"
+            );
+            var hvacBtnLabel = escapeHtml(translatePluginText("KLIMATISIERUNG STARTEN", currentLanguage));
+            var hvacActionHtml = isRenaultZoe ? (
+                '<div class="plugin-action-bar">' +
+                    '<button type="button" class="plugin-action-btn" data-plugin-action="start-hvac" data-orig-text="KLIMATISIERUNG STARTEN">' +
+                        hvacBtnLabel +
+                    '</button>' +
+                '</div>'
+            ) : "";
 
             bodyHtml = (
                 '<div class="' + heroClass + '">' +
@@ -1483,12 +1496,62 @@
                     (statUnit ? '<span class="plugin-stat-unit">' + statUnit + '</span>' : '') +
                 '</div>' +
                 (statLabel ? '<div class="plugin-stat-label" data-orig-text="' + escapeHtml(rawStatLabel) + '">' + statLabel + '</div>' : '') +
-                renderSecondaryMetrics(plugin && plugin.secondary_metrics)
+                renderSecondaryMetrics(plugin && plugin.secondary_metrics) +
+                hvacActionHtml
             );
         }
 
         card.innerHTML = headerHtml + bodyHtml;
         return card;
+    }
+
+    function triggerZoeHvac(button) {
+        if (!button || button.disabled) {
+            return;
+        }
+        button.disabled = true;
+        button.classList.add("is-starting");
+        button.classList.remove("is-active");
+        button.setAttribute("data-orig-text", "WIRD GESTARTET...");
+        button.textContent = translatePluginText("WIRD GESTARTET...", currentLanguage);
+
+        if (demoRequested) {
+            window.setTimeout(function () {
+                button.disabled = false;
+                button.classList.remove("is-starting");
+                button.classList.add("is-active");
+                button.setAttribute("data-orig-text", "KLIMATISIERUNG AKTIV");
+                button.textContent = translatePluginText("KLIMATISIERUNG AKTIV", currentLanguage);
+                showToast("success", translatePluginText("KLIMATISIERUNG AKTIV", currentLanguage));
+            }, 600);
+            return;
+        }
+
+        requestJSON(ACTION_ZOE_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "start_hvac" })
+        }).then(function (res) {
+            button.classList.remove("is-starting");
+            button.classList.add("is-active");
+            button.setAttribute("data-orig-text", "KLIMATISIERUNG AKTIV");
+            button.textContent = translatePluginText("KLIMATISIERUNG AKTIV", currentLanguage);
+            var msgText = (res && res.message) || translatePluginText("KLIMATISIERUNG AKTIV", currentLanguage);
+            showToast("success", msgText);
+            window.setTimeout(function () {
+                button.disabled = false;
+                button.classList.remove("is-active");
+                button.setAttribute("data-orig-text", "KLIMATISIERUNG STARTEN");
+                button.textContent = translatePluginText("KLIMATISIERUNG STARTEN", currentLanguage);
+            }, 8000);
+        }).catch(function (error) {
+            button.disabled = false;
+            button.classList.remove("is-starting");
+            button.setAttribute("data-orig-text", "KLIMATISIERUNG STARTEN");
+            button.textContent = translatePluginText("KLIMATISIERUNG STARTEN", currentLanguage);
+            var errText = (error && error.message) || "HVAC request failed.";
+            showToast("error", errText);
+        });
     }
 
     function translatePluginCardsInDom(targetLang) {
@@ -2456,6 +2519,19 @@
     });
 
     el.settingsOpen.addEventListener("click", openSettings);
+    if (el.pluginsGrid) {
+        el.pluginsGrid.addEventListener("click", function (event) {
+            var target = event.target;
+            if (!target || typeof target.closest !== "function") {
+                return;
+            }
+            var btn = target.closest("[data-plugin-action='start-hvac']");
+            if (btn) {
+                event.preventDefault();
+                triggerZoeHvac(btn);
+            }
+        });
+    }
     el.settingsClose.addEventListener("click", closeSettings);
     el.settingsBackdrop.addEventListener("click", closeSettings);
     el.settingsTest.addEventListener("click", runTest);

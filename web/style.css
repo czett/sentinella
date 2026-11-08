@@ -1375,6 +1375,46 @@ html[data-theme="dark"] .plugin-card:hover {
     flex-direction: column;
 }
 
+.plugin-action-bar {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: var(--rule-hairline);
+}
+
+.plugin-action-btn {
+    width: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 9px 14px;
+    border: var(--rule);
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 150ms var(--ease), color 150ms var(--ease), opacity 150ms var(--ease);
+}
+
+.plugin-action-btn:hover:not(:disabled) {
+    background: var(--ink);
+    color: var(--white);
+}
+
+.plugin-action-btn.is-starting {
+    animation: pulse-charge 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    will-change: opacity;
+}
+
+.plugin-action-btn.is-active {
+    border-color: var(--green);
+    background: var(--green-surface);
+    color: var(--green);
+}
+
 /* Footer */
 .footer {
     display: flex;

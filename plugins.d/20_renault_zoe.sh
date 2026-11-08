@@ -23,9 +23,11 @@ export PATH
 umask 077
 
 TEST_MODE=0
-if [ "${1:-}" = "--test" ]; then
-    TEST_MODE=1
-fi
+HVAC_MODE=0
+case "${1:-}" in
+    --test) TEST_MODE=1 ;;
+    --start-hvac) HVAC_MODE=1 ;;
+esac
 
 ADDON_DIR=${RENAULT_ADDON_DIR:-${SMA_MONITOR_ADDON_DIR:-}}
 if [ -z "$ADDON_DIR" ]; then
@@ -155,7 +157,7 @@ is_safe_token() {
 
 # Clean no-op when credentials are unset or incomplete
 if [ -z "$RENAULT_USER" ] || [ -z "$RENAULT_PASS" ] || [ -z "$RENAULT_VIN" ]; then
-    if [ "$TEST_MODE" = "1" ]; then
+    if [ "$TEST_MODE" = "1" ] || [ "$HVAC_MODE" = "1" ]; then
         printf 'Renault credentials (RENAULT_USER, RENAULT_PASS, RENAULT_VIN) are incomplete.\n' >&2
         exit 2
     fi
@@ -164,7 +166,9 @@ fi
 
 if ! is_valid_vin "$RENAULT_VIN"; then
     printf 'Renault VIN is invalid; plugin disabled.\n' >&2
-    [ "$TEST_MODE" = "1" ] && exit 2
+    if [ "$TEST_MODE" = "1" ] || [ "$HVAC_MODE" = "1" ]; then
+        exit 2
+    fi
     exit 0
 fi
 
@@ -438,6 +442,65 @@ authenticate_renault() {
     save_cached_session || true
     return 0
 }
+
+# ---------------------------------------------------------------------------
+# Step 4a: Remote HVAC Pre-Conditioning Action (--start-hvac)
+# ---------------------------------------------------------------------------
+trigger_hvac_start() {
+    _esc_token=$(curl_config_escape "$ID_TOKEN")
+    _hvac_payload='{"data":{"type":"HvacStart","attributes":{"action":"start","targetTemperature":21.0}}}'
+    _esc_payload=$(curl_config_escape "$_hvac_payload")
+    {
+        printf 'header = "x-gigya-id_token: %s"\n' "$_esc_token"
+        printf 'data-raw = "%s"\n' "$_esc_payload"
+    } | curl -sS -o "$RAW_FILE" -w '%{http_code}' \
+        --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME" \
+        -X POST \
+        -H "apikey: $KAMEREON_API_KEY" \
+        -H "Content-Type: application/vnd.api+json" \
+        --config - \
+        "$KAMEREON_URL/commerce/v1/accounts/$ACCOUNT_ID/kamereon/kca/car-adapter/v1/cars/$RENAULT_VIN/actions/hvac-start" \
+        2>/dev/null || printf '000'
+}
+
+if [ "$HVAC_MODE" = "1" ]; then
+    if [ -n "${RENAULT_MOCK_HVAC_JSON:-}" ] && [ -r "${RENAULT_MOCK_HVAC_JSON:-}" ]; then
+        cp -f "$RENAULT_MOCK_HVAC_JSON" "$RAW_FILE"
+        HVAC_HTTP_CODE=200
+    else
+        USED_CACHE=0
+        if load_cached_session; then
+            USED_CACHE=1
+        else
+            if ! authenticate_renault; then
+                exit 1
+            fi
+        fi
+
+        HVAC_HTTP_CODE=$(trigger_hvac_start)
+
+        if [ "$USED_CACHE" = "1" ] && { [ "$HVAC_HTTP_CODE" = "401" ] || [ "$HVAC_HTTP_CODE" = "403" ]; }; then
+            log "Renault session expired on HVAC request (HTTP $HVAC_HTTP_CODE); refreshing token"
+            rm -f "$SESSION_FILE" 2>/dev/null || true
+            if ! authenticate_renault; then
+                exit 1
+            fi
+            HVAC_HTTP_CODE=$(trigger_hvac_start)
+        fi
+    fi
+
+    case "$HVAC_HTTP_CODE" in
+        200|201|202)
+            log "Renault Zoe HVAC pre-conditioning started for $RENAULT_VIN"
+            printf '{"ok":true,"action":"hvac_started"}\n'
+            exit 0
+            ;;
+        *)
+            log "WARNING: Kamereon hvac-start failed (HTTP $HVAC_HTTP_CODE)"
+            exit 1
+            ;;
+    esac
+fi
 
 # ---------------------------------------------------------------------------
 # Step 4: Telemetry Fetch (/battery-status)

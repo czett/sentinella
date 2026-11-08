@@ -56,6 +56,8 @@ class State:
         self.renault_jwt_calls = 0
         self.renault_person_calls = 0
         self.renault_battery_calls = 0
+        self.renault_hvac_calls = 0
+        self.renault_hvac_bodies: list[str] = []
         self.renault_battery_level = 78
         self.renault_autonomy = 214
         self.renault_plug_status = 1
@@ -74,6 +76,8 @@ class State:
             self.renault_jwt_calls = 0
             self.renault_person_calls = 0
             self.renault_battery_calls = 0
+            self.renault_hvac_calls = 0
+            self.renault_hvac_bodies = []
 
 
 class SmaHandler(BaseHTTPRequestHandler):
@@ -266,6 +270,40 @@ class RenaultHandler(BaseHTTPRequestHandler):
                     "data.gigyaDataCenter": "eu1",
                 },
             )
+            return
+
+        expected_hvac_path = (
+            "/commerce/v1/accounts/acc-myrenault-777/kamereon/kca/"
+            "car-adapter/v1/cars/VF1AG000012345678/actions/hvac-start"
+        )
+        if parsed.path == expected_hvac_path:
+            id_token = self.headers.get("x-gigya-id_token", "")
+            api_key = self.headers.get("apikey", "")
+            ct = self.headers.get("Content-Type", "")
+            with state.lock:
+                state.renault_hvac_calls += 1
+                state.renault_hvac_bodies.append(raw)
+                if state.renault_force_401_once:
+                    state.renault_force_401_once = False
+                    self._json(401, {"error": "token expired"})
+                    return
+            if id_token != "jwt-id-token-valid-999" or not api_key or "application/vnd.api+json" not in ct:
+                self._json(401, {"error": "unauthorized or bad content-type"})
+                return
+            try:
+                hvac_doc = json.loads(raw)
+            except json.JSONDecodeError:
+                hvac_doc = {}
+            data_obj = hvac_doc.get("data") or {}
+            attrs = data_obj.get("attributes") or {}
+            if (
+                data_obj.get("type") != "HvacStart"
+                or attrs.get("action") != "start"
+                or float(attrs.get("targetTemperature", 0)) != 21.0
+            ):
+                self._json(400, {"error": "invalid hvac payload"})
+                return
+            self._json(200, {"data": {"type": "HvacStart", "id": "hvac-req-1"}})
             return
 
         self._json(404, {"err": 404})
@@ -2358,6 +2396,129 @@ if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SON
                 f"CONTRIBUTING.md documents {marker}",
                 failures,
             )
+
+        print("\n26. Renault Zoe Remote HVAC Pre-Conditioning (--start-hvac & action_zoe.cgi)")
+        # 26a. CLI --start-hvac reuses cached session and sends Kamereon HvacStart payload
+        renault_state.reset_requests()
+        hvac_cli_res = subprocess.run(
+            [str(zoe_script), "--start-hvac"],
+            env=zoe_env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        check(hvac_cli_res.returncode == 0, "20_renault_zoe.sh --start-hvac exits 0", failures)
+        try:
+            hvac_cli_json = json.loads(hvac_cli_res.stdout.strip())
+        except json.JSONDecodeError:
+            hvac_cli_json = {}
+        check(
+            hvac_cli_json == {"ok": True, "action": "hvac_started"},
+            f"--start-hvac returns {{'ok':true,'action':'hvac_started'}} (got {hvac_cli_res.stdout.strip()!r})",
+            failures,
+        )
+        check(
+            renault_state.renault_login_calls == 0 and renault_state.renault_hvac_calls == 1,
+            "--start-hvac reuses cached session token without re-login",
+            failures,
+        )
+
+        # 26b. CLI --start-hvac refreshes expired session on 401
+        renault_state.reset_requests()
+        renault_state.renault_force_401_once = True
+        hvac_401_res = subprocess.run(
+            [str(zoe_script), "--start-hvac"],
+            env=zoe_env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        check(
+            hvac_401_res.returncode == 0
+            and renault_state.renault_login_calls == 1
+            and renault_state.renault_hvac_calls == 2,
+            "--start-hvac refreshes session on HTTP 401 and succeeds on retry",
+            failures,
+        )
+
+        # 26c. action_zoe.cgi security (GET rejected, CSRF check, rate limiting, and execution)
+        hvac_lock = zoe_addon / "state" / ".zoe_hvac.lock"
+        hvac_lock.unlink(missing_ok=True)
+
+        def call_action_zoe(method="POST", body='{"action":"start_hvac"}', extra_env=None):
+            env = os.environ.copy()
+            for k in ("HTTP_ORIGIN", "HTTP_REFERER", "HTTP_HOST", "HTTP_X_REQUESTED_WITH"):
+                env.pop(k, None)
+            env.update(
+                {
+                    "REQUEST_METHOD": method,
+                    "SCRIPT_NAME": "/addons/sentinella/api/action_zoe.cgi",
+                    "PATH_INFO": "",
+                    "CONTENT_LENGTH": str(len(body.encode())),
+                    "CONTENT_TYPE": "application/json",
+                    "HTTP_HOST": "ccu.local",
+                    "HTTP_ORIGIN": "http://ccu.local",
+                    "SMA_MONITOR_ADDON_DIR": str(zoe_addon),
+                    "SMA_MONITOR_ENV": str(zoe_addon / ".env"),
+                    "RENAULT_GIGYA_URL": f"http://127.0.0.1:{renault_port}",
+                    "RENAULT_KAMEREON_URL": f"http://127.0.0.1:{renault_port}",
+                }
+            )
+            if extra_env:
+                env.update(extra_env)
+            return subprocess.run(
+                ["sh", str(ROOT / "web" / "api" / "action_zoe.cgi")],
+                input=body,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+
+        st_get, _ = parse_cgi(call_action_zoe(method="GET", body=""))
+        check(st_get == "405 Method Not Allowed", f"action_zoe.cgi rejects GET with 405 (got {st_get})", failures)
+
+        st_csrf, _ = parse_cgi(
+            call_action_zoe(extra_env={"HTTP_ORIGIN": "http://attacker.example"})
+        )
+        check(st_csrf == "403 Forbidden", f"action_zoe.cgi rejects cross-origin POST with 403 (got {st_csrf})", failures)
+
+        renault_state.reset_requests()
+        st_ok, body_ok = parse_cgi(call_action_zoe())
+        check(
+            st_ok == "200 OK"
+            and body_ok.get("ok") is True
+            and body_ok.get("action") == "hvac_started"
+            and renault_state.renault_hvac_calls == 1,
+            f"action_zoe.cgi triggers HVAC and returns 200 OK (got {st_ok}: {body_ok})",
+            failures,
+        )
+        check(
+            hvac_lock.is_file() and (hvac_lock.stat().st_mode & 0o777) == 0o600,
+            ".zoe_hvac.lock created with mode 600",
+            failures,
+        )
+
+        # Second call within 60s must be rate-limited (429 Too Many Requests)
+        st_rl, body_rl = parse_cgi(call_action_zoe())
+        check(
+            st_rl == "429 Too Many Requests"
+            and body_rl.get("ok") is False
+            and renault_state.renault_hvac_calls == 1,
+            f"action_zoe.cgi rate-limits rapid repeat calls within 60s (got {st_rl})",
+            failures,
+        )
+
+        # WebUI check for HVAC button & i18n
+        app_hvac_text = (ROOT / "web" / "app.js").read_text()
+        check(
+            "action_zoe.cgi" in app_hvac_text
+            and "KLIMATISIERUNG STARTEN" in app_hvac_text
+            and "START PRE-CONDITIONING" in app_hvac_text
+            and "WIRD GESTARTET..." in app_hvac_text,
+            "web/app.js includes Zoe HVAC button, endpoint, and DE/EN labels",
+            failures,
+        )
 
     finally:
         sma.shutdown()
