@@ -1,28 +1,51 @@
 # Sentinella
 
-![Sentinella — SMA Battery Monitor for CCU3](docs/assets/readme-hero-banner.png)
+![Sentinella — SMA battery monitor for CCU3](docs/assets/readme-hero-banner.png)
 
-Sentinella queries an SMA Sunny Tripower or Sunny Boy Storage inverter every two minutes over its local WebConnect API, updates two HomeMatic CCU3 / RaspberryMatic system variables (`SV_Batterie_SoC` and `SV_Batterie_95_Signal`), and turns the CCU3 into an active energy and EV telemetry controller.
+Sentinella runs on a HomeMatic CCU3 or RaspberryMatic and polls an SMA Sunny Boy Storage or Sunny Tripower inverter every two minutes over the local WebConnect API. It writes `SV_Batterie_SoC` and `SV_Batterie_95_Signal`, publishes `status.json`, and serves a dashboard through the CCU3's native `lighttpd`.
 
-👉 **Want to write a plugin or contribute?** Read [**CONTRIBUTING.md**](CONTRIBUTING.md) for the pure POSIX `/bin/sh` standard, the 3 card archetypes (`stat`, `delta`, `list`), and the security checklist.
+Runtime code is pure POSIX shell. No daemon, Node.js, Python, `jq`, or external CDN is required on the CCU3.
 
-## Feature Highlights
+Want to write a plugin? Read [**CONTRIBUTING.md**](CONTRIBUTING.md) for the `/bin/sh` standard, the three card layouts (`stat`, `delta`, `list`), and the security checklist.
 
-- **SMA Inverter Core & Hysteresis Switch** — Polls battery State of Charge (`6100_00295A00`) and charge/discharge power over HTTPS WebConnect, drives `SV_Batterie_SoC` and `SV_Batterie_95_Signal` with configurable trigger/reset thresholds, and guarantees session logout via POSIX signal traps.
-- **Renault Zoe Live-Telemetrie + HVAC Remote Control** — Queries MY Renault (Gigya + Kamereon cloud API) with a 6-hour cached session token (`state/plugins/.renault_session`) for live battery SoC, remaining range, plug status, and charging state, plus one-click remote pre-conditioning (`--start-hvac` / `api/action_zoe.cgi` to heat/cool to 21 °C).
-- **Solar-Forecast (`forecast.solar`)** — Zero-API-key daily and next-day PV yield prognosis (`kWh` and `kWh/kWp` peak ratio) with automatic weather badge classification (`SUNNY` / `MODERATE` / `CLOUDY`).
-- **Signal Notifications (CallMeBot)** — Detached background alert delivery on threshold transitions with 60-minute per-event cooldown, localized DE/EN templates, and one-paste onboarding in the WebUI settings drawer.
-- **Swiss-Poster Design System & Real-Time i18n** — Zero-dependency light/dark CSS grid with tabular monospace hero figures, charging pulse animations (`.is-charging`), and instant bidirectional **DE ↔ EN** switching (`translatePluginText`) without page reload or polling delay.
+## Capabilities
+
+### Core monitoring
+
+- Polls battery SoC (`6100_00295A00`) and optional charge/discharge power over HTTPS WebConnect.
+- Drives `SV_Batterie_SoC` and `SV_Batterie_95_Signal` with configurable trigger and reset thresholds.
+- Keeps the previous CCU3 value when the inverter returns `null`, an out-of-range value, or an HTTP error.
+- Logs out in an `EXIT` trap and on `INT`, `TERM`, and `HUP`.
+- Serialises runs with a PID lock that recovers stale locks.
+
+### Plugins
+
+| Plugin | Default | Data | Source |
+|---|---|---|---|
+| **CCU3 Health** (`10_ccu_health.sh`) | enabled | Duty cycle, load average, RAM, uptime | `tclrpc.so` XML-RPC on `127.0.0.1:2001`, fallback `2010`; `/proc` |
+| **Weather** (`15_weather.sh`) | enabled | Temperature, humidity, WMO condition, wind, daily min/max | Open-Meteo, no API key |
+| **PV Forecast** (`30_forecast_solar.sh`) | enabled | Today and tomorrow yield in `kWh` and `kWh/kWp` | forecast.solar, no API key |
+| **Renault E-Tech** (`20_renault_zoe.sh`) | disabled until configured | SoC, range, plug status, charging state, odometer | MY Renault cloud; Megane, Zoe, R5 |
+
+The plugin manager persists enable flags in `config/plugins.env` (`PLUGIN_<NAME>='0|1'`). Toggles in the settings drawer call `api/plugin_manager.cgi`, which accepts whitelisted IDs, writes the file atomically, and removes the card when a plugin is disabled. `web/app.js` filters the current card list immediately, without waiting for the next poll. Each plugin also honours a `.disabled` marker beside its script.
+
+Poll-time plugin execution is gated by `SENTINELLA_RUN_PLUGINS=1` in the environment of the cron job. The installer runs each plugin once after deployment so the dashboard is populated before the next poll.
+
+### Notifications and UI
+
+- **Signal (CallMeBot):** detached alert delivery on threshold transitions, with a 60-minute per-event cooldown and DE/EN templates.
+- **Swiss-Poster dashboard:** zero-dependency CSS grid, light/dark theme, tabular monospace figures, charging animation, and instant DE/EN switching without a page reload or polling delay.
 
 ## Architecture
 
-- Runs natively on stock CCU3 or RaspberryMatic firmware using `/bin/sh` (BusyBox `ash`), `curl`, `sed`, `awk`, and `lighttpd`.
-- Zero external runtime dependencies: no Python, no Node.js, no `jq`, and no external CDNs on the CCU3.
-- Strict privilege and directory separation between the root-only backend (`$ADDON_DIR`, mode `700`) and the isolated `lighttpd` document root (`$WEB_DIR`, mode `755`).
+- Runs on stock CCU3 or RaspberryMatic firmware with `/bin/sh` (BusyBox `ash`), `curl`, `sed`, `awk`, and `lighttpd`.
+- No Python, Node.js, `jq`, compiled binary, or external CDN on the CCU3.
+- Root-only backend (`$ADDON_DIR`, mode `700`) and a separate `lighttpd` document root (`$WEB_DIR`, mode `755`).
+- CGI endpoints run on demand; there is no long-running process between polls.
 
 ![SMA inverter over HTTPS, two-minute cron job, CCU3 system variables, and Signal alert](docs/assets/feature-diagram-telemetry.png)
 
-### System & Directory Separation
+### Directory separation
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -34,74 +57,80 @@ Sentinella queries an SMA Sunny Tripower or Sunny Boy Storage inverter every two
 │ ├── bin/check_soc.sh (cron */2 min)  │ ├── index.html, style.css, app.js     │
 │ ├── lib/notify_signal.sh (detached)  │ ├── status.json (atomic snapshot)     │
 │ ├── plugins.d/                       │ └── api/                              │
-│ │   ├── 20_renault_zoe.sh (--start-hvac)   ├── config.cgi & settings.cgi     │
-│ │   └── 30_forecast_solar.sh         │     ├── plugins.cgi (JSON validator)  │
-│ ├── config/ (mode 600 secrets)       │     ├── action_zoe.cgi (60s lock)     │
-│ │   ├── config.env                   │     ├── test_signal.cgi               │
-│ │   └── plugins/*.env                │     ├── test_renault.cgi              │
-│ └── state/ (mode 700 private state)  │     └── update_check.cgi              │
-│     ├── plugins/*.json               │                                       │
-│     └── .renault_session (mode 600)  │  Swiss-Poster UI Layout Cards:        │
-│                                      │   [ stat ]    [ delta ]    [ list ]   │
+│ │   ├── 10_ccu_health.sh             │     ├── config.cgi & settings.cgi     │
+│ │   ├── 15_weather.sh                │     ├── plugin_manager.cgi            │
+│ │   ├── 20_renault_zoe.sh            │     ├── plugins.cgi (JSON validator)  │
+│ │   └── 30_forecast_solar.sh         │     ├── action_zoe.cgi (HVAC off)     │
+│ ├── config/ (mode 600 secrets)       │     ├── test_signal.cgi               │
+│ │   ├── config.env                   │     ├── test_renault.cgi              │
+│ │   ├── plugins.env (enable flags)   │     └── update_check.cgi              │
+│ │   └── plugins/*.env                │                                       │
+│ └── state/ (mode 700 private state)  │  Swiss-Poster cards:                  │
+│     ├── plugins/*.json               │   [ stat ]   [ delta ]   [ list ]     │
+│     └── .renault_session (mode 600)  │                                       │
 └──────────────────────────────────────┴───────────────────────────────────────┘
 ```
 
 ### How a poll works
 
-1. `bin/check_soc.sh` loads `.env`, validates parameters, and acquires an atomic lock directory in `state/` (automatically recovering stale PIDs).
-2. It logs into the inverter (`POST /dyn/login.json` with credentials piped via `stdin`), reads battery SoC (`6100_00295A00`) and charge/discharge power channels, and logs out (`POST /dyn/logout.json`).
-3. If the reading is not an integer between `0` and `100`, the run exits `1` and leaves CCU3 variables untouched.
-4. `SV_Batterie_95_Signal` turns `true` at `THRESHOLD_TRIGGER` (default `95%`), turns `false` at `THRESHOLD_RESET` (default `90%`), and preserves its previous state inside the deadband.
-5. Both variables are written in a single `tclrega.exe` call, `status.json` is published atomically, and on a threshold edge `lib/notify_signal.sh` dispatches detached in the background.
+1. `bin/check_soc.sh` loads `.env`, validates parameters, and acquires the lock in `state/`.
+2. It logs in to the inverter (`POST /dyn/login.json`, credentials piped through `stdin`), reads the SoC and power channels, and logs out (`POST /dyn/logout.json`).
+3. A reading that is not an integer from `0` to `100` exits `1` and leaves the CCU3 variables untouched.
+4. `SV_Batterie_95_Signal` turns `true` at `THRESHOLD_TRIGGER` (default `95`), turns `false` at `THRESHOLD_RESET` (default `90`), and keeps its previous state inside the dead band.
+5. Both variables are written in one `tclrega.exe` call. `status.json` is published atomically, and a threshold edge dispatches `lib/notify_signal.sh` in the background.
+6. When `SENTINELLA_RUN_PLUGINS=1`, enabled plugins run after the status write. Each plugin writes one JSON card to `state/plugins/`.
 
-![BusyBox ash, under 75 KB compressed, no external CDNs, served by lighttpd](docs/assets/feature-card-native-ccu.png)
+![BusyBox ash, no external CDNs, served by lighttpd](docs/assets/feature-card-native-ccu.png)
 
-### Verified Footprint & Performance Benchmarks
+### Hardware corridor
 
-![System Footprint](docs/assets/feature-card-footprint.png)
+![Hardware utilization corridor: install, RAM, execution time, and radio duty cycle](docs/assets/hardware_footprint.svg)
 
-Verified via [`tools/benchmark_footprint.sh`](tools/benchmark_footprint.sh):
+Measured with `BENCHMARK_RUNS=20 ./tools/benchmark_footprint.sh` on the development host. Latency figures cover local dry-run and mock-plugin runs; they exclude network I/O and CCU3 flash write time.
 
-| Metric / Target | Verified Value | Budget Guard | Status |
+| Metric | Measured / bound | Guard | Status |
 | :--- | :---: | :---: | :---: |
-| **Release Tarball Size** (`sentinella-<version>.tar.gz`) | **~69 KB** (73 KB w/ HVAC & packaging) | Informational | OK |
-| **Installed Add-on Footprint** (`/usr/local/addons/sentinella/`) | **~143 KB** (158 KB w/ all CGIs) | `<= 250 KB` | **PASS** |
-| **Core Execution Latency** (`bin/check_soc.sh --dry-run`) | **~47 ms** (16–47 ms avg) | `<= 500 ms` | **PASS** |
-| **Plugin Execution Latency** (`plugins.d/20_renault_zoe.sh`) | **~57 ms** (22–57 ms avg) | `<= 500 ms` | **PASS** |
-| **Resident RAM** | **0 MB** (stateless cron + CGI) | `0 MB` | **PASS** |
+| **Release tarball** (`sentinella-<version>.tar.gz`) | **90 KB** (91,774 B) | informational | OK |
+| **Installed add-on footprint** | **207 KB** (211,657 B) | `<= 250 KB` | **PASS** |
+| **Core execution** (`bin/check_soc.sh --dry-run`) | **17 ms** (20-run average) | `<= 500 ms` | **PASS** |
+| **Plugin execution** (`plugins.d/20_renault_zoe.sh`) | **23 ms** (20-run average) | `<= 500 ms` | **PASS** |
+| **Peak process RSS** | **~1.2 MB** on CCU3 BusyBox ash (< 0.2% of 1 GB) | `<= 1.2 MB` | **PASS** |
+| **Radio / RF duty cycle** | **0%** (HTTPS and local XML-RPC only) | `0%` | **PASS** |
 
-### Plugin Contract & Card Archetypes
+The corridor diagram is deliberately bound-based. Point-in-time byte counts belong in the table above, not in a graphic that outlives the release.
 
-A plugin in `plugins.d/` reads optional config from `config/plugins/<name>.env` (mode `600`), runs once, and atomically writes one JSON card to `state/plugins/<id>.json`. `web/api/plugins.cgi` validates every file with a strict RFC 8259 parser before streaming the array to the browser.
+### Plugin contract and card layouts
 
-Every card shares `id`, `layout`, `title`, `status_badge`, `status_color` (`green`, `blue`, `red`, or `neutral`), and `timestamp`. Three Swiss-Poster layout archetypes are supported:
+A plugin in `plugins.d/` reads optional configuration from `config/plugins/<name>.env` (mode `600`), runs once, and atomically writes one JSON card to `state/plugins/<id>.json`. `web/api/plugins.cgi` validates every file with a strict RFC 8259 parser before streaming the array to the browser.
 
-| Layout | Fields | Typical Use |
+Every card shares `id`, `layout`, `title`, `status_badge`, `status_color` (`green`, `blue`, `red`, or `neutral`), and `timestamp`. Three layouts are supported:
+
+| Layout | Fields | Typical use |
 |---|---|---|
-| `stat` | `primary: {value, unit, label}`, `secondary_metrics[]` | EV SoC & range (`20_renault_zoe.sh`), battery power, temperatures |
-| `delta` | `primary`, `delta: {direction, value, comparison}`, `secondary_metrics[]` | Solar yield prognosis (`30_forecast_solar.sh`), dynamic tariffs |
+| `stat` | `primary: {value, unit, label}`, `secondary_metrics[]` | EV SoC and range, battery power, temperatures |
+| `delta` | `primary`, `delta: {direction, value, comparison}`, `secondary_metrics[]` | Solar yield prognosis, dynamic tariffs |
 | `list` | `secondary_metrics[]` | Wallbox phases, heat pump registers, multi-row device status |
 
 ## Requirements
 
-- **CCU3 / RaspberryMatic**: ReGaHSS on port `8181`, root SSH access (or WebUI Add-on installer), and `<= 250 KB` free under `/usr/local/`.
-- **SMA inverter**: HTTPS WebConnect reachable from the CCU3, read-capable WebUI password (`usr` or `user`), and battery channel `6100_00295A00` (see [docs/PROTOCOL.md](docs/PROTOCOL.md)).
-- **Workstation** (for `deploy.sh`, `tools/build_addon.sh`, and tests): `sh`/`bash`, `ssh`, `tar`, `curl`, `openssl`, Python 3.8+.
+- **CCU3 / RaspberryMatic:** ReGaHSS on port `8181`, root SSH access or the WebUI add-on installer, and `<= 250 KB` free under `/usr/local/`.
+- **SMA inverter:** HTTPS WebConnect reachable from the CCU3, a read-capable WebUI password (`usr` or `user`), and battery channel `6100_00295A00` (see [docs/PROTOCOL.md](docs/PROTOCOL.md)).
+- **Workstation** for `deploy.sh`, `tools/build_addon.sh`, and tests: `sh`/`bash`, `ssh`, `tar`, `curl`, `openssl`, Python 3.8+.
 
 ## Installation
 
-### Option A: Official CCU3 Release Package (`sentinella-<version>.tar.gz`)
+### Option A: CCU3 release package (`sentinella-<version>.tar.gz`)
 
-Build the HomeMatic CCU3 / RaspberryMatic add-on archive (including `update_script` and `rc.d/sentinella`):
+Build the HomeMatic add-on archive, including `update_script` and `rc.d/sentinella`:
 
 ```sh
 ./tools/build_addon.sh
 # Outputs: dist/sentinella-1.1.0.tar.gz
 ```
 
-Upload `dist/sentinella-<version>.tar.gz` in the CCU3 WebUI under **Settings → Control Panel → Additional Software**, or deploy directly over SSH with `./deploy.sh`.
+Upload the archive in the CCU3 WebUI under **Settings → Control Panel → Additional Software**, or deploy over SSH with `./deploy.sh`.
 
-### Option B: Quick SSH Deploy (`deploy.sh`)
+### Option B: SSH deploy
 
 ```sh
 git clone https://github.com/czett/sentinella.git
@@ -111,13 +140,13 @@ chmod 600 .env
 ${EDITOR:-vi} .env
 ```
 
-Set at least `SMA_IP` and `SMA_PASS` in `.env`, then deploy to the CCU3:
+Set at least `SMA_IP` and `SMA_PASS`, then deploy:
 
 ```sh
 ./deploy.sh -H 192.168.178.10
 ```
 
-`deploy.sh` copies the add-on to `/usr/local/addons/sentinella`, installs the web UI under `/usr/local/etc/config/addons/www/sentinella/`, enforces strict permissions (`600` on `.env` and plugin configs, `700` on private directories, `755` on scripts and CGI endpoints), registers the two-minute cron job, creates `SV_Batterie_SoC` and `SV_Batterie_95_Signal`, and runs an initial check.
+`deploy.sh` copies the add-on to `/usr/local/addons/sentinella`, installs the UI under `/usr/local/etc/config/addons/www/sentinella/`, sets permissions (`600` on `.env` and plugin configs, `700` on private directories, `755` on scripts and CGI endpoints), registers the two-minute cron job, creates both system variables, and runs an initial check.
 
 Options:
 
@@ -127,17 +156,17 @@ Options:
 ./deploy.sh -H ccu3.local --skip-cron  # skip crontab installation
 ```
 
-Add the cron entry (`crontab -e`, see [`examples/crontab.txt`](examples/crontab.txt)):
+The cron entry (`crontab -e`, see [`examples/crontab.txt`](examples/crontab.txt)):
 
 ```
 */2 * * * * /usr/local/addons/sentinella/bin/check_soc.sh >/dev/null 2>&1
 ```
 
-## Dashboard & Settings UI
+## Dashboard and settings
 
-Open `http://<ccu-ip>/addons/sentinella/` (`?demo=1` loads preview data when testing locally).
+Open `http://<ccu-ip>/addons/sentinella/` (`?demo=1` loads preview data locally).
 
-The Web UI is a Swiss-Poster dashboard served by the CCU3's native `lighttpd`. It refreshes `status.json` every 30 seconds and provides live SoC telemetry, hysteresis switch status, a light/dark theme toggle, and an **EN / DE** language toggle (persisted to `.env` and `config/config.env` via `api/config.cgi` with instant in-DOM translation of all plugin cards). The settings drawer manages thresholds, CallMeBot Signal onboarding, inverter credentials, and Renault Zoe access. Plugin cards render in section **05 Extensions**.
+The dashboard refreshes `status.json` every 30 seconds and shows SoC telemetry, hysteresis state, history, and plugin cards in section **05 Extensions**. The settings drawer manages thresholds, Signal onboarding, inverter credentials, Renault access, and plugin toggles. Language changes apply immediately and persist through `api/config.cgi`.
 
 `status.json` schema:
 
@@ -164,7 +193,7 @@ The Web UI is a Swiss-Poster dashboard served by the CCU3's native `lighttpd`. I
 }
 ```
 
-## Switching Logic
+## Switching logic
 
 ![Thresholds: off at 90 %, on at 95 %, previous state kept in between](docs/assets/feature-diagram-hysteresis.png)
 
@@ -177,7 +206,7 @@ SoC
   0 ┤
 ```
 
-- If `state/signal` is missing and the first reading lands between `THRESHOLD_RESET` and `THRESHOLD_TRIGGER`, `SV_Batterie_95_Signal` is left untouched until a threshold is crossed.
+If `state/signal` is missing and the first reading lands between `THRESHOLD_RESET` and `THRESHOLD_TRIGGER`, `SV_Batterie_95_Signal` is left untouched until a threshold is crossed.
 
 | Condition | `SV_Batterie_SoC` | `SV_Batterie_95_Signal` | Exit code |
 |---|---|---|---|
@@ -199,13 +228,13 @@ SoC
 | `BATTERY_SOC_KEY` | `6100_00295A00` | Battery SoC channel key |
 | `BATTERY_CHARGE_POWER_KEY` | `6100_00417800` | Charge power key (empty disables) |
 | `BATTERY_DISCHARGE_POWER_KEY` | `6100_00417900` | Discharge power key (empty disables) |
-| `SMA_TLS_VERIFY` | `false` | Verify inverter TLS certificate (`false` passes `curl -k`) |
+| `SMA_TLS_VERIFY` | `false` | Verify the inverter certificate (`false` uses `curl -k`) |
 | `SMA_CONNECT_TIMEOUT` | `5` | TCP connect timeout (s) |
 | `SMA_MAX_TIME` | `15` | Total request timeout (s) |
 | `SMA_RETRIES` | `2` | Login/read/logout attempts |
 | `SMA_RETRY_DELAY` | `5` | Delay between retries (s) |
 
-### CCU3 & Thresholds
+### CCU3 and thresholds
 
 | Key | Default | Description |
 |---|---|---|
@@ -213,59 +242,56 @@ SoC
 | `CCU_REGA_PORT` | `8181` | ReGaHSS HTTP port |
 | `SV_SOC_NAME` | `SV_Batterie_SoC` | Numeric system variable (`0..100 %`) |
 | `SV_SIGNAL_NAME` | `SV_Batterie_95_Signal` | Boolean system variable |
-| `THRESHOLD_TRIGGER` | `95` | Turn signal `true` at or above this SoC |
-| `THRESHOLD_RESET` | `90` | Turn signal `false` at or below this SoC |
-| `UI_LANGUAGE` | `en` | `en` or `de` for UI, plugin cards, and default Signal texts |
+| `THRESHOLD_TRIGGER` | `95` | Set the signal `true` at or above this SoC |
+| `THRESHOLD_RESET` | `90` | Set the signal `false` at or below this SoC |
+| `UI_LANGUAGE` | `en` | `en` or `de` for the UI, plugin cards, and default Signal texts |
 
-### Signal Notifications
+### Signal notifications
 
-#### CallMeBot setup
-
-Sentinella uses the [CallMeBot Signal API](https://www.callmebot.com/blog/free-api-signal-send-messages/) to deliver alerts:
+Sentinella uses the [CallMeBot Signal API](https://www.callmebot.com/blog/free-api-signal-send-messages/):
 
 1. Send `I allow callmebot to send me messages` to CallMeBot on Signal.
-2. Paste the reply into the **CallMeBot Onboarding Message** field in Sentinella's Settings drawer. Sentinella extracts your Signal Account UUID and API key automatically.
+2. Paste the reply into the **CallMeBot Onboarding Message** field in the settings drawer. Sentinella extracts the Signal Account UUID and API key.
 
-Test Signal delivery from the shell without altering battery state:
+Test delivery without changing battery state:
 
 ```sh
 /usr/local/addons/sentinella/lib/notify_signal.sh --test; echo "exit=$?"
 ```
 
-## Plugin Configuration & Active Control
+## Plugin configuration
 
-Plugins are optional. Unconfigured plugins exit `0` before any network request. Configuration is stored in `config/plugins/<name>.env` (mode `600`).
+Plugins are optional. An unconfigured plugin exits `0` before any network request. Configuration lives in `config/plugins/<name>.env` (mode `600`). Enable flags live in `config/plugins.env`.
 
-### Renault Zoe (Telemetry + Remote HVAC Pre-Conditioning)
+### CCU3 Health
 
-Set `RENAULT_USER`, `RENAULT_PASS`, and `RENAULT_VIN` in the Settings drawer under **RENAULT ZOE**, or in `config/plugins/renault.env` (mode `600`). The plugin caches the Gigya `id_token` and Kamereon `accountId` in `state/plugins/.renault_session` for 6 hours and refreshes them automatically on `401`/`403`.
+Enabled by default and local-only. Reads the BidCoS duty cycle through `tclrpc.so` XML-RPC on port `2001`, with a fallback to HmIP port `2010`; reads load, RAM, and uptime from `/proc`. If neither XML-RPC endpoint answers, it tries `CCU_SYSINFO_BIN` (default `/bin/hm_sysinfo`) and then `CCU_DUTYCYCLE_FILE` (defaults `/var/status/dutycycle`, `/tmp/dutycycle`, `/var/run/dutycycle`).
 
-- **Connection test:**
-  ```sh
-  /usr/local/addons/sentinella/plugins.d/20_renault_zoe.sh --test; echo "exit=$?"
-  ```
-- **Remote HVAC Pre-Conditioning (21 °C):**
-  Trigger pre-heating/cooling directly from the **KLIMATISIERUNG STARTEN / START PRE-CONDITIONING** button on the Renault Zoe dashboard card, via CLI, or from a CCU3 program:
-  ```sh
-  # CLI trigger
-  /usr/local/addons/sentinella/plugins.d/20_renault_zoe.sh --start-hvac
+The status badge follows the duty cycle: below `50%` OPTIMAL, `50–80%` WARNING, above `80%` CRITICAL.
 
-  # HTTP CGI trigger (POST, 60-second cooldown lock in state/.zoe_hvac.lock)
-  curl -sS -X POST -H "Content-Type: application/json" \
-    -H "X-Requested-With: XMLHttpRequest" \
-    -d '{"action":"start_hvac"}' \
-    http://127.0.0.1/addons/sentinella/api/action_zoe.cgi
-  ```
+### Weather (Open-Meteo)
 
-### forecast.solar
+No API key. Set `WEATHER_LAT` and `WEATHER_LON` in `config/plugins/weather.env`. Without that file, the plugin falls back to the forecast coordinates or `51.51, 7.46`.
 
-No API key is required. Override latitude (`FORECAST_LAT`), longitude (`FORECAST_LON`), roof declination (`FORECAST_DEC`), azimuth (`FORECAST_AZ`), and peak power (`FORECAST_KWP`) in `config/plugins/forecast_solar.env`.
+### PV forecast (forecast.solar)
 
-## Developer Quickstart: Writing a Custom Plugin
+No API key. Override `FORECAST_LAT`, `FORECAST_LON`, `FORECAST_DEC`, `FORECAST_AZ`, and `FORECAST_KWP` in `config/plugins/forecast_solar.env`.
+
+### Renault E-Tech
+
+Read-only telemetry for MY Renault E-Tech models, including Megane, Zoe, and R5. Set `RENAULT_USER`, `RENAULT_PASS`, and `RENAULT_VIN` in the settings drawer or in `config/plugins/renault.env` (mode `600`). The plugin caches the Gigya `id_token` and Kamereon `accountId` in `state/plugins/.renault_session` for six hours and refreshes them on `401`/`403`.
+
+```sh
+/usr/local/addons/sentinella/plugins.d/20_renault_zoe.sh --test; echo "exit=$?"
+```
+
+The card reports battery SoC, remaining range, plug status, charging state, and odometer when the cockpit endpoint returns it. Remote HVAC actions (`--start-hvac`, `--stop-hvac`, `api/action_zoe.cgi`) currently return `HVAC feature temporarily disabled`; the plug-in is read-only.
+
+## Writing a plugin
 
 See [**CONTRIBUTING.md**](CONTRIBUTING.md) for the full developer guide, i18n rules, and security requirements.
 
-A minimal 10-line POSIX shell plugin that publishes a live `stat` card atomically:
+A minimal POSIX shell plugin that publishes a `stat` card atomically:
 
 ```sh
 #!/bin/sh
@@ -279,31 +305,33 @@ EOF
 chmod 644 "$OUT.tmp.$$" && mv -f "$OUT.tmp.$$" "$OUT"
 ```
 
-Save as `plugins.d/40_example.sh`, run `chmod 755 plugins.d/40_example.sh`, execute it once, and the card appears in section **05 Extensions**.
+Save it as `plugins.d/40_example.sh`, run `chmod 755 plugins.d/40_example.sh`, execute it once, and the card appears in section **05 Extensions**.
 
-## Tests, Benchmarks & Packaging
+## Tests, benchmarks, and packaging
 
 ```sh
 # Syntax checks
 sh -n bin/check_soc.sh lib/notify_signal.sh setup_variables.sh \
+      plugins.d/10_ccu_health.sh plugins.d/15_weather.sh \
       plugins.d/20_renault_zoe.sh plugins.d/30_forecast_solar.sh \
-      web/api/config.cgi web/api/action_zoe.cgi web/api/update_check.cgi \
+      web/api/config.cgi web/api/plugin_manager.cgi web/api/plugins.cgi \
+      web/api/action_zoe.cgi web/api/update_check.cgi \
       tools/benchmark_footprint.sh tools/build_addon.sh
 node --check web/app.js
 
-# Footprint & latency budget verification
+# Footprint and latency budgets
 ./tools/benchmark_footprint.sh
 
-# Build CCU3 release archive (dist/sentinella-<version>.tar.gz)
+# CCU3 release archive (dist/sentinella-<version>.tar.gz)
 ./tools/build_addon.sh
 
-# Full integration & security test suite (SEN-01..SEN-11, plugins, HVAC, packaging)
+# Integration and security suite (SEN-01..SEN-11, plugins, packaging)
 python3 tests/integration.py
 ```
 
 ## Troubleshooting
 
-See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) and [docs/PROTOCOL.md](docs/PROTOCOL.md) for detailed diagnostics.
+See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) and [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
 ## License
 

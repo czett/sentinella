@@ -71,6 +71,7 @@ cp -f "$ROOT_DIR/web/api/test_renault.cgi" "$STAGE_DIR/web/api/test_renault.cgi"
 cp -f "$ROOT_DIR/web/api/action_zoe.cgi" "$STAGE_DIR/web/api/action_zoe.cgi"
 cp -f "$ROOT_DIR/web/api/update_check.cgi" "$STAGE_DIR/web/api/update_check.cgi"
 cp -f "$ROOT_DIR/web/api/plugins.cgi" "$STAGE_DIR/web/api/plugins.cgi"
+cp -f "$ROOT_DIR/web/api/plugin_manager.cgi" "$STAGE_DIR/web/api/plugin_manager.cgi"
 
 chmod 755 \
     "$STAGE_DIR/bin/check_soc.sh" \

@@ -43,7 +43,7 @@ Set a real dead band, for example `95` and `90`. Equal values are rejected becau
 
 ### `SIGNAL_PHONE and SIGNAL_APIKEY are required`
 
-This is a deliberate strict check. Either fill both values or set `SIGNAL_ENABLED="false"`. The CCU3 variables are not updated while the configuration is invalid.
+The check is strict by design. Either fill both values or set `SIGNAL_ENABLED="false"`. The CCU3 variables are not updated while the configuration is invalid.
 
 ### Warning about mode `644`
 
@@ -229,9 +229,47 @@ The last successful run is older than 10 minutes. This is a real monitoring prob
 
 The page was opened with `?demo=1`, or via `file://`. Open the normal CCU URL without the query string.
 
+## Plugins and plugin manager
+
+### A plugin card is missing
+
+1. Check the enable flag in `config/plugins.env`:
+   ```sh
+   cat /usr/local/addons/sentinella/config/plugins.env
+   ```
+   `PLUGIN_<NAME>='0'` disables the plugin and removes its card.
+2. Check that the card file exists and is valid JSON:
+   ```sh
+   ls -l /usr/local/addons/sentinella/state/plugins/
+   ```
+3. Run the plugin in the foreground and inspect its exit code:
+   ```sh
+   /usr/local/addons/sentinella/plugins.d/15_weather.sh; echo "exit=$?"
+   ```
+4. For Weather and PV Forecast, confirm the coordinates in `config/plugins/weather.env` and `config/plugins/forecast_solar.env`.
+5. For CCU3 Health, confirm that `tclsh` and `tclrpc.so` are present. Without XML-RPC access the plugin falls back to `hm_sysinfo` and the duty-cycle files, and reports `N/A` when no source answers.
+
+### Plugin cards do not refresh after a cron run
+
+Poll-time plugin execution is opt-in. Add `SENTINELLA_RUN_PLUGINS=1` to the cron environment, for example:
+
+```
+*/2 * * * * SENTINELLA_RUN_PLUGINS=1 /usr/local/addons/sentinella/bin/check_soc.sh >/dev/null 2>&1
+```
+
+The installer runs each plugin once after deployment, so a missing refresh usually points to this variable rather than a broken plugin.
+
+### A toggle does not persist
+
+The dashboard sends a same-origin `POST` with `X-Requested-With: XMLHttpRequest` to `api/plugin_manager.cgi`. A direct `curl` request without these headers is rejected. Check that `config/plugins.env` is writable by the CGI user and stays mode `600`:
+
+```sh
+ls -l /usr/local/addons/sentinella/config/plugins.env
+```
+
 ## Settings panel and CGI
 
-The settings button in the dashboard masthead reads and writes `api/config.cgi` and `api/test_signal.cgi` below the dashboard directory. The browser never needs SSH or `.env` access.
+The settings drawer reads and writes `api/config.cgi`, `api/test_signal.cgi`, and `api/plugin_manager.cgi` below the dashboard directory. The browser never needs SSH or `.env` access.
 
 ### The drawer says "Settings are not available"
 
@@ -247,7 +285,7 @@ Expected: `HTTP/1.1 200 OK` and a JSON object. If the response is `403`, `404` o
 ls -l /usr/local/etc/config/addons/www/sentinella/api/
 ```
 
-Both `.cgi` files must be mode `755`, and `addon_dir` must contain the add-on path (mode `644`). `deploy.sh` sets this automatically.
+All `.cgi` files must be mode `755`, and `addon_dir` must contain the add-on path (mode `644`). `deploy.sh` sets this automatically.
 
 CCU3 and RaspberryMatic normally ship lighttpd with `mod_cgi` and a `.cgi` mapping. Some images map `.cgi` to `/bin/tclsh`, which cannot execute these shell scripts; `deploy.sh` detects that mapping in `/etc/lighttpd/conf.d/cgi.conf` and switches it to `".cgi" => ""` (remounting `/` read-write only for the edit). If your firmware keeps the mapping elsewhere or does not execute the endpoints, back up the lighttpd configuration, add:
 
