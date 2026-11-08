@@ -342,7 +342,7 @@ class RenaultHandler(BaseHTTPRequestHandler):
             return
 
         kam_base = "/commerce/v1/accounts/acc-myrenault-777/kamereon/kca/car-adapter"
-        if parsed.path == f"{kam_base}/v2/cars/VF1AG000012345678/cockpit":
+        if parsed.path == f"{kam_base}/v1/cars/VF1AG000012345678/cockpit":
             with state.lock:
                 state.renault_cockpit_calls += 1
                 mileage = state.renault_mileage

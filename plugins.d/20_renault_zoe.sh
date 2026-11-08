@@ -195,10 +195,11 @@ TMP_AUTH=$STATE_DIR/.renault_auth.$$.tmp
 RAW_FILE=$STATE_DIR/.renault_bat.$$.tmp
 COCKPIT_FILE=$STATE_DIR/.renault_cockpit.$$.tmp
 HVAC_STATUS_FILE=$STATE_DIR/.renault_hvacst.$$.tmp
-# Local pre-conditioning markers (epoch timestamps); Renault runs for 10 minutes.
+# Local pre-conditioning markers (epoch timestamps). A start marker is only
+# trusted for 120 seconds; the cloud hvac-status is authoritative after that.
 HVAC_ACTIVE_FILE=${RENAULT_HVAC_ACTIVE_FILE:-$STATE_DIR/.renault_hvac_active}
 HVAC_STOPPED_FILE=${RENAULT_HVAC_STOPPED_FILE:-$STATE_DIR/.renault_hvac_stopped}
-HVAC_DURATION=600
+HVAC_DURATION=120
 HVAC_STOP_WINDOW=180
 
 log() {
@@ -478,6 +479,26 @@ trigger_hvac_start() {
         2>/dev/null || printf '000'
 }
 
+mark_hvac_stopped() {
+    rm -f "$HVAC_ACTIVE_FILE" 2>/dev/null || true
+    _hnow=$(date +%s 2>/dev/null)
+    is_uint "$_hnow" && printf '%s\n' "$_hnow" > "$HVAC_STOPPED_FILE" 2>/dev/null
+    if [ -f "$OUT_FILE" ]; then
+        sed 's/"hvac_active"[[:space:]]*:[[:space:]]*\(true\|false\)/"hvac_active":false/' "$OUT_FILE" > "$OUT_FILE.tmp.$$" 2>/dev/null \
+            && mv -f "$OUT_FILE.tmp.$$" "$OUT_FILE" 2>/dev/null || rm -f "$OUT_FILE.tmp.$$" 2>/dev/null
+    fi
+}
+
+mark_hvac_started() {
+    rm -f "$HVAC_STOPPED_FILE" 2>/dev/null || true
+    _hnow=$(date +%s 2>/dev/null)
+    is_uint "$_hnow" && printf '%s\n' "$_hnow" > "$HVAC_ACTIVE_FILE" 2>/dev/null
+    if [ -f "$OUT_FILE" ]; then
+        sed 's/"hvac_active"[[:space:]]*:[[:space:]]*\(true\|false\)/"hvac_active":true/' "$OUT_FILE" > "$OUT_FILE.tmp.$$" 2>/dev/null \
+            && mv -f "$OUT_FILE.tmp.$$" "$OUT_FILE" 2>/dev/null || rm -f "$OUT_FILE.tmp.$$" 2>/dev/null
+    fi
+}
+
 if [ "$HVAC_MODE" = "1" ]; then
     if [ -n "${RENAULT_MOCK_HVAC_JSON:-}" ] && [ -r "${RENAULT_MOCK_HVAC_JSON:-}" ]; then
         cp -f "$RENAULT_MOCK_HVAC_JSON" "$RAW_FILE"
@@ -507,23 +528,11 @@ if [ "$HVAC_MODE" = "1" ]; then
     case "$HVAC_HTTP_CODE" in
         200|201|202)
             if [ "$HVAC_ACTION" = "cancel" ]; then
-                rm -f "$HVAC_ACTIVE_FILE" 2>/dev/null || true
-                _hnow=$(date +%s 2>/dev/null)
-                is_uint "$_hnow" && printf '%s\n' "$_hnow" > "$HVAC_STOPPED_FILE" 2>/dev/null
-                if [ -f "$OUT_FILE" ]; then
-                    sed 's/"hvac_active"[[:space:]]*:[[:space:]]*true/"hvac_active":false/' "$OUT_FILE" > "$OUT_FILE.tmp.$$" 2>/dev/null \
-                        && mv -f "$OUT_FILE.tmp.$$" "$OUT_FILE" 2>/dev/null || rm -f "$OUT_FILE.tmp.$$" 2>/dev/null
-                fi
+                mark_hvac_stopped
                 log "Renault Zoe HVAC pre-conditioning cancelled for $RENAULT_VIN"
                 printf '{"ok":true,"action":"hvac_stopped"}\n'
             else
-                rm -f "$HVAC_STOPPED_FILE" 2>/dev/null || true
-                _hnow=$(date +%s 2>/dev/null)
-                is_uint "$_hnow" && printf '%s\n' "$_hnow" > "$HVAC_ACTIVE_FILE" 2>/dev/null
-                if [ -f "$OUT_FILE" ]; then
-                    sed 's/"hvac_active"[[:space:]]*:[[:space:]]*false/"hvac_active":true/' "$OUT_FILE" > "$OUT_FILE.tmp.$$" 2>/dev/null \
-                        && mv -f "$OUT_FILE.tmp.$$" "$OUT_FILE" 2>/dev/null || rm -f "$OUT_FILE.tmp.$$" 2>/dev/null
-                fi
+                mark_hvac_started
                 log "Renault Zoe HVAC pre-conditioning started for $RENAULT_VIN"
                 printf '{"ok":true,"action":"hvac_started"}\n'
             fi
@@ -531,6 +540,11 @@ if [ "$HVAC_MODE" = "1" ]; then
             ;;
         *)
             log "WARNING: Kamereon hvac-$HVAC_ACTION failed (HTTP $HVAC_HTTP_CODE)"
+            # An explicit stop must clear any stale local "active" state even
+            # when the cloud request fails, so the UI cannot stay stuck.
+            if [ "$HVAC_ACTION" = "cancel" ]; then
+                mark_hvac_stopped
+            fi
             exit 1
             ;;
     esac
@@ -660,7 +674,7 @@ kamereon_get() {
 ODO_METRIC=
 HVAC_ACTIVE=false
 if [ -n "$ID_TOKEN" ] && [ -n "$ACCOUNT_ID" ]; then
-    _ck=$(kamereon_get "v2/cars/$RENAULT_VIN/cockpit" "$COCKPIT_FILE")
+    _ck=$(kamereon_get "v1/cars/$RENAULT_VIN/cockpit" "$COCKPIT_FILE")
     if [ "$_ck" = "200" ] && [ -s "$COCKPIT_FILE" ]; then
         _km=$(extract_json_num "$COCKPIT_FILE" totalMileage)
         if is_number "$_km"; then
@@ -681,27 +695,33 @@ if [ -n "$ID_TOKEN" ] && [ -n "$ACCOUNT_ID" ]; then
         [ "$(extract_json_str "$HVAC_STATUS_FILE" hvacStatus)" = "on" ] && HVAC_ACTIVE=true
     fi
 fi
-# Local fallback: marker written by --start-hvac, valid for 10 minutes.
-if [ "$HVAC_ACTIVE" != "true" ] && [ -r "$HVAC_ACTIVE_FILE" ]; then
-    _hstart=$(sed -n '1p' "$HVAC_ACTIVE_FILE" 2>/dev/null | tr -cd '0-9')
-    _hnow=$(date +%s 2>/dev/null)
-    if is_uint "$_hstart" && is_uint "$_hnow" && [ "$_hnow" -ge "$_hstart" ] \
-        && [ $((_hnow - _hstart)) -lt "$HVAC_DURATION" ]; then
-        HVAC_ACTIVE=true
+
+# Strict local evaluation. A recent stop always wins; otherwise the cloud
+# "on" status must be explicit, or a start marker must be younger than 120s.
+_hnow=$(date +%s 2>/dev/null)
+_hstop_fresh=false
+if [ -r "$HVAC_STOPPED_FILE" ]; then
+    _hstop=$(sed -n '1p' "$HVAC_STOPPED_FILE" 2>/dev/null | tr -cd '0-9')
+    if is_uint "$_hstop" && is_uint "$_hnow" && [ "$_hnow" -ge "$_hstop" ] \
+        && [ $((_hnow - _hstop)) -lt "$HVAC_STOP_WINDOW" ]; then
+        _hstop_fresh=true
     else
-        rm -f "$HVAC_ACTIVE_FILE" 2>/dev/null || true
+        rm -f "$HVAC_STOPPED_FILE" 2>/dev/null || true
     fi
 fi
 
-# Override: if recently stopped via --stop-hvac, suppress stale cloud "on" response for 180s.
-if [ -r "$HVAC_STOPPED_FILE" ]; then
-    _hstop=$(sed -n '1p' "$HVAC_STOPPED_FILE" 2>/dev/null | tr -cd '0-9')
-    _hnow=$(date +%s 2>/dev/null)
-    if is_uint "$_hstop" && is_uint "$_hnow" && [ "$_hnow" -ge "$_hstop" ] \
-        && [ $((_hnow - _hstop)) -lt "$HVAC_STOP_WINDOW" ]; then
-        HVAC_ACTIVE=false
-    else
-        rm -f "$HVAC_STOPPED_FILE" 2>/dev/null || true
+if [ "$_hstop_fresh" = "true" ]; then
+    HVAC_ACTIVE=false
+    rm -f "$HVAC_ACTIVE_FILE" 2>/dev/null || true
+else
+    if [ "$HVAC_ACTIVE" != "true" ] && [ -r "$HVAC_ACTIVE_FILE" ]; then
+        _hstart=$(sed -n '1p' "$HVAC_ACTIVE_FILE" 2>/dev/null | tr -cd '0-9')
+        if is_uint "$_hstart" && is_uint "$_hnow" && [ "$_hnow" -ge "$_hstart" ] \
+            && [ $((_hnow - _hstart)) -lt "$HVAC_DURATION" ]; then
+            HVAC_ACTIVE=true
+        else
+            rm -f "$HVAC_ACTIVE_FILE" 2>/dev/null || true
+        fi
     fi
 fi
 

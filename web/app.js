@@ -26,6 +26,9 @@
 
     var current = null;
     var currentPlugins = null;
+    /* Epoch ms of the last explicit local HVAC stop. Until a plugin poll
+       carries a newer timestamp, its hvac_active value is forced to false. */
+    var hvacStopOverrideAt = 0;
     var pollTimer = null;
     var loading = false;
 
@@ -1522,6 +1525,47 @@
         return card;
     }
 
+    function isRenaultZoeCard(plugin) {
+        return Boolean(
+            plugin &&
+            (plugin.id === "renault_zoe" ||
+                (typeof plugin.title === "string" && plugin.title.toUpperCase() === "RENAULT ZOE"))
+        );
+    }
+
+    function pluginTimestampMs(plugin) {
+        var parsed = Date.parse((plugin && plugin.timestamp) || "");
+        return isNaN(parsed) ? 0 : parsed;
+    }
+
+    function applyHvacStopOverride(plugins) {
+        if (!hvacStopOverrideAt || !Array.isArray(plugins)) {
+            return;
+        }
+        plugins.forEach(function (plugin) {
+            if (!isRenaultZoeCard(plugin)) {
+                return;
+            }
+            if (pluginTimestampMs(plugin) > hvacStopOverrideAt) {
+                /* This poll was produced after the local stop request. */
+                hvacStopOverrideAt = 0;
+            } else {
+                plugin.hvac_active = false;
+            }
+        });
+    }
+
+    function setPluginHvacActive(active) {
+        if (!Array.isArray(currentPlugins)) {
+            return;
+        }
+        currentPlugins.forEach(function (plugin) {
+            if (isRenaultZoeCard(plugin)) {
+                plugin.hvac_active = active === true;
+            }
+        });
+    }
+
     function setHvacButtonState(button, state) {
         var map = {
             idle: ["KLIMATISIERUNG STARTEN", "start-hvac", false],
@@ -1547,22 +1591,26 @@
             return;
         }
         var stopping = mode === "stop";
-        var finalState = stopping ? "idle" : "active";
-        var failState = stopping ? "active" : "idle";
-        setHvacButtonState(button, stopping ? "stopping" : "starting");
+        if (stopping) {
+            /* Reflect the stop immediately: idle button, card inactive. A
+               background poll may only override this once it is newer. */
+            hvacStopOverrideAt = Date.now();
+            setPluginHvacActive(false);
+            setHvacButtonState(button, "idle");
+        } else {
+            setHvacButtonState(button, "starting");
+        }
         if (hvacAutoResetTimer) {
             window.clearTimeout(hvacAutoResetTimer);
             hvacAutoResetTimer = null;
         }
 
         function done(res) {
-            setHvacButtonState(button, finalState);
-            if (stopping && Array.isArray(currentPlugins)) {
-                currentPlugins.forEach(function (card) {
-                    if (card && (card.id === "renault_zoe" || (card.title && card.title.toUpperCase() === "RENAULT ZOE"))) {
-                        card.hvac_active = false;
-                    }
-                });
+            if (stopping) {
+                setHvacButtonState(button, "idle");
+                setPluginHvacActive(false);
+            } else {
+                setHvacButtonState(button, "active");
             }
             var okText = stopping ? "KLIMATISIERUNG STARTEN" : "KLIMA LÄUFT (STOPPEN)";
             showToast("success", (res && res.message) || translatePluginText(okText, currentLanguage));
@@ -1586,7 +1634,13 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ action: stopping ? "stop" : "start" })
         }).then(done).catch(function (error) {
-            setHvacButtonState(button, failState);
+            if (stopping) {
+                hvacStopOverrideAt = 0;
+                setPluginHvacActive(true);
+                setHvacButtonState(button, "active");
+            } else {
+                setHvacButtonState(button, "idle");
+            }
             showToast("error", (error && error.message) || "HVAC request failed.");
         });
     }
@@ -1643,6 +1697,7 @@
             })
             .then(function (plugins) {
                 currentPlugins = Array.isArray(plugins) ? plugins : [];
+                applyHvacStopOverride(currentPlugins);
                 renderPluginsList(currentPlugins);
             })
             .catch(function () {
