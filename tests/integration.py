@@ -58,6 +58,9 @@ class State:
         self.renault_battery_calls = 0
         self.renault_hvac_calls = 0
         self.renault_hvac_bodies: list[str] = []
+        self.renault_cockpit_calls = 0
+        self.renault_mileage: float | None = 45210
+        self.renault_hvac_status: str | None = None
         self.renault_battery_level = 78
         self.renault_autonomy = 214
         self.renault_plug_status = 1
@@ -78,6 +81,7 @@ class State:
             self.renault_battery_calls = 0
             self.renault_hvac_calls = 0
             self.renault_hvac_bodies = []
+            self.renault_cockpit_calls = 0
 
 
 class SmaHandler(BaseHTTPRequestHandler):
@@ -296,10 +300,16 @@ class RenaultHandler(BaseHTTPRequestHandler):
                 hvac_doc = {}
             data_obj = hvac_doc.get("data") or {}
             attrs = data_obj.get("attributes") or {}
+            is_cancel = attrs.get("action") == "cancel"
             if (
                 data_obj.get("type") != "HvacStart"
-                or attrs.get("action") != "start"
-                or float(attrs.get("targetTemperature", 0)) != 21.0
+                or not (
+                    is_cancel
+                    or (
+                        attrs.get("action") == "start"
+                        and float(attrs.get("targetTemperature", 0)) == 21.0
+                    )
+                )
             ):
                 self._json(400, {"error": "invalid hvac payload"})
                 return
@@ -329,6 +339,26 @@ class RenaultHandler(BaseHTTPRequestHandler):
                     ]
                 },
             )
+            return
+
+        kam_base = "/commerce/v1/accounts/acc-myrenault-777/kamereon/kca/car-adapter"
+        if parsed.path == f"{kam_base}/v2/cars/VF1AG000012345678/cockpit":
+            with state.lock:
+                state.renault_cockpit_calls += 1
+                mileage = state.renault_mileage
+            if id_token != "jwt-id-token-valid-999" or not api_key:
+                self._json(401, {"error": "unauthorized"})
+                return
+            attrs = {} if mileage is None else {"totalMileage": mileage}
+            self._json(200, {"data": {"type": "Car", "attributes": attrs}})
+            return
+        if parsed.path == f"{kam_base}/v1/cars/VF1AG000012345678/hvac-status":
+            with state.lock:
+                hvac_status = state.renault_hvac_status
+            if hvac_status is None:
+                self._json(404, {"error": "not supported"})
+                return
+            self._json(200, {"data": {"attributes": {"hvacStatus": hvac_status}}})
             return
 
         expected_bat_path = (
@@ -1746,6 +1776,7 @@ eval(mockEnv);
             == [
                 {"label": "REICHWEITE", "value": "214 km"},
                 {"label": "STECKER", "value": "Gesteckt"},
+                {"label": "KILOMETERSTAND", "value": "45.210 km"},
             ],
             f"secondary_metrics match expected values (got {zoe_card.get('secondary_metrics')})",
             failures,
@@ -1798,6 +1829,7 @@ eval(mockEnv);
             == [
                 {"label": "REICHWEITE", "value": "180 km"},
                 {"label": "STECKER", "value": "Getrennt"},
+                {"label": "KILOMETERSTAND", "value": "45.210 km"},
             ],
             "unplugged Zoe card reports BEREIT / neutral / Getrennt",
             failures,
@@ -2136,6 +2168,7 @@ eval(mockEnv);
             == [
                 {"label": "RANGE", "value": "230 km"},
                 {"label": "CONNECTOR", "value": "Connected"},
+                {"label": "ODOMETER", "value": "45,210 km"},
             ],
             f"Renault EN secondary metrics match RANGE / CONNECTOR / Connected (got {zoe_en_card.get('secondary_metrics')})",
             failures,
@@ -2178,6 +2211,7 @@ eval(mockEnv);
             == [
                 {"label": "REICHWEITE", "value": "230 km"},
                 {"label": "STECKER", "value": "Gesteckt"},
+                {"label": "KILOMETERSTAND", "value": "45.210 km"},
             ],
             "Renault DE card matches BATTERIE SOC / REICHWEITE / STECKER / LÄDT / Gesteckt",
             failures,
@@ -2509,13 +2543,102 @@ if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SON
             failures,
         )
 
+        # 26c2. Odometer fallback, hvac_active, --stop-hvac and CGI stop routing
+        zoe_dir_state = zoe_addon / "state" / "plugins"
+        hvac_marker = zoe_dir_state / ".renault_hvac_active"
+        renault_state.renault_mileage = None
+        subprocess.run([str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20)
+        card_nomile = json.loads(zoe_card_path.read_text())
+        check(
+            all(m.get("label") != "KILOMETERSTAND" for m in card_nomile.get("secondary_metrics", []))
+            and len(card_nomile.get("secondary_metrics", [])) == 2,
+            "missing totalMileage omits odometer metric without breaking card",
+            failures,
+        )
+        renault_state.renault_mileage = 45210
+        check(
+            hvac_marker.is_file(),
+            ".renault_hvac_active marker written by --start-hvac",
+            failures,
+        )
+        subprocess.run([str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20)
+        card_active = json.loads(zoe_card_path.read_text())
+        check(card_active.get("hvac_active") is True, "card exposes hvac_active=true after start", failures)
+        check(
+            {"label": "KILOMETERSTAND", "value": "45.210 km"} in card_active.get("secondary_metrics", [])
+            and renault_state.renault_cockpit_calls >= 1,
+            "cockpit totalMileage rendered as KILOMETERSTAND secondary metric",
+            failures,
+        )
+
+        renault_state.reset_requests()
+        stop_cli = subprocess.run(
+            [str(zoe_script), "--stop-hvac"], env=zoe_env, capture_output=True, text=True, timeout=20
+        )
+        check(
+            stop_cli.returncode == 0
+            and stop_cli.stdout.strip() == '{"ok":true,"action":"hvac_stopped"}',
+            f"--stop-hvac returns hvac_stopped (got {stop_cli.stdout.strip()!r})",
+            failures,
+        )
+        check(
+            renault_state.renault_hvac_calls == 1
+            and '"action":"cancel"' in renault_state.renault_hvac_bodies[-1]
+            and not hvac_marker.exists(),
+            "--stop-hvac POSTs cancel payload and clears local marker",
+            failures,
+        )
+        subprocess.run([str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20)
+        check(
+            json.loads(zoe_card_path.read_text()).get("hvac_active") is False,
+            "card exposes hvac_active=false after stop",
+            failures,
+        )
+        renault_state.renault_hvac_status = "on"
+        subprocess.run([str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20)
+        check(
+            json.loads(zoe_card_path.read_text()).get("hvac_active") is True,
+            "hvac-status 'on' sets hvac_active=true",
+            failures,
+        )
+        renault_state.renault_hvac_status = None
+
+        # CGI: start sets lock, stop bypasses cooldown, cancels and clears lock
+        renault_state.reset_requests()
+        st_start2, body_start2 = parse_cgi(call_action_zoe(body='{"action":"start"}'))
+        check(
+            st_start2 in ("200 OK", "429 Too Many Requests"),
+            f"action_zoe.cgi accepts action=start (got {st_start2})",
+            failures,
+        )
+        hvac_lock.write_text(str(int(time.time())) + "\n")
+        renault_state.reset_requests()
+        st_stop, body_stop = parse_cgi(call_action_zoe(body='{"action":"stop"}'))
+        check(
+            st_stop == "200 OK"
+            and body_stop.get("action") == "hvac_stopped"
+            and renault_state.renault_hvac_calls == 1
+            and '"action":"cancel"' in renault_state.renault_hvac_bodies[-1],
+            f"action_zoe.cgi action=stop dispatches --stop-hvac despite cooldown (got {st_stop}: {body_stop})",
+            failures,
+        )
+        check(not hvac_lock.exists(), "action=stop clears .zoe_hvac.lock", failures)
+        st_bad, _ = parse_cgi(call_action_zoe(body='{"action":"explode"}'))
+        check(st_bad == "400 Bad Request", f"action_zoe.cgi rejects unknown action (got {st_bad})", failures)
+
         # WebUI check for HVAC button & i18n
         app_hvac_text = (ROOT / "web" / "app.js").read_text()
         check(
             "action_zoe.cgi" in app_hvac_text
             and "KLIMATISIERUNG STARTEN" in app_hvac_text
             and "START PRE-CONDITIONING" in app_hvac_text
-            and "WIRD GESTARTET..." in app_hvac_text,
+            and "WIRD GESTARTET..." in app_hvac_text
+            and "KLIMA LÄUFT (STOPPEN)" in app_hvac_text
+            and "HVAC RUNNING (STOP)" in app_hvac_text
+            and "WIRD BEENDET..." in app_hvac_text
+            and "STOPPING..." in app_hvac_text
+            and "KILOMETERSTAND" in app_hvac_text
+            and "ODOMETER" in app_hvac_text,
             "web/app.js includes Zoe HVAC button, endpoint, and DE/EN labels",
             failures,
         )

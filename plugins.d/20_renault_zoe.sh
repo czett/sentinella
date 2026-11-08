@@ -24,9 +24,11 @@ umask 077
 
 TEST_MODE=0
 HVAC_MODE=0
+HVAC_ACTION=start
 case "${1:-}" in
     --test) TEST_MODE=1 ;;
-    --start-hvac) HVAC_MODE=1 ;;
+    --start-hvac) HVAC_MODE=1; HVAC_ACTION=start ;;
+    --stop-hvac) HVAC_MODE=1; HVAC_ACTION=cancel ;;
 esac
 
 ADDON_DIR=${RENAULT_ADDON_DIR:-${SMA_MONITOR_ADDON_DIR:-}}
@@ -103,6 +105,7 @@ if [ "$UI_LANGUAGE" = "en" ]; then
     I18N_LABEL="BATTERY SOC"
     I18N_METRIC_RANGE="RANGE"
     I18N_METRIC_PLUG="CONNECTOR"
+    I18N_METRIC_ODO="ODOMETER"
     I18N_BADGE_CHARGING="CHARGING"
     I18N_BADGE_CONNECTED="CONNECTED"
     I18N_BADGE_READY="READY"
@@ -113,6 +116,7 @@ else
     I18N_LABEL="BATTERIE SOC"
     I18N_METRIC_RANGE="REICHWEITE"
     I18N_METRIC_PLUG="STECKER"
+    I18N_METRIC_ODO="KILOMETERSTAND"
     I18N_BADGE_CHARGING="LÄDT"
     I18N_BADGE_CONNECTED="VERBUNDEN"
     I18N_BADGE_READY="BEREIT"
@@ -189,6 +193,11 @@ OUT_FILE=${RENAULT_OUT_FILE:-$STATE_DIR/renault_zoe.json}
 # Private scratch files live beside the state, never in world-writable /tmp.
 TMP_AUTH=$STATE_DIR/.renault_auth.$$.tmp
 RAW_FILE=$STATE_DIR/.renault_bat.$$.tmp
+COCKPIT_FILE=$STATE_DIR/.renault_cockpit.$$.tmp
+HVAC_STATUS_FILE=$STATE_DIR/.renault_hvacst.$$.tmp
+# Local pre-conditioning marker (epoch of start); Renault runs for 10 minutes.
+HVAC_ACTIVE_FILE=${RENAULT_HVAC_ACTIVE_FILE:-$STATE_DIR/.renault_hvac_active}
+HVAC_DURATION=600
 
 log() {
     _ts=$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null)
@@ -200,7 +209,7 @@ log() {
 }
 
 cleanup() {
-    rm -f "$TMP_AUTH" "$RAW_FILE" "$OUT_FILE.tmp.$$" "$SESSION_FILE.tmp.$$" 2>/dev/null || true
+    rm -f "$TMP_AUTH" "$RAW_FILE" "$COCKPIT_FILE" "$HVAC_STATUS_FILE" "$OUT_FILE.tmp.$$" "$SESSION_FILE.tmp.$$" 2>/dev/null || true
 }
 # EXIT alone runs cleanup; signal traps must exit, otherwise the script would
 # resume after an INT/TERM with its scratch files already removed.
@@ -448,7 +457,11 @@ authenticate_renault() {
 # ---------------------------------------------------------------------------
 trigger_hvac_start() {
     _esc_token=$(curl_config_escape "$ID_TOKEN")
-    _hvac_payload='{"data":{"type":"HvacStart","attributes":{"action":"start","targetTemperature":21.0}}}'
+    if [ "$HVAC_ACTION" = "cancel" ]; then
+        _hvac_payload='{"data":{"type":"HvacStart","attributes":{"action":"cancel"}}}'
+    else
+        _hvac_payload='{"data":{"type":"HvacStart","attributes":{"action":"start","targetTemperature":21.0}}}'
+    fi
     _esc_payload=$(curl_config_escape "$_hvac_payload")
     {
         printf 'header = "x-gigya-id_token: %s"\n' "$_esc_token"
@@ -491,12 +504,20 @@ if [ "$HVAC_MODE" = "1" ]; then
 
     case "$HVAC_HTTP_CODE" in
         200|201|202)
-            log "Renault Zoe HVAC pre-conditioning started for $RENAULT_VIN"
-            printf '{"ok":true,"action":"hvac_started"}\n'
+            if [ "$HVAC_ACTION" = "cancel" ]; then
+                rm -f "$HVAC_ACTIVE_FILE" 2>/dev/null || true
+                log "Renault Zoe HVAC pre-conditioning cancelled for $RENAULT_VIN"
+                printf '{"ok":true,"action":"hvac_stopped"}\n'
+            else
+                _hnow=$(date +%s 2>/dev/null)
+                is_uint "$_hnow" && printf '%s\n' "$_hnow" > "$HVAC_ACTIVE_FILE" 2>/dev/null
+                log "Renault Zoe HVAC pre-conditioning started for $RENAULT_VIN"
+                printf '{"ok":true,"action":"hvac_started"}\n'
+            fi
             exit 0
             ;;
         *)
-            log "WARNING: Kamereon hvac-start failed (HTTP $HVAC_HTTP_CODE)"
+            log "WARNING: Kamereon hvac-$HVAC_ACTION failed (HTTP $HVAC_HTTP_CODE)"
             exit 1
             ;;
     esac
@@ -608,6 +629,57 @@ esac
 [ -n "$BADGE" ] || BADGE="$I18N_BADGE_READY"
 [ -n "$PLUG_TEXT" ] || PLUG_TEXT="$I18N_PLUG_DISCONNECTED"
 
+# ---------------------------------------------------------------------------
+# Optional telemetry: cockpit (odometer) and HVAC status. Never fatal.
+# ---------------------------------------------------------------------------
+kamereon_get() {
+    # $1 = API path below the car, $2 = output file; prints HTTP code
+    _esc_token=$(curl_config_escape "$ID_TOKEN")
+    printf 'header = "x-gigya-id_token: %s"\n' "$_esc_token" \
+        | curl -sS -o "$2" -w '%{http_code}' \
+            --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME" \
+            -H "apikey: $KAMEREON_API_KEY" \
+            --config - \
+            "$KAMEREON_URL/commerce/v1/accounts/$ACCOUNT_ID/kamereon/kca/car-adapter/$1" \
+            2>/dev/null || printf '000'
+}
+
+ODO_METRIC=
+HVAC_ACTIVE=false
+if [ -n "$ID_TOKEN" ] && [ -n "$ACCOUNT_ID" ]; then
+    _ck=$(kamereon_get "v2/cars/$RENAULT_VIN/cockpit" "$COCKPIT_FILE")
+    if [ "$_ck" = "200" ] && [ -s "$COCKPIT_FILE" ]; then
+        _km=$(extract_json_num "$COCKPIT_FILE" totalMileage)
+        if is_number "$_km"; then
+            if [ "$UI_LANGUAGE" = "en" ]; then _sep=,; else _sep=.; fi
+            _km_fmt=$(awk -v n="$_km" -v sep="$_sep" 'BEGIN {
+                n = sprintf("%d", n + 0.5); out = "";
+                while (length(n) > 3) { out = sep substr(n, length(n) - 2) out; n = substr(n, 1, length(n) - 3) }
+                print n out }')
+            [ -n "$_km_fmt" ] && ODO_METRIC=",
+    { \"label\": \"$I18N_METRIC_ODO\", \"value\": \"${_km_fmt} km\" }"
+        fi
+    else
+        log "NOTE: Kamereon cockpit unavailable (HTTP $_ck); odometer omitted"
+    fi
+
+    _hs=$(kamereon_get "v1/cars/$RENAULT_VIN/hvac-status" "$HVAC_STATUS_FILE")
+    if [ "$_hs" = "200" ] && [ -s "$HVAC_STATUS_FILE" ]; then
+        [ "$(extract_json_str "$HVAC_STATUS_FILE" hvacStatus)" = "on" ] && HVAC_ACTIVE=true
+    fi
+fi
+# Local fallback: marker written by --start-hvac, valid for 10 minutes.
+if [ "$HVAC_ACTIVE" != "true" ] && [ -r "$HVAC_ACTIVE_FILE" ]; then
+    _hstart=$(sed -n '1p' "$HVAC_ACTIVE_FILE" 2>/dev/null | tr -cd '0-9')
+    _hnow=$(date +%s 2>/dev/null)
+    if is_uint "$_hstart" && is_uint "$_hnow" && [ "$_hnow" -ge "$_hstart" ] \
+        && [ $((_hnow - _hstart)) -lt "$HVAC_DURATION" ]; then
+        HVAC_ACTIVE=true
+    else
+        rm -f "$HVAC_ACTIVE_FILE" 2>/dev/null || true
+    fi
+fi
+
 NOW_ISO=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null) || NOW_ISO=
 
 cat > "$OUT_FILE.tmp.$$" <<EOF
@@ -618,6 +690,7 @@ cat > "$OUT_FILE.tmp.$$" <<EOF
   "status_badge": "$BADGE",
   "status_color": "$COLOR",
   "timestamp": "$NOW_ISO",
+  "hvac_active": $HVAC_ACTIVE,
   "primary": {
     "value": $BATTERY_LEVEL,
     "unit": "%",
@@ -625,7 +698,7 @@ cat > "$OUT_FILE.tmp.$$" <<EOF
   },
   "secondary_metrics": [
     { "label": "$I18N_METRIC_RANGE", "value": "${BATTERY_AUTONOMY} km" },
-    { "label": "$I18N_METRIC_PLUG", "value": "$PLUG_TEXT" }
+    { "label": "$I18N_METRIC_PLUG", "value": "$PLUG_TEXT" }$ODO_METRIC
   ]
 }
 EOF

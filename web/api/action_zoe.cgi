@@ -100,6 +100,12 @@ msg() {
         en:credentials_missing) printf 'Configure Renault email, password and VIN in Settings first.' ;;
         de:hvac_ok) printf 'Renault Zoe: Klimatisierung gestartet (21 °C).' ;;
         en:hvac_ok) printf 'Renault Zoe: Pre-conditioning started (21 °C).' ;;
+        de:hvac_stop_ok) printf 'Renault Zoe: Klimatisierung beendet.' ;;
+        en:hvac_stop_ok) printf 'Renault Zoe: Pre-conditioning stopped.' ;;
+        de:hvac_stop_failed) printf 'Klimatisierung konnte nicht beendet werden. Prüfen Sie die Verbindung zum Fahrzeug.' ;;
+        en:hvac_stop_failed) printf 'Could not stop pre-conditioning. Check vehicle connectivity.' ;;
+        de:bad_action) printf 'Unbekannte Aktion.' ;;
+        en:bad_action) printf 'Unknown action.' ;;
         de:hvac_failed) printf 'Klimatisierung konnte nicht gestartet werden. Prüfen Sie die Verbindung zum Fahrzeug.' ;;
         en:hvac_failed) printf 'Could not start pre-conditioning. Check vehicle connectivity.' ;;
         *) printf 'Request failed.' ;;
@@ -186,16 +192,26 @@ check_origin
 CONTENT_LENGTH=${CONTENT_LENGTH:-0}
 is_uint "$CONTENT_LENGTH" || fail "400 Bad Request" "$(msg cross_origin)"
 [ "$CONTENT_LENGTH" -le 4096 ] || fail "413 Payload Too Large" "$(msg body_too_large)"
+BODY=
 if [ "$CONTENT_LENGTH" -gt 0 ]; then
-    dd bs=1 count="$CONTENT_LENGTH" >/dev/null 2>&1 || true
+    BODY=$(dd bs=1 count="$CONTENT_LENGTH" 2>/dev/null) || true
 fi
+
+# Accepted: "start" / "stop" (legacy "start_hvac" / "stop_hvac"). Empty body = start.
+ACTION=$(printf '%s' "$BODY" | tr -d '\r\n' \
+    | sed -n 's/.*"action"[[:space:]]*:[[:space:]]*"\([A-Za-z_]*\)".*/\1/p')
+case "$ACTION" in
+    ''|start|start_hvac) ACTION=start ;;
+    stop|stop_hvac) ACTION=stop ;;
+    *) fail "400 Bad Request" "$(msg bad_action)" ;;
+esac
 
 mkdir -p "$STATE_DIR" 2>/dev/null || true
 
 NOW=$(date +%s 2>/dev/null)
 is_uint "$NOW" || NOW=0
 
-if [ -r "$HVAC_LOCK" ]; then
+if [ "$ACTION" = "start" ] && [ -r "$HVAC_LOCK" ]; then
     LAST_TS=$(sed -n '1p' "$HVAC_LOCK" 2>/dev/null | tr -cd '0-9')
     if is_uint "$LAST_TS" && [ "$NOW" -ge "$LAST_TS" ]; then
         ELAPSED=$((NOW - LAST_TS))
@@ -210,6 +226,8 @@ fi
 [ -x "$RENAULT_PLUGIN" ] || fail "500 Internal Server Error" "$(msg plugin_missing)"
 
 # Reserve cooldown lock before network call so concurrent requests cannot race
+# (start only; cancelling must always be possible)
+if [ "$ACTION" = "start" ]; then
 (
     umask 077
     printf '%s\n' "$NOW" > "$HVAC_LOCK.tmp.$$"
@@ -217,22 +235,33 @@ fi
     chmod 600 "$HVAC_LOCK.tmp.$$" 2>/dev/null || true
     mv -f "$HVAC_LOCK.tmp.$$" "$HVAC_LOCK" 2>/dev/null || rm -f "$HVAC_LOCK.tmp.$$" 2>/dev/null
 }
+fi
 
 SMA_MONITOR_ADDON_DIR=$ADDON_DIR \
 RENAULT_ADDON_DIR=$ADDON_DIR \
-    "$RENAULT_PLUGIN" --start-hvac >/dev/null 2>&1
+    "$RENAULT_PLUGIN" "--${ACTION}-hvac" >/dev/null 2>&1
 RC=$?
+
+if [ "$RC" = "0" ] && [ "$ACTION" = "stop" ]; then
+    # Cancelled: clear the start cooldown so the user can restart right away
+    rm -f "$HVAC_LOCK" 2>/dev/null || true
+    emit_json "200 OK" \
+        "{\"ok\":true,\"action\":\"hvac_stopped\",\"message\":$(json_str "$(msg hvac_stop_ok)")}"
+fi
 
 if [ "$RC" = "0" ]; then
     emit_json "200 OK" \
         "{\"ok\":true,\"action\":\"hvac_started\",\"message\":$(json_str "$(msg hvac_ok)")}"
 fi
 
-# Release lock on failure so the user can retry after fixing credentials/network
-rm -f "$HVAC_LOCK" 2>/dev/null || true
+# Release lock on failed start so the user can retry after fixing credentials/network
+[ "$ACTION" = "start" ] && rm -f "$HVAC_LOCK" 2>/dev/null
 
 if [ "$RC" = "2" ]; then
     fail "400 Bad Request" "$(msg credentials_missing)"
 fi
 
+if [ "$ACTION" = "stop" ]; then
+    fail "502 Bad Gateway" "$(msg hvac_stop_failed)"
+fi
 fail "502 Bad Gateway" "$(msg hvac_failed)"
