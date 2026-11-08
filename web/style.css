@@ -476,9 +476,9 @@ a {
     border-right: var(--rule-heavy);
 }
 
-#hero-card > :not(.soc-fx-backdrop):not(.soc-wave-backdrop),
-#hero-block > :not(.soc-fx-backdrop):not(.soc-wave-backdrop),
-.poster-blue > :not(.soc-fx-backdrop):not(.soc-wave-backdrop),
+#hero-card > :not(.soc-fx-backdrop),
+#hero-block > :not(.soc-fx-backdrop),
+.poster-blue > :not(.soc-fx-backdrop),
 .poster-meta,
 .poster-foot,
 .soc {
@@ -487,9 +487,11 @@ a {
 }
 
 /* ==========================================================================
-   SoC Hero Tile Compositor State Animations
+   SoC Hero Tile — Atmospheric Volumetric Light
    Battery states: CHARGING, DISCHARGING, IDLE
-   Compositor-only (transform & opacity) with 0% CPU impact
+   No vector contours and no liquid fills. Every moving layer is an oversized,
+   heavily diffused light field that animates only transform/opacity, keeping
+   the whole effect on the compositor with zero per-frame CPU work.
    ========================================================================== */
 
 .soc-fx-backdrop {
@@ -505,257 +507,109 @@ a {
 .soc-fx-backdrop > * {
     pointer-events: none;
     position: absolute;
-}
-
-/* STATE 1: Charging (.state-charging .soc-fx-backdrop) */
-/* Two organic liquid curves rising through the bottom 30% of the tile.
-   The taller back wave carries 15% white, the shorter front wave 22%,
-   so the surface reads as a lit body of liquid rather than a stripe. */
-.soc-fx-wave {
-    bottom: -1px;
-    left: 0;
-    width: 200%;
-    background-repeat: repeat-x;
-    will-change: transform, opacity;
     opacity: 0;
-    transition: opacity 800ms var(--ease);
-    animation-play-state: paused;
-}
-
-.soc-fx-wave-1 {
-    height: 30%;
-    min-height: 94px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120' preserveAspectRatio='none'%3E%3Cpath d='M0,58 C120,26 240,86 360,56 C480,26 600,80 720,54 C840,28 960,82 1080,52 C1140,38 1180,44 1200,54 L1200,120 L0,120 Z' fill='rgba(255,255,255,0.15)'/%3E%3C/svg%3E");
-    background-size: 50% 100%;
-    animation: soc-fx-wave-flow-1 9s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
-    animation-play-state: paused;
-}
-
-.soc-fx-wave-2 {
-    height: 22%;
-    min-height: 70px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120' preserveAspectRatio='none'%3E%3Cpath d='M0,64 C100,86 220,34 340,60 C470,88 590,38 720,62 C850,86 970,36 1100,60 C1140,68 1180,60 1200,58 L1200,120 L0,120 Z' fill='rgba(255,255,255,0.22)'/%3E%3C/svg%3E");
-    background-size: 50% 100%;
-    animation: soc-fx-wave-flow-2 13s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
-    animation-play-state: paused;
-}
-
-/* Subtle upward glow/shimmer that lights the liquid surface */
-.soc-fx-glow {
-    inset: auto 0 0;
-    height: 36%;
     will-change: transform, opacity;
-    opacity: 0;
-    background: radial-gradient(ellipse 72% 100% at 50% 100%, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.05) 52%, transparent 78%);
-    animation: soc-fx-glow-rise 8s ease-in-out infinite alternate;
+    transform: translate3d(0, 0, 0);
+    backface-visibility: hidden;
+    transition: opacity 1600ms cubic-bezier(0.4, 0, 0.2, 1);
     animation-play-state: paused;
-    transition: opacity 800ms var(--ease);
 }
 
-@keyframes soc-fx-wave-flow-1 {
-    0% {
-        transform: translate3d(0, 0, 0);
-    }
-    50% {
-        transform: translate3d(-25%, 4px, 0);
-    }
-    100% {
-        transform: translate3d(-50%, 0, 0);
-    }
-}
-
-@keyframes soc-fx-wave-flow-2 {
-    0% {
-        transform: translate3d(-50%, 0, 0);
-    }
-    50% {
-        transform: translate3d(-25%, -5px, 0);
-    }
-    100% {
-        transform: translate3d(0, 0, 0);
-    }
-}
-
-@keyframes soc-fx-glow-rise {
-    0% {
-        transform: translate3d(0, 8%, 0);
-    }
-    100% {
-        transform: translate3d(0, -4%, 0);
-    }
-}
-
-/* Charging State Active Selectors */
-.state-charging .soc-fx-backdrop .soc-fx-wave,
-.is-charging .soc-fx-backdrop .soc-fx-wave,
-#hero-card.state-charging .soc-fx-backdrop .soc-fx-wave,
-#hero-block.state-charging .soc-fx-backdrop .soc-fx-wave {
-    opacity: 1;
-    animation-play-state: running;
-}
-
-.state-charging .soc-fx-backdrop .soc-fx-glow,
-.is-charging .soc-fx-backdrop .soc-fx-glow,
-#hero-card.state-charging .soc-fx-backdrop .soc-fx-glow,
-#hero-block.state-charging .soc-fx-backdrop .soc-fx-glow {
-    opacity: 1;
-    animation-play-state: running;
-}
-
-/* STATE 2: Discharging (.state-discharging .soc-fx-backdrop) */
-/* One sleek sheen cascading from above the tile to below it every 5s. */
-.soc-fx-drain {
-    top: -30%;
-    left: -8%;
-    right: -8%;
-    height: 60%;
-    will-change: transform, opacity;
-    opacity: 0;
-    background: linear-gradient(180deg,
-        rgba(255, 255, 255, 0) 0%,
-        rgba(255, 255, 255, 0.02) 24%,
-        rgba(255, 255, 255, 0.15) 46%,
-        rgba(255, 255, 255, 0.05) 62%,
-        rgba(255, 255, 255, 0) 100%
-    );
-    animation: soc-fx-drain-pulse 5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
-    animation-play-state: paused;
-    transition: opacity 700ms var(--ease);
-}
-
-@keyframes soc-fx-drain-pulse {
-    0% {
-        transform: translate3d(0, -95%, 0);
-    }
-    100% {
-        transform: translate3d(0, 225%, 0);
-    }
-}
-
-.state-discharging .soc-fx-backdrop .soc-fx-drain,
-#hero-card.state-discharging .soc-fx-backdrop .soc-fx-drain,
-#hero-block.state-discharging .soc-fx-backdrop .soc-fx-drain {
-    opacity: 1;
-    animation-play-state: running;
-}
-
-/* STATE 3: Idle (.state-idle .soc-fx-backdrop) */
-/* Deep glass sheen: an oversized radial wash drifting almost imperceptibly
-   for 16s. Only transform animates, so the tile edge stays perfectly still. */
-.soc-fx-idle {
-    inset: -35%;
-    will-change: transform, opacity;
-    opacity: 0;
+/* STATE 1 — CHARGING
+   Warm-white / cyan light drawn up through blue glass. Two oversized fields
+   overlap off the bottom-left edge and breathe toward the centre on a 32 s
+   cycle. Peak alpha stays at 5–7 %, so the surface reads as refracted light,
+   never as opaque water. */
+.soc-fx-charge {
+    inset: -38%;
+    filter: blur(48px);
     background:
-        radial-gradient(ellipse 46% 58% at 32% 28%,
-            rgba(255, 255, 255, 0.22) 0%,
-            rgba(255, 255, 255, 0.07) 34%,
-            transparent 68%),
-        radial-gradient(ellipse 40% 52% at 74% 74%,
-            rgba(255, 255, 255, 0.13) 0%,
-            transparent 66%),
-        radial-gradient(ellipse 90% 80% at 50% 50%,
-            transparent 40%,
-            rgba(5, 12, 54, 0.2) 100%);
-    animation: soc-fx-idle-sheen 16s cubic-bezier(0.42, 0, 0.58, 1) infinite alternate;
-    animation-play-state: paused;
-    transition: opacity 900ms var(--ease);
+        radial-gradient(ellipse 62% 46% at 24% 86%,
+            rgba(219, 244, 255, 0.07) 0%,
+            rgba(170, 226, 255, 0.042) 38%,
+            rgba(150, 215, 255, 0) 72%),
+        radial-gradient(ellipse 46% 40% at 64% 58%,
+            rgba(242, 252, 255, 0.05) 0%,
+            rgba(205, 240, 255, 0.028) 42%,
+            rgba(190, 235, 255, 0) 70%);
+    animation: soc-fx-charge-breathe 32s cubic-bezier(0.4, 0, 0.2, 1) infinite alternate;
 }
 
-@keyframes soc-fx-idle-sheen {
+@keyframes soc-fx-charge-breathe {
     0% {
-        transform: translate3d(-2.5%, -1.5%, 0) scale(1.02);
-    }
-    50% {
-        transform: translate3d(1.5%, 2%, 0) scale(1.06);
+        transform: translate3d(-2.2%, 2.4%, 0) scale(1.02);
     }
     100% {
-        transform: translate3d(3%, -2.5%, 0) scale(1.03);
+        transform: translate3d(2.4%, -2.8%, 0) scale(1.06);
     }
 }
 
-.state-idle .soc-fx-backdrop .soc-fx-idle,
-#hero-card.state-idle .soc-fx-backdrop .soc-fx-idle,
-#hero-block.state-idle .soc-fx-backdrop .soc-fx-idle {
+/* STATE 2 — DISCHARGING
+   A single cool shadow field sinking through the tile over 28 s. It is
+   intentionally near-invisible: the tile should feel cooler, not darker. */
+.soc-fx-discharge {
+    inset: -24% -14%;
+    filter: blur(48px);
+    background:
+        radial-gradient(ellipse 78% 52% at 52% 8%,
+            rgba(2, 8, 38, 0.16) 0%,
+            rgba(4, 12, 50, 0.075) 44%,
+            rgba(4, 12, 50, 0) 78%),
+        linear-gradient(180deg,
+            rgba(3, 10, 44, 0.1) 0%,
+            rgba(5, 14, 54, 0.04) 48%,
+            rgba(5, 14, 54, 0) 82%);
+    animation: soc-fx-discharge-sink 28s cubic-bezier(0.4, 0, 0.2, 1) infinite alternate;
+}
+
+@keyframes soc-fx-discharge-sink {
+    0% {
+        transform: translate3d(0, -5%, 0) scale(1.02);
+    }
+    100% {
+        transform: translate3d(0, 6%, 0) scale(1.05);
+    }
+}
+
+/* STATE 3 — IDLE
+   Motionless glass: one static, deeply feathered vignette. No keyframes,
+   no drift, no pulse — absolute rest. */
+.soc-fx-idle {
+    inset: -14%;
+    filter: blur(38px);
+    background:
+        radial-gradient(ellipse 70% 54% at 30% 22%,
+            rgba(255, 255, 255, 0.055) 0%,
+            rgba(255, 255, 255, 0.022) 46%,
+            rgba(255, 255, 255, 0) 74%),
+        radial-gradient(ellipse 64% 58% at 76% 82%,
+            rgba(214, 240, 255, 0.035) 0%,
+            rgba(214, 240, 255, 0) 70%),
+        radial-gradient(ellipse 104% 94% at 50% 48%,
+            rgba(3, 9, 42, 0) 54%,
+            rgba(3, 9, 42, 0.16) 100%);
+}
+
+/* State activation. Only the ambient layer of the current state runs. */
+.state-charging .soc-fx-charge,
+.is-charging .soc-fx-charge,
+#hero-card.state-charging .soc-fx-charge,
+#hero-block.state-charging .soc-fx-charge {
     opacity: 1;
     animation-play-state: running;
 }
 
-/* Backward compatibility for legacy soc-wave-backdrop */
-.soc-wave-backdrop {
-    position: absolute;
-    inset: 0;
-    overflow: hidden;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.8s ease;
-    z-index: 1;
-    contain: paint;
-}
-
-.soc-wave {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    width: 200%;
-    will-change: transform, opacity;
-    pointer-events: none;
-    animation-play-state: paused;
-    background-repeat: repeat-x;
-}
-
-.soc-wave-1 {
-    height: 110px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120' preserveAspectRatio='none'%3E%3Cpath d='M0,50 C150,20 450,80 600,50 C750,20 1050,80 1200,50 L1200,120 L0,120 Z' fill='rgba(255,255,255,0.07)'/%3E%3C/svg%3E");
-    background-size: 50% 100%;
-    animation: soc-wave-flow-1 7s linear infinite;
-    animation-play-state: paused;
-}
-
-.soc-wave-2 {
-    height: 85px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120' preserveAspectRatio='none'%3E%3Cpath d='M0,65 C150,85 450,35 600,65 C750,85 1050,35 1200,65 L1200,120 L0,120 Z' fill='rgba(255,255,255,0.04)'/%3E%3C/svg%3E");
-    background-size: 50% 100%;
-    animation: soc-wave-flow-2 11s linear infinite;
-    animation-play-state: paused;
-}
-
-#hero-card.is-charging .soc-wave-backdrop,
-#hero-block.is-charging .soc-wave-backdrop,
-.poster-blue.is-charging .soc-wave-backdrop,
-.is-charging .soc-wave-backdrop {
+.state-discharging .soc-fx-discharge,
+#hero-card.state-discharging .soc-fx-discharge,
+#hero-block.state-discharging .soc-fx-discharge {
     opacity: 1;
-}
-
-#hero-card.is-charging .soc-wave,
-#hero-block.is-charging .soc-wave,
-.poster-blue.is-charging .soc-wave,
-.is-charging .soc-wave {
     animation-play-state: running;
 }
 
-@keyframes soc-wave-flow-1 {
-    0% {
-        transform: translate3d(0, 0, 0);
-    }
-    50% {
-        transform: translate3d(-25%, 6px, 0);
-    }
-    100% {
-        transform: translate3d(-50%, 0, 0);
-    }
-}
-
-@keyframes soc-wave-flow-2 {
-    0% {
-        transform: translate3d(-50%, 4px, 0);
-    }
-    50% {
-        transform: translate3d(-25%, -4px, 0);
-    }
-    100% {
-        transform: translate3d(0, 4px, 0);
-    }
+.state-idle .soc-fx-idle,
+#hero-card.state-idle .soc-fx-idle,
+#hero-block.state-idle .soc-fx-idle {
+    opacity: 1;
 }
 
 .poster-meta {
@@ -2724,26 +2578,13 @@ body.drawer-open {
    never strips transitions from the open drawer (which used to reflow and
    flicker for a few frames). */
 body.disable-animations .soc-fx-backdrop,
-body.disable-animations .soc-wave-backdrop,
-html.disable-animations .soc-fx-backdrop,
-html.disable-animations .soc-wave-backdrop {
+html.disable-animations .soc-fx-backdrop {
     display: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .soc-fx-backdrop,
-    .soc-wave-backdrop {
+    .soc-fx-backdrop {
         display: none !important;
-    }
-
-    .soc-fx-wave,
-    .soc-fx-glow,
-    .soc-fx-drain,
-    .soc-fx-idle,
-    .soc-wave {
-        animation: none !important;
-        transform: none !important;
-        will-change: auto !important;
     }
 
     .soc.is-charging,
