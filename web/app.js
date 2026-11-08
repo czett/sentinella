@@ -525,7 +525,9 @@
         } else if (el.pullLabel && !pullActive) {
             el.pullLabel.textContent = t("pullRefresh");
         }
-        if (currentPlugins && currentPlugins.length) {
+        if (el.pluginsGrid && el.pluginsGrid.children && el.pluginsGrid.children.length) {
+            translatePluginCardsInDom(currentLanguage);
+        } else if (currentPlugins && currentPlugins.length) {
             renderPluginsList(currentPlugins);
         }
         if (noticeRenderer && !el.notice.hidden) {
@@ -1225,6 +1227,27 @@
             "SPITZE": "PEAK",
             "Spezifisch": "PEAK",
             "PEAK": "PEAK",
+            "LADELEISTUNG": "CHARGING POWER",
+            "Ladeleistung": "Charging power",
+            "Charging power": "Charging power",
+            "CHARGING POWER": "CHARGING POWER",
+            "PHASEN": "PHASES",
+            "Phasen": "Phases",
+            "Phases": "Phases",
+            "STROM": "CURRENT",
+            "Strom": "Current",
+            "Current": "Current",
+            "Verbunden": "Connected",
+            "Ja": "Yes",
+            "Yes": "Yes",
+            "Nein": "No",
+            "No": "No",
+            "KLIMATISIERUNG STARTEN": "START PRE-CONDITIONING",
+            "START PRE-CONDITIONING": "START PRE-CONDITIONING",
+            "WIRD GESTARTET...": "STARTING...",
+            "STARTING...": "STARTING...",
+            "KLIMATISIERUNG AKTIV": "PRE-CONDITIONING ACTIVE",
+            "PRE-CONDITIONING ACTIVE": "PRE-CONDITIONING ACTIVE",
             "Keine Verbindung zu forecast.solar": "No connection to forecast.solar",
             "No connection to forecast.solar": "No connection to forecast.solar"
         },
@@ -1276,18 +1299,40 @@
             "PEAK": "SPITZE",
             "SPITZE": "SPITZE",
             "Spezifisch": "SPITZE",
+            "CHARGING POWER": "LADELEISTUNG",
+            "Charging power": "Ladeleistung",
+            "Ladeleistung": "Ladeleistung",
+            "LADELEISTUNG": "LADELEISTUNG",
+            "PHASES": "PHASEN",
+            "Phases": "Phasen",
+            "Phasen": "Phasen",
+            "CURRENT": "STROM",
+            "Current": "Strom",
+            "Strom": "Strom",
+            "Verbunden": "Verbunden",
+            "Yes": "Ja",
+            "Ja": "Ja",
+            "No": "Nein",
+            "Nein": "Nein",
+            "START PRE-CONDITIONING": "KLIMATISIERUNG STARTEN",
+            "KLIMATISIERUNG STARTEN": "KLIMATISIERUNG STARTEN",
+            "STARTING...": "WIRD GESTARTET...",
+            "WIRD GESTARTET...": "WIRD GESTARTET...",
+            "PRE-CONDITIONING ACTIVE": "KLIMATISIERUNG AKTIV",
+            "KLIMATISIERUNG AKTIV": "KLIMATISIERUNG AKTIV",
             "No connection to forecast.solar": "Keine Verbindung zu forecast.solar",
             "Keine Verbindung zu forecast.solar": "Keine Verbindung zu forecast.solar"
         }
     };
 
-    function translatePluginText(value) {
+    function translatePluginText(value, targetLang) {
         if (value === null || value === undefined) {
             return "";
         }
         var raw = String(value);
-        var lang = (typeof currentLanguage === "string" && PLUGIN_I18N[currentLanguage])
-            ? currentLanguage : "de";
+        var requested = targetLang || currentLanguage;
+        var lang = (typeof requested === "string" && PLUGIN_I18N[requested])
+            ? requested : "de";
         var dict = PLUGIN_I18N[lang];
         if (dict && Object.prototype.hasOwnProperty.call(dict, raw)) {
             return dict[raw];
@@ -1316,13 +1361,17 @@
             return "";
         }
         var rows = metrics.map(function (m) {
-            var label = escapeHtml(translatePluginText((m && m.label) || ""));
-            var value = escapeHtml(translatePluginText((m && m.value !== undefined) ? String(m.value) : ""));
-            var unit = (m && m.unit) ? (" " + escapeHtml(m.unit)) : "";
+            var rawLabel = (m && m.label) ? String(m.label) : "";
+            var rawValue = (m && m.value !== undefined) ? String(m.value) : "";
+            var rawUnit = (m && m.unit) ? String(m.unit) : "";
+            var label = escapeHtml(translatePluginText(rawLabel, currentLanguage));
+            var value = escapeHtml(translatePluginText(rawValue, currentLanguage));
+            var unit = rawUnit ? (" " + escapeHtml(rawUnit)) : "";
+            var unitAttr = rawUnit ? (' data-orig-unit="' + escapeHtml(rawUnit) + '"') : "";
             return (
                 '<div class="plugin-list-row">' +
-                    '<span class="plugin-list-label">' + label + '</span>' +
-                    '<span class="plugin-list-value">' + value + unit + '</span>' +
+                    '<span class="plugin-list-label" data-orig-text="' + escapeHtml(rawLabel) + '">' + label + '</span>' +
+                    '<span class="plugin-list-value" data-orig-text="' + escapeHtml(rawValue) + '"' + unitAttr + '>' + value + unit + '</span>' +
                 '</div>'
             );
         }).join("");
@@ -1332,13 +1381,17 @@
     function renderPluginCard(plugin) {
         var card = document.createElement("div");
         card.className = "plugin-card";
+        if (plugin && plugin.id) {
+            card.setAttribute("data-plugin-id", String(plugin.id));
+        }
 
         var rawLayout = (plugin && plugin.layout) || "stat";
         var layout = (rawLayout === "stat" || rawLayout === "delta" || rawLayout === "list")
             ? rawLayout : "stat";
-        var title = escapeHtml(translatePluginText((plugin && plugin.title) || ""));
+        var rawTitle = (plugin && plugin.title) ? String(plugin.title) : "";
+        var title = escapeHtml(translatePluginText(rawTitle, currentLanguage));
         var rawBadge = (plugin && plugin.status_badge) ? String(plugin.status_badge) : "";
-        var badgeText = rawBadge ? escapeHtml(translatePluginText(rawBadge)) : "";
+        var badgeText = rawBadge ? escapeHtml(translatePluginText(rawBadge, currentLanguage)) : "";
         var rawColor = String((plugin && plugin.status_color) || "neutral");
         var badgeColor = (rawColor === "green" || rawColor === "blue" ||
             rawColor === "red" || rawColor === "neutral") ? rawColor : "neutral";
@@ -1348,12 +1401,12 @@
             rawBadge.toUpperCase() === "CHARGING"));
 
         var badgeHtml = badgeText ? (
-            '<span class="plugin-badge" data-color="' + badgeColor + '">' + badgeText + '</span>'
+            '<span class="plugin-badge" data-color="' + badgeColor + '" data-orig-text="' + escapeHtml(rawBadge) + '">' + badgeText + '</span>'
         ) : "";
 
         var headerHtml = (
             '<div class="plugin-header">' +
-                '<h3 class="plugin-title">' + title + '</h3>' +
+                '<h3 class="plugin-title" data-orig-text="' + escapeHtml(rawTitle) + '">' + title + '</h3>' +
                 badgeHtml +
             '</div>'
         );
@@ -1367,7 +1420,8 @@
                 ? rawDir : "neutral";
             var deltaDir = escapeHtml(rawDir);
             var deltaVal = escapeHtml((delta.value !== undefined) ? String(delta.value) : "");
-            var deltaComp = escapeHtml(translatePluginText(delta.comparison || ""));
+            var rawDeltaComp = delta.comparison ? String(delta.comparison) : "";
+            var deltaComp = escapeHtml(translatePluginText(rawDeltaComp, currentLanguage));
 
             var primary = (plugin && plugin.primary) || {};
             var priVal = escapeHtml((primary.value !== undefined) ? String(primary.value) : "");
@@ -1390,7 +1444,7 @@
                         '</span>'
                     ) : '') +
                 '</div>' +
-                (deltaComp ? '<div class="plugin-delta-comparison">' + deltaComp + '</div>' : '') +
+                (deltaComp ? '<div class="plugin-delta-comparison" data-orig-text="' + escapeHtml(rawDeltaComp) + '">' + deltaComp + '</div>' : '') +
                 renderSecondaryMetrics(plugin && plugin.secondary_metrics)
             );
         } else if (layout === "list") {
@@ -1398,13 +1452,17 @@
             var listRows = "";
             if (Array.isArray(metrics) && metrics.length) {
                 listRows = metrics.map(function (m) {
-                    var l = escapeHtml(translatePluginText((m && m.label) || ""));
-                    var v = escapeHtml(translatePluginText((m && m.value !== undefined) ? String(m.value) : ""));
-                    var u = (m && m.unit) ? (" " + escapeHtml(m.unit)) : "";
+                    var rawL = (m && m.label) ? String(m.label) : "";
+                    var rawV = (m && m.value !== undefined) ? String(m.value) : "";
+                    var rawU = (m && m.unit) ? String(m.unit) : "";
+                    var l = escapeHtml(translatePluginText(rawL, currentLanguage));
+                    var v = escapeHtml(translatePluginText(rawV, currentLanguage));
+                    var u = rawU ? (" " + escapeHtml(rawU)) : "";
+                    var uAttr = rawU ? (' data-orig-unit="' + escapeHtml(rawU) + '"') : "";
                     return (
                         '<li class="plugin-list-row">' +
-                            '<span class="plugin-list-label">' + l + '</span>' +
-                            '<span class="plugin-list-value">' + v + u + '</span>' +
+                            '<span class="plugin-list-label" data-orig-text="' + escapeHtml(rawL) + '">' + l + '</span>' +
+                            '<span class="plugin-list-value" data-orig-text="' + escapeHtml(rawV) + '"' + uAttr + '>' + v + u + '</span>' +
                         '</li>'
                     );
                 }).join("");
@@ -1415,7 +1473,8 @@
             var primaryStat = (plugin && plugin.primary) || {};
             var statVal = escapeHtml((primaryStat.value !== undefined) ? String(primaryStat.value) : "");
             var statUnit = primaryStat.unit ? escapeHtml(primaryStat.unit) : "";
-            var statLabel = primaryStat.label ? escapeHtml(translatePluginText(primaryStat.label)) : "";
+            var rawStatLabel = primaryStat.label ? String(primaryStat.label) : "";
+            var statLabel = rawStatLabel ? escapeHtml(translatePluginText(rawStatLabel, currentLanguage)) : "";
             var heroClass = pluginCharging ? "plugin-stat-hero is-charging" : "plugin-stat-hero";
 
             bodyHtml = (
@@ -1423,13 +1482,28 @@
                     '<span class="plugin-stat-value">' + statVal + '</span>' +
                     (statUnit ? '<span class="plugin-stat-unit">' + statUnit + '</span>' : '') +
                 '</div>' +
-                (statLabel ? '<div class="plugin-stat-label">' + statLabel + '</div>' : '') +
+                (statLabel ? '<div class="plugin-stat-label" data-orig-text="' + escapeHtml(rawStatLabel) + '">' + statLabel + '</div>' : '') +
                 renderSecondaryMetrics(plugin && plugin.secondary_metrics)
             );
         }
 
         card.innerHTML = headerHtml + bodyHtml;
         return card;
+    }
+
+    function translatePluginCardsInDom(targetLang) {
+        if (!el.pluginsGrid) {
+            return;
+        }
+        var lang = targetLang || currentLanguage;
+        var nodes = el.pluginsGrid.querySelectorAll("[data-orig-text]");
+        for (var i = 0; i < nodes.length; i += 1) {
+            var node = nodes[i];
+            var orig = node.getAttribute("data-orig-text") || "";
+            var unit = node.getAttribute("data-orig-unit") || "";
+            var translated = translatePluginText(orig, lang);
+            node.textContent = unit ? (translated + " " + unit) : translated;
+        }
     }
 
     function renderPluginsList(plugins) {
@@ -1472,9 +1546,11 @@
                 renderPluginsList(currentPlugins);
             })
             .catch(function () {
-                currentPlugins = [];
-                el.pluginsSection.style.display = "none";
-                el.pluginsGrid.innerHTML = "";
+                if (!currentPlugins || !currentPlugins.length) {
+                    currentPlugins = [];
+                    el.pluginsSection.style.display = "none";
+                    el.pluginsGrid.innerHTML = "";
+                }
             });
     }
 

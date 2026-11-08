@@ -2213,7 +2213,7 @@ if (!pluginI18nMatch || !translateMatch || !chargingMatch || !renderPluginCardMa
 }
 const runner = new Function(
     "var currentLanguage = 'en';\n" +
-    "const document = { createElement: (t) => ({ tagName: t, className: '', innerHTML: '' }) };\n" +
+    "const document = { createElement: (t) => ({ tagName: t, className: '', innerHTML: '', attrs: {}, setAttribute: function(k, v) { this.attrs[k] = v; } }) };\n" +
     pluginI18nMatch[0] + "\n" +
     translateMatch[0] + "\n" +
     chargingMatch[0] + "\n" +
@@ -2222,6 +2222,33 @@ const runner = new Function(
     renderPluginCardMatch[0] + "\n" +
     "return { setLang: (l) => { currentLanguage = l; }, translatePluginText, isTelemetryCharging, renderPluginCard };"
 )();
+
+const pairs = [
+    ["BATTERIE SOC", "BATTERY SOC"],
+    ["REICHWEITE", "RANGE"],
+    ["STECKER", "CONNECTOR"],
+    ["LÄDT", "CHARGING"],
+    ["VERBUNDEN", "CONNECTED"],
+    ["BEREIT", "READY"],
+    ["Gesteckt", "Connected"],
+    ["Getrennt", "Disconnected"],
+    ["PV-PROGNOSE", "SOLAR FORECAST"],
+    ["PROGNOSE HEUTE", "TODAY FORECAST"],
+    ["von gestern", "vs yesterday"],
+    ["SONNIG", "SUNNY"],
+    ["MODERAT", "MODERATE"],
+    ["BEWÖLKT", "CLOUDY"],
+    ["MORGEN", "TOMORROW"],
+    ["SPITZE", "PEAK"]
+];
+for (const [deStr, enStr] of pairs) {
+    if (runner.translatePluginText(deStr, "en") !== enStr) {
+        throw new Error("DE->EN failed for " + deStr);
+    }
+    if (runner.translatePluginText(enStr, "de") !== deStr) {
+        throw new Error("EN->DE failed for " + enStr);
+    }
+}
 
 if (!runner.isTelemetryCharging({ charging: "charging" })) throw new Error("charging string not detected");
 if (!runner.isTelemetryCharging({ charging: true })) throw new Error("charging boolean not detected");
