@@ -157,15 +157,38 @@ mkdir -p "$STATE_DIR" 2>/dev/null || true
 # ---------------------------------------------------------------------------
 # 1. Collect Duty Cycle
 # Preferred order:
-#   a) /bin/hm_sysinfo (or custom path via $CCU_SYSINFO_BIN)
-#   b) /var/status/dutycycle or /tmp/dutycycle (or custom path via $CCU_DUTYCYCLE_FILE)
-#   c) Simulated / environment override / clean fallback to "N/A"
+#   a) tclrpc.so XML-RPC query (BidCoS port 2001, HmIP fallback port 2010)
+#   b) /bin/hm_sysinfo (or custom path via $CCU_SYSINFO_BIN)
+#   c) /var/status/dutycycle or /tmp/dutycycle (or custom path via $CCU_DUTYCYCLE_FILE)
+#   d) Simulated / environment override / clean fallback to "N/A"
 # ---------------------------------------------------------------------------
 DUTY_CYCLE=""
 
 # Test / override env
 if [ -n "${CCU_DUTY_CYCLE_OVERRIDE:-}" ]; then
     DUTY_CYCLE="$CCU_DUTY_CYCLE_OVERRIDE"
+fi
+
+# Query the CCU's own XML-RPC endpoint through tclrpc.so. This is the same
+# interface the CCU web UI uses, so it reports the real Duty Cycle even when
+# hm_sysinfo or the dutycycle status files are unavailable.
+# Port 2001 serves BidCoS; HmIP-only installations may answer on 2010, so the
+# Tcl script tries 2001 first and falls back to 2010.
+get_duty_cycle_tcl() {
+    _tcl_script='load tclrpc.so; if {![catch {set res [xmlrpc http://127.0.0.1:2001/ listBidcosInterfaces]}]} { foreach if $res { if {[regexp {DUTY_CYCLE\s+([0-9]+)} $if -> dc]} { puts $dc; exit 0 } } }; if {![catch {set res [xmlrpc http://127.0.0.1:2010/ listBidcosInterfaces]}]} { foreach if $res { if {[regexp {DUTY_CYCLE\s+([0-9]+)} $if -> dc]} { puts $dc; exit 0 } } }; puts ""'
+    if command -v timeout >/dev/null 2>&1; then
+        printf '%s\n' "$_tcl_script" | timeout 5 tclsh 2>/dev/null
+    else
+        printf '%s\n' "$_tcl_script" | tclsh 2>/dev/null
+    fi
+}
+
+if [ -z "$DUTY_CYCLE" ] && command -v tclsh >/dev/null 2>&1; then
+    _dc_tcl=$(get_duty_cycle_tcl | tr -d '\r' | head -n 1)
+    case "$_dc_tcl" in
+        ''|*[!0-9]*) ;;
+        *) DUTY_CYCLE="$_dc_tcl" ;;
+    esac
 fi
 
 SYSINFO_BIN=${CCU_SYSINFO_BIN:-/bin/hm_sysinfo}
@@ -281,10 +304,11 @@ fi
 
 # ---------------------------------------------------------------------------
 # 5. Evaluate Status Badge & Color
-# Badge rules:
-#   - Duty Cycle < 50% and Load < 2.0 -> "OPTIMAL" (green)
-#   - Duty Cycle between 50% and 80% (or Load >= 2.0 and DC <= 80%) -> "WARNUNG" / "WARNING" (blue / amber style)
-#   - Duty Cycle > 80% -> "KRITISCH" / "CRITICAL" (red)
+# Badge rules (Duty Cycle numeric):
+#   - Duty Cycle < 50%            -> "OPTIMAL" (green)
+#   - Duty Cycle 50% to 80%       -> "WARNUNG" / "WARNING" (blue / amber style)
+#   - Duty Cycle > 80%            -> "KRITISCH" / "CRITICAL" (red)
+# If no Duty Cycle is available, load average drives the badge as before.
 # ---------------------------------------------------------------------------
 STATUS_CALC=$(awk -v dc="$DUTY_CYCLE" -v l1="$LOAD_1" \
     -v b_opt="$I18N_BADGE_OPTIMAL" \
@@ -292,15 +316,7 @@ STATUS_CALC=$(awk -v dc="$DUTY_CYCLE" -v l1="$LOAD_1" \
     -v b_crit="$I18N_BADGE_CRITICAL" \
     'BEGIN {
     l1_num = l1 + 0;
-    if (dc == "N/A" || dc == "") {
-        if (l1_num > 4.0) {
-            badge = b_crit; color = "red";
-        } else if (l1_num >= 2.0) {
-            badge = b_warn; color = "blue";
-        } else {
-            badge = b_opt; color = "green";
-        }
-    } else {
+    if (dc ~ /^[0-9]+$/) {
         dc_num = dc + 0;
         if (dc_num > 80) {
             badge = b_crit;
@@ -309,13 +325,16 @@ STATUS_CALC=$(awk -v dc="$DUTY_CYCLE" -v l1="$LOAD_1" \
             badge = b_warn;
             color = "blue";
         } else {
-            if (l1_num >= 2.0) {
-                badge = b_warn;
-                color = "blue";
-            } else {
-                badge = b_opt;
-                color = "green";
-            }
+            badge = b_opt;
+            color = "green";
+        }
+    } else {
+        if (l1_num > 4.0) {
+            badge = b_crit; color = "red";
+        } else if (l1_num >= 2.0) {
+            badge = b_warn; color = "blue";
+        } else {
+            badge = b_opt; color = "green";
         }
     }
     printf "%s|%s\n", badge, color;

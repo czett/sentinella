@@ -1322,7 +1322,6 @@
             "vs. morgen": "vs yesterday",
             "vs yesterday": "vs yesterday",
             "SONNIG": "SUNNY",
-            "OPTIMAL": "SUNNY",
             "SUNNY": "SUNNY",
             "MODERAT": "MODERATE",
             "GUT": "MODERATE",
@@ -1438,7 +1437,6 @@
             "vs. morgen": "von gestern",
             "SUNNY": "SONNIG",
             "SONNIG": "SONNIG",
-            "OPTIMAL": "SONNIG",
             "MODERATE": "MODERAT",
             "MODERAT": "MODERAT",
             "GUT": "MODERAT",
@@ -1515,6 +1513,27 @@
             "SCHNEE": "SCHNEE",
             "THUNDERSTORM": "GEWITTER",
             "GEWITTER": "GEWITTER"
+        },
+        /* System health states are a closed vocabulary shared by host-telemetry
+           plugins. Translate them only through this map so a health badge can
+           never pick up an unrelated weather or vehicle translation. */
+        health: {
+            en: {
+                "OPTIMAL": "OPTIMAL",
+                "NORMAL": "NORMAL",
+                "WARNUNG": "WARNING",
+                "WARNING": "WARNING",
+                "KRITISCH": "CRITICAL",
+                "CRITICAL": "CRITICAL"
+            },
+            de: {
+                "OPTIMAL": "OPTIMAL",
+                "NORMAL": "NORMAL",
+                "WARNING": "WARNUNG",
+                "WARNUNG": "WARNUNG",
+                "CRITICAL": "KRITISCH",
+                "KRITISCH": "KRITISCH"
+            }
         }
     };
 
@@ -1526,6 +1545,10 @@
         var requested = targetLang || currentLanguage;
         var lang = (typeof requested === "string" && PLUGIN_I18N[requested])
             ? requested : "de";
+        var healthDict = PLUGIN_I18N.health && PLUGIN_I18N.health[lang];
+        if (healthDict && Object.prototype.hasOwnProperty.call(healthDict, raw.toUpperCase())) {
+            return healthDict[raw.toUpperCase()];
+        }
         var dict = PLUGIN_I18N[lang];
         if (dict && Object.prototype.hasOwnProperty.call(dict, raw)) {
             return dict[raw];
@@ -1588,7 +1611,8 @@
         var rawColor = String((plugin && plugin.status_color) || "neutral");
         var badgeColor = (rawColor === "green" || rawColor === "ok" ||
             rawColor === "blue" || rawColor === "red" ||
-            rawColor === "warning" || rawColor === "neutral") ? rawColor : "neutral";
+            rawColor === "warning" || rawColor === "critical" ||
+            rawColor === "neutral") ? rawColor : "neutral";
         var pluginCharging = (plugin && (plugin.charging === true ||
             Number(plugin.chargingStatus) === 1 ||
             rawBadge.toUpperCase() === "LÄDT" ||

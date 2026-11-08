@@ -1377,7 +1377,8 @@ html[data-theme="dark"] .plugin-card:hover {
 }
 
 .plugin-badge[data-color="red"],
-.plugin-badge[data-color="warning"] {
+.plugin-badge[data-color="warning"],
+.plugin-badge[data-color="critical"] {
     color: var(--red);
     background: rgb(225 38 28 / 0.08);
 }
