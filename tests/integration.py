@@ -2800,6 +2800,141 @@ if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SON
             failures,
         )
 
+        print("\n27. CCU3 health telemetry plugin (10_ccu_health.sh)")
+        ccu_plugin = ROOT / "plugins.d" / "10_ccu_health.sh"
+        check(ccu_plugin.is_file(), "plugins.d/10_ccu_health.sh exists", failures)
+        check(os.access(ccu_plugin, os.X_OK), "plugins.d/10_ccu_health.sh is executable", failures)
+
+        ccu_syntax = subprocess.run(["sh", "-n", str(ccu_plugin)], capture_output=True, text=True, timeout=10)
+        check(ccu_syntax.returncode == 0, "plugins.d/10_ccu_health.sh passes sh -n", failures)
+
+        # 27a. Test clean fallback when run on host system without CCU hardware
+        ccu_test_dir = tmp / "ccu_health_test"
+        ccu_state_dir = ccu_test_dir / "state" / "plugins"
+        ccu_state_dir.mkdir(parents=True, exist_ok=True)
+        ccu_env = os.environ.copy()
+        ccu_env["CCU_HEALTH_STATE_DIR"] = str(ccu_state_dir)
+        ccu_env["UI_LANGUAGE"] = "de"
+
+        host_res = subprocess.run([str(ccu_plugin)], env=ccu_env, capture_output=True, text=True, timeout=10)
+        check(host_res.returncode == 0, f"ccu_health on host exits 0 (got {host_res.returncode})", failures)
+        host_card_path = ccu_state_dir / "ccu_health.json"
+        check(host_card_path.is_file(), "ccu_health.json generated on host run", failures)
+        host_card = json.loads(host_card_path.read_text()) if host_card_path.is_file() else {}
+        check(host_card.get("id") == "ccu_health", "host card id is ccu_health", failures)
+        check(host_card.get("layout") == "stat", "host card layout is stat", failures)
+        check(host_card.get("title") == "CCU3 SYSTEM", "host card title is CCU3 SYSTEM", failures)
+        check(
+            host_card.get("status_badge") in {"OPTIMAL", "WARNUNG", "KRITISCH"},
+            f"host status_badge valid (got {host_card.get('status_badge')!r})",
+            failures,
+        )
+        check(
+            host_card.get("status_color") in {"green", "blue", "red"},
+            f"host status_color valid (got {host_card.get('status_color')!r})",
+            failures,
+        )
+        check(
+            len(host_card.get("secondary_metrics", [])) == 3,
+            "host card has 3 secondary metrics (RAM, LOAD, UPTIME)",
+            failures,
+        )
+
+        # 27b. Test mock procfs and mock duty cycle (Optimal: DC=14%, Load=0.24 0.18 0.15)
+        mock_proc = ccu_test_dir / "mock_proc"
+        mock_proc.mkdir(parents=True, exist_ok=True)
+        (mock_proc / "loadavg").write_text("0.24 0.18 0.15 1/150 1234\n")
+        (mock_proc / "meminfo").write_text(
+            "MemTotal:        1003520 kB\n"
+            "MemFree:          120000 kB\n"
+            "MemAvailable:     650000 kB\n"
+            "Buffers:           20000 kB\n"
+            "Cached:           510000 kB\n"
+        )
+        # 14 days, 6 hours: 14 * 86400 + 6 * 3600 = 1209600 + 21600 = 1231200
+        (mock_proc / "uptime").write_text("1231200.50 2400000.00\n")
+
+        mock_var_status = ccu_test_dir / "var_status"
+        mock_var_status.mkdir(parents=True, exist_ok=True)
+        mock_dc_file = mock_var_status / "dutycycle"
+        mock_dc_file.write_text("CCU2: 14%\n")
+
+        ccu_env["CCU_HEALTH_PROC_DIR"] = str(mock_proc)
+        ccu_env["CCU_DUTYCYCLE_FILE"] = str(mock_dc_file)
+        ccu_env["UI_LANGUAGE"] = "de"
+
+        mock_res = subprocess.run([str(ccu_plugin)], env=ccu_env, capture_output=True, text=True, timeout=10)
+        check(mock_res.returncode == 0, f"ccu_health mock run exits 0 (got {mock_res.returncode})", failures)
+        mock_card = json.loads(host_card_path.read_text())
+        check(mock_card.get("status_badge") == "OPTIMAL", f"mock badge is OPTIMAL (got {mock_card.get('status_badge')!r})", failures)
+        check(mock_card.get("status_color") == "green", f"mock color is green (got {mock_card.get('status_color')!r})", failures)
+        check(
+            mock_card.get("primary") == {"value": 14, "unit": "%", "label": "DUTY CYCLE"},
+            f"mock primary matches DC 14% (got {mock_card.get('primary')})",
+            failures,
+        )
+        sec_map = {m["label"]: m["value"] for m in mock_card.get("secondary_metrics", [])}
+        check(
+            sec_map.get("LOAD") == "0.24, 0.18, 0.15",
+            f"mock LOAD matches 0.24, 0.18, 0.15 (got {sec_map.get('LOAD')!r})",
+            failures,
+        )
+        check(
+            "MB /" in sec_map.get("RAM", "") and "%" in sec_map.get("RAM", ""),
+            f"mock RAM formatted properly (got {sec_map.get('RAM')!r})",
+            failures,
+        )
+        check(
+            sec_map.get("UPTIME") == "14 T. 6 Std.",
+            f"mock UPTIME matches 14 T. 6 Std. (got {sec_map.get('UPTIME')!r})",
+            failures,
+        )
+
+        # 27c. Test warning condition (Duty Cycle 65% -> WARNUNG)
+        mock_dc_file.write_text("65\n")
+        subprocess.run([str(ccu_plugin)], env=ccu_env, capture_output=True, text=True, timeout=10)
+        warn_card = json.loads(host_card_path.read_text())
+        check(warn_card.get("status_badge") == "WARNUNG", f"badge at 65% DC is WARNUNG (got {warn_card.get('status_badge')})", failures)
+        check(warn_card.get("status_color") == "blue", f"color at 65% DC is blue (got {warn_card.get('status_color')})", failures)
+        check(warn_card.get("primary", {}).get("value") == 65, "primary value is 65", failures)
+
+        # 27d. Test critical condition (Duty Cycle 85% -> KRITISCH / red)
+        mock_dc_file.write_text("dutycycle=85\n")
+        subprocess.run([str(ccu_plugin)], env=ccu_env, capture_output=True, text=True, timeout=10)
+        crit_card = json.loads(host_card_path.read_text())
+        check(crit_card.get("status_badge") == "KRITISCH", f"badge at 85% DC is KRITISCH (got {crit_card.get('status_badge')})", failures)
+        check(crit_card.get("status_color") == "red", f"color at 85% DC is red (got {crit_card.get('status_color')})", failures)
+        check(crit_card.get("primary", {}).get("value") == 85, "primary value is 85", failures)
+
+        # 27e. Test English localization (UI_LANGUAGE=en)
+        ccu_env["UI_LANGUAGE"] = "en"
+        mock_dc_file.write_text("65\n")
+        subprocess.run([str(ccu_plugin)], env=ccu_env, capture_output=True, text=True, timeout=10)
+        en_card = json.loads(host_card_path.read_text())
+        check(en_card.get("status_badge") == "WARNING", f"EN badge is WARNING (got {en_card.get('status_badge')})", failures)
+        en_sec_map = {m["label"]: m["value"] for m in en_card.get("secondary_metrics", [])}
+        check(
+            en_sec_map.get("UPTIME") == "14d 6h",
+            f"EN UPTIME matches 14d 6h (got {en_sec_map.get('UPTIME')!r})",
+            failures,
+        )
+
+        # 27f. Test mock /bin/hm_sysinfo binary execution
+        mock_bin_dir = ccu_test_dir / "bin"
+        mock_bin_dir.mkdir(parents=True, exist_ok=True)
+        mock_sysinfo = mock_bin_dir / "hm_sysinfo"
+        mock_sysinfo.write_text("#!/bin/sh\necho 'Duty-Cycle: 42%'\n")
+        mock_sysinfo.chmod(0o755)
+        ccu_env["CCU_SYSINFO_BIN"] = str(mock_sysinfo)
+        ccu_env.pop("CCU_DUTYCYCLE_FILE", None)
+        subprocess.run([str(ccu_plugin)], env=ccu_env, capture_output=True, text=True, timeout=10)
+        sysinfo_card = json.loads(host_card_path.read_text())
+        check(
+            sysinfo_card.get("primary", {}).get("value") == 42,
+            f"hm_sysinfo parsed 42% (got {sysinfo_card.get('primary')})",
+            failures,
+        )
+
     finally:
         sma.shutdown()
         rega.shutdown()

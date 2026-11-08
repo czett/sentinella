@@ -1349,7 +1349,21 @@
             "ODOMETER": "ODOMETER",
             "PRE-CONDITIONING ACTIVE": "PRE-CONDITIONING ACTIVE",
             "Keine Verbindung zu forecast.solar": "No connection to forecast.solar",
-            "No connection to forecast.solar": "No connection to forecast.solar"
+            "No connection to forecast.solar": "No connection to forecast.solar",
+            "CCU3 SYSTEM": "CCU3 SYSTEM",
+            "ZENTRALE": "CCU3 SYSTEM",
+            "DUTY CYCLE": "DUTY CYCLE",
+            "Duty Cycle": "DUTY CYCLE",
+            "SPEICHER": "RAM",
+            "RAM": "RAM",
+            "LOAD": "LOAD",
+            "LAST": "LOAD",
+            "UPTIME": "UPTIME",
+            "LAUFZEIT": "UPTIME",
+            "WARNUNG": "WARNING",
+            "WARNING": "WARNING",
+            "KRITISCH": "CRITICAL",
+            "CRITICAL": "CRITICAL"
         },
         de: {
             "RENAULT E-TECH": "RENAULT E-TECH",
@@ -1430,7 +1444,21 @@
             "KILOMETERSTAND": "KILOMETERSTAND",
             "ODOMETER": "KILOMETERSTAND",
             "No connection to forecast.solar": "Keine Verbindung zu forecast.solar",
-            "Keine Verbindung zu forecast.solar": "Keine Verbindung zu forecast.solar"
+            "Keine Verbindung zu forecast.solar": "Keine Verbindung zu forecast.solar",
+            "CCU3 SYSTEM": "CCU3 SYSTEM",
+            "ZENTRALE": "ZENTRALE",
+            "DUTY CYCLE": "DUTY CYCLE",
+            "Duty Cycle": "DUTY CYCLE",
+            "SPEICHER": "SPEICHER",
+            "RAM": "RAM",
+            "LOAD": "LOAD",
+            "LAST": "LAST",
+            "UPTIME": "UPTIME",
+            "LAUFZEIT": "LAUFZEIT",
+            "WARNING": "WARNUNG",
+            "WARNUNG": "WARNUNG",
+            "CRITICAL": "KRITISCH",
+            "KRITISCH": "KRITISCH"
         }
     };
 

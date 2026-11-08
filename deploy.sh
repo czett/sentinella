@@ -176,6 +176,7 @@ for tool in ssh tar; do
 done
 
 for file in VERSION .env bin/check_soc.sh lib/notify_signal.sh setup_variables.sh \
+            plugins.d/10_ccu_health.sh \
             plugins.d/20_renault_zoe.sh \
             plugins.d/30_forecast_solar.sh \
             config/plugins/renault.env.example \
@@ -233,6 +234,8 @@ install -m 644 "$ROOT/VERSION"               "$STAGE/VERSION"
 install -m 700 "$ROOT/bin/check_soc.sh"      "$STAGE/bin/check_soc.sh"
 install -m 700 "$ROOT/lib/notify_signal.sh"  "$STAGE/lib/notify_signal.sh"
 install -m 700 "$ROOT/setup_variables.sh"    "$STAGE/setup_variables.sh"
+install -m 755 "$ROOT/plugins.d/10_ccu_health.sh" \
+    "$STAGE/plugins.d/10_ccu_health.sh"
 install -m 755 "$ROOT/plugins.d/20_renault_zoe.sh" \
     "$STAGE/plugins.d/20_renault_zoe.sh"
 install -m 755 "$ROOT/plugins.d/30_forecast_solar.sh" \
@@ -532,6 +535,14 @@ if [ "$SKIP_TEST" != "1" ]; then
         printf 'First check completed successfully.\n'
     else
         printf 'WARNING: first check failed; see log or run the script manually.\n' >&2
+    fi
+
+    if [ -x "$ADDON_DIR/plugins.d/10_ccu_health.sh" ]; then
+        if "$ADDON_DIR/plugins.d/10_ccu_health.sh"; then
+            printf 'ccu_health plugin checked.\n'
+        else
+            printf 'WARNING: ccu_health plugin failed; existing card kept.\n' >&2
+        fi
     fi
 
     if [ -x "$ADDON_DIR/plugins.d/20_renault_zoe.sh" ]; then

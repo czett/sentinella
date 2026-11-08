@@ -53,6 +53,7 @@ mkdir -p \
 cp -f "$ROOT_DIR/bin/check_soc.sh" "$STAGE_DIR/bin/check_soc.sh"
 cp -f "$ROOT_DIR/lib/notify_signal.sh" "$STAGE_DIR/lib/notify_signal.sh"
 cp -f "$ROOT_DIR/setup_variables.sh" "$STAGE_DIR/setup_variables.sh"
+cp -f "$ROOT_DIR/plugins.d/10_ccu_health.sh" "$STAGE_DIR/plugins.d/10_ccu_health.sh"
 cp -f "$ROOT_DIR/plugins.d/20_renault_zoe.sh" "$STAGE_DIR/plugins.d/20_renault_zoe.sh"
 cp -f "$ROOT_DIR/plugins.d/30_forecast_solar.sh" "$STAGE_DIR/plugins.d/30_forecast_solar.sh"
 cp -f "$ROOT_DIR/config/plugins/renault.env.example" "$STAGE_DIR/config/plugins/renault.env.example"
@@ -73,6 +74,7 @@ chmod 755 \
     "$STAGE_DIR/bin/check_soc.sh" \
     "$STAGE_DIR/lib/notify_signal.sh" \
     "$STAGE_DIR/setup_variables.sh" \
+    "$STAGE_DIR/plugins.d/10_ccu_health.sh" \
     "$STAGE_DIR/plugins.d/20_renault_zoe.sh" \
     "$STAGE_DIR/plugins.d/30_forecast_solar.sh" \
     "$STAGE_DIR/web/api/"*.cgi 2>/dev/null || true
