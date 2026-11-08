@@ -382,7 +382,8 @@
         noticeText: $("notice-text"),
         retry: $("retry"),
 
-        heroBlock: $("hero-block"),
+        heroCard: $("hero-card") || $("hero-block"),
+        heroBlock: $("hero-card") || $("hero-block"),
         gauge: $("gauge"),
         socValue: $("soc-value"),
         socState: $("soc-state"),
@@ -792,11 +793,23 @@
         if (data.charging === true || data.charging === "charging") {
             return true;
         }
+        var chargeStatus = String(data.charge_status || "").toUpperCase();
+        if (chargeStatus === "LADEN" || chargeStatus === "CHARGING") {
+            return true;
+        }
+        var power = Number(data.battery_power != null ? data.battery_power : data.charge_power_w);
+        if (!isNaN(power) && power > 50) {
+            return true;
+        }
         if (Number(data.chargingStatus) === 1) {
             return true;
         }
         var badge = String(data.status_badge || "").toUpperCase();
         return badge === "LÄDT" || badge === "CHARGING";
+    }
+
+    function updateUI(data) {
+        return render(data);
     }
 
     function render(data) {
@@ -813,6 +826,11 @@
 
         if (el.heroBlock) {
             el.heroBlock.dataset.charge = charge;
+            el.heroBlock.classList.toggle("is-charging", isCharging);
+        }
+        if (el.heroCard && el.heroCard !== el.heroBlock) {
+            el.heroCard.dataset.charge = charge;
+            el.heroCard.classList.toggle("is-charging", isCharging);
         }
         if (el.gauge) {
             el.gauge.classList.toggle("is-charging", isCharging);

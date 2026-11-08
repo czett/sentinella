@@ -464,6 +464,8 @@ a {
 
 /* Left Column: International Ultramarine Blue Hero Block */
 .poster-blue {
+    position: relative;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -472,6 +474,92 @@ a {
     background: var(--blue);
     color: var(--accent-contrast);
     border-right: var(--rule-heavy);
+}
+
+#hero-card > :not(.soc-wave-backdrop),
+#hero-block > :not(.soc-wave-backdrop),
+.poster-blue > :not(.soc-wave-backdrop),
+.poster-meta,
+.poster-foot,
+.soc {
+    position: relative;
+    z-index: 2;
+}
+
+/* Liquid Wave Compositor Animation on SoC Hero Tile */
+.soc-wave-backdrop {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.8s ease;
+    z-index: 1;
+}
+
+.soc-wave {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 200%;
+    will-change: transform;
+    pointer-events: none;
+    animation-play-state: paused;
+    background-repeat: repeat-x;
+}
+
+.soc-wave-1 {
+    height: 110px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120' preserveAspectRatio='none'%3E%3Cpath d='M0,50 C150,20 450,80 600,50 C750,20 1050,80 1200,50 L1200,120 L0,120 Z' fill='rgba(255,255,255,0.07)'/%3E%3C/svg%3E");
+    background-size: 50% 100%;
+    animation: soc-wave-flow-1 7s linear infinite;
+    animation-play-state: paused;
+}
+
+.soc-wave-2 {
+    height: 85px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120' preserveAspectRatio='none'%3E%3Cpath d='M0,65 C150,85 450,35 600,65 C750,85 1050,35 1200,65 L1200,120 L0,120 Z' fill='rgba(255,255,255,0.04)'/%3E%3C/svg%3E");
+    background-size: 50% 100%;
+    animation: soc-wave-flow-2 11s linear infinite;
+    animation-play-state: paused;
+}
+
+#hero-card.is-charging .soc-wave-backdrop,
+#hero-block.is-charging .soc-wave-backdrop,
+.poster-blue.is-charging .soc-wave-backdrop,
+.is-charging .soc-wave-backdrop {
+    opacity: 1;
+}
+
+#hero-card.is-charging .soc-wave,
+#hero-block.is-charging .soc-wave,
+.poster-blue.is-charging .soc-wave,
+.is-charging .soc-wave {
+    animation-play-state: running;
+}
+
+@keyframes soc-wave-flow-1 {
+    0% {
+        transform: translate3d(0, 0, 0);
+    }
+    50% {
+        transform: translate3d(-25%, 6px, 0);
+    }
+    100% {
+        transform: translate3d(-50%, 0, 0);
+    }
+}
+
+@keyframes soc-wave-flow-2 {
+    0% {
+        transform: translate3d(-50%, 4px, 0);
+    }
+    50% {
+        transform: translate3d(-25%, -4px, 0);
+    }
+    100% {
+        transform: translate3d(0, 4px, 0);
+    }
 }
 
 .poster-meta {
@@ -2439,5 +2527,11 @@ body.drawer-open {
         animation-duration: 0.01ms !important;
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
+    }
+
+    .soc-wave {
+        animation: none !important;
+        transform: none !important;
+        will-change: auto !important;
     }
 }
