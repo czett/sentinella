@@ -190,6 +190,11 @@ CACHE_TTL=${RENAULT_CACHE_TTL:-21600}
 STATE_DIR=${RENAULT_STATE_DIR:-$ADDON_DIR/state/plugins}
 SESSION_FILE=${RENAULT_SESSION_FILE:-$STATE_DIR/.renault_session}
 OUT_FILE=${RENAULT_OUT_FILE:-$STATE_DIR/renault_zoe.json}
+# Circuit breaker: any rate-limit / lockout response arms this file for one
+# hour. While it is fresh the plugin performs no network I/O at all, so a
+# transient cloud throttle can never escalate into an account lockout.
+RATE_LIMIT_FILE=${RENAULT_RATE_LIMIT_FILE:-$STATE_DIR/.renault_rate_limited}
+RATE_LIMIT_WINDOW=3600
 # Private scratch files live beside the state, never in world-writable /tmp.
 TMP_AUTH=$STATE_DIR/.renault_auth.$$.tmp
 RAW_FILE=$STATE_DIR/.renault_bat.$$.tmp
@@ -256,6 +261,57 @@ is_uint "$MAX_TIME" || MAX_TIME=15
 is_uint "$CACHE_TTL" || CACHE_TTL=21600
 
 mkdir -p "$STATE_DIR" 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
+# Rate-limit circuit breaker
+# ---------------------------------------------------------------------------
+# Gigya/Kamereon lock accounts for an hour after repeated failed calls. Once
+# any response signals throttling we stay completely offline for the same
+# window instead of retrying into the lockout.
+if [ -r "$RATE_LIMIT_FILE" ]; then
+    _rl_ts=$(sed -n '1p' "$RATE_LIMIT_FILE" 2>/dev/null | tr -cd '0-9')
+    _rl_now=$(date +%s 2>/dev/null)
+    if is_uint "$_rl_ts" && is_uint "$_rl_now" && [ "$_rl_now" -ge "$_rl_ts" ] \
+        && [ $((_rl_now - _rl_ts)) -lt "$RATE_LIMIT_WINDOW" ]; then
+        printf 'WARNING: Renault API rate-limit circuit breaker active. Skipping execution to protect account.\n'
+        exit 0
+    fi
+    rm -f "$RATE_LIMIT_FILE" 2>/dev/null || true
+fi
+
+# Returns 0 when an HTTP response (status code and/or body) indicates
+# throttling, an exceeded quota, or an already locked account.
+rate_limit_detected() {
+    _rl_code=${1:-000}
+    _rl_file=${2:-}
+    case "$_rl_code" in
+        429) return 0 ;;
+    esac
+    [ -n "$_rl_file" ] && [ -s "$_rl_file" ] || return 1
+    _rl_body=$(tr '[:upper:]' '[:lower:]' < "$_rl_file" 2>/dev/null)
+    # Unambiguous lockout wording is trusted even behind a 200 status, which
+    # some Gigya deployments use for account-level errors.
+    case "$_rl_body" in
+        *"rate limit"*|*"too many"*|*"quota exceeded"*|*"request limit"*|*"account locked"*|*"account has been locked"*) return 0 ;;
+    esac
+    # For successful responses, only the explicit wording above counts: an
+    # opaque JWT may randomly contain strings like "rate" and must not arm
+    # the breaker. Error responses are scanned more broadly.
+    case "$_rl_code" in
+        2??|000) return 1 ;;
+    esac
+    case "$_rl_body" in
+        *rate*|*exceeded*|*locked*) return 0 ;;
+    esac
+    return 1
+}
+
+mark_rate_limited() {
+    _rl_now=$(date +%s 2>/dev/null)
+    is_uint "$_rl_now" || _rl_now=0
+    printf '%s\n' "$_rl_now" > "$RATE_LIMIT_FILE" 2>/dev/null || true
+    log "WARNING: Renault API throttling detected (HTTP ${1:-?}); circuit breaker armed for ${RATE_LIMIT_WINDOW}s"
+}
 
 extract_json_str() {
     _file=$1
@@ -356,6 +412,11 @@ authenticate_renault() {
             "$GIGYA_URL/accounts.login" 2>/dev/null
     ) || _login_code=000
 
+    if rate_limit_detected "$_login_code" "$TMP_AUTH"; then
+        mark_rate_limited "$_login_code"
+        return 1
+    fi
+
     if [ "$_login_code" != "200" ] || [ ! -s "$TMP_AUTH" ]; then
         log "WARNING: Gigya accounts.login failed (HTTP $_login_code)"
         return 1
@@ -383,6 +444,11 @@ authenticate_renault() {
             --config - \
             "$GIGYA_URL/accounts.getJWT" 2>/dev/null
     ) || _jwt_code=000
+
+    if rate_limit_detected "$_jwt_code" "$TMP_AUTH"; then
+        mark_rate_limited "$_jwt_code"
+        return 1
+    fi
 
     if [ "$_jwt_code" != "200" ] || [ ! -s "$TMP_AUTH" ]; then
         log "WARNING: Gigya accounts.getJWT failed (HTTP $_jwt_code)"
@@ -435,6 +501,11 @@ authenticate_renault() {
             "$KAMEREON_URL/commerce/v1/persons/$PERSON_ID?country=$RENAULT_COUNTRY" \
             2>/dev/null
     ) || _person_code=000
+
+    if rate_limit_detected "$_person_code" "$TMP_AUTH"; then
+        mark_rate_limited "$_person_code"
+        return 1
+    fi
 
     if [ "$_person_code" != "200" ] || [ ! -s "$TMP_AUTH" ]; then
         log "WARNING: Kamereon person lookup failed (HTTP $_person_code)"
@@ -515,6 +586,12 @@ if [ "$HVAC_MODE" = "1" ]; then
 
         HVAC_HTTP_CODE=$(trigger_hvac_start)
 
+        if rate_limit_detected "$HVAC_HTTP_CODE" "$RAW_FILE"; then
+            mark_rate_limited "$HVAC_HTTP_CODE"
+            [ "$HVAC_ACTION" = "cancel" ] && mark_hvac_stopped
+            exit 1
+        fi
+
         if [ "$USED_CACHE" = "1" ] && { [ "$HVAC_HTTP_CODE" = "401" ] || [ "$HVAC_HTTP_CODE" = "403" ]; }; then
             log "Renault session expired on HVAC request (HTTP $HVAC_HTTP_CODE); refreshing token"
             rm -f "$SESSION_FILE" 2>/dev/null || true
@@ -522,6 +599,11 @@ if [ "$HVAC_MODE" = "1" ]; then
                 exit 1
             fi
             HVAC_HTTP_CODE=$(trigger_hvac_start)
+            if rate_limit_detected "$HVAC_HTTP_CODE" "$RAW_FILE"; then
+                mark_rate_limited "$HVAC_HTTP_CODE"
+                [ "$HVAC_ACTION" = "cancel" ] && mark_hvac_stopped
+                exit 1
+            fi
         fi
     fi
 
@@ -580,6 +662,12 @@ else
 
     HTTP_CODE=$(fetch_battery_status)
 
+    if rate_limit_detected "$HTTP_CODE" "$RAW_FILE"; then
+        mark_rate_limited "$HTTP_CODE"
+        [ "$TEST_MODE" = "1" ] && exit 1
+        exit 0
+    fi
+
     if [ "$USED_CACHE" = "1" ] && { [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; }; then
         log "Renault session expired or rejected (HTTP $HTTP_CODE); refreshing token"
         rm -f "$SESSION_FILE" 2>/dev/null || true
@@ -588,6 +676,11 @@ else
             exit 0
         fi
         HTTP_CODE=$(fetch_battery_status)
+        if rate_limit_detected "$HTTP_CODE" "$RAW_FILE"; then
+            mark_rate_limited "$HTTP_CODE"
+            [ "$TEST_MODE" = "1" ] && exit 1
+            exit 0
+        fi
     fi
 fi
 
@@ -673,9 +766,13 @@ kamereon_get() {
 
 ODO_METRIC=
 HVAC_ACTIVE=false
+RATE_LIMITED_DURING_POLL=0
 if [ -n "$ID_TOKEN" ] && [ -n "$ACCOUNT_ID" ]; then
     _ck=$(kamereon_get "v1/cars/$RENAULT_VIN/cockpit" "$COCKPIT_FILE")
-    if [ "$_ck" = "200" ] && [ -s "$COCKPIT_FILE" ]; then
+    if rate_limit_detected "$_ck" "$COCKPIT_FILE"; then
+        mark_rate_limited "$_ck"
+        RATE_LIMITED_DURING_POLL=1
+    elif [ "$_ck" = "200" ] && [ -s "$COCKPIT_FILE" ]; then
         _km=$(extract_json_num "$COCKPIT_FILE" totalMileage)
         if is_number "$_km"; then
             if [ "$UI_LANGUAGE" = "en" ]; then _sep=,; else _sep=.; fi
@@ -687,12 +784,21 @@ if [ -n "$ID_TOKEN" ] && [ -n "$ACCOUNT_ID" ]; then
     { \"label\": \"$I18N_METRIC_ODO\", \"value\": \"${_km_fmt} km\" }"
         fi
     else
-        log "NOTE: Kamereon cockpit unavailable (HTTP $_ck); odometer omitted"
+        # A failing optional endpoint must never invalidate or refresh the
+        # session: log it and leave the cached token untouched.
+        log "NOTE: Kamereon cockpit unavailable (HTTP $_ck); odometer omitted, session retained"
     fi
 
-    _hs=$(kamereon_get "v1/cars/$RENAULT_VIN/hvac-status" "$HVAC_STATUS_FILE")
-    if [ "$_hs" = "200" ] && [ -s "$HVAC_STATUS_FILE" ]; then
-        [ "$(extract_json_str "$HVAC_STATUS_FILE" hvacStatus)" = "on" ] && HVAC_ACTIVE=true
+    if [ "$RATE_LIMITED_DURING_POLL" = "0" ]; then
+        _hs=$(kamereon_get "v1/cars/$RENAULT_VIN/hvac-status" "$HVAC_STATUS_FILE")
+        if rate_limit_detected "$_hs" "$HVAC_STATUS_FILE"; then
+            mark_rate_limited "$_hs"
+            RATE_LIMITED_DURING_POLL=1
+        elif [ "$_hs" = "200" ] && [ -s "$HVAC_STATUS_FILE" ]; then
+            [ "$(extract_json_str "$HVAC_STATUS_FILE" hvacStatus)" = "on" ] && HVAC_ACTIVE=true
+        else
+            log "NOTE: Kamereon hvac-status unavailable (HTTP $_hs); session retained"
+        fi
     fi
 fi
 

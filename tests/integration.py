@@ -66,6 +66,11 @@ class State:
         self.renault_plug_status = 1
         self.renault_charging_status = 1.0
         self.renault_force_401_once = False
+        self.renault_rate_limit = False
+        self.renault_login_rate_limit = False
+        self.renault_cockpit_fail = False
+        self.renault_cockpit_v2_calls = 0
+        self.renault_rate_limited_calls = 0
 
     def reset_requests(self) -> None:
         with self.lock:
@@ -82,6 +87,8 @@ class State:
             self.renault_hvac_calls = 0
             self.renault_hvac_bodies = []
             self.renault_cockpit_calls = 0
+            self.renault_cockpit_v2_calls = 0
+            self.renault_rate_limited_calls = 0
 
 
 class SmaHandler(BaseHTTPRequestHandler):
@@ -243,6 +250,12 @@ class RenaultHandler(BaseHTTPRequestHandler):
         if parsed.path == "/accounts.login":
             with state.lock:
                 state.renault_login_calls += 1
+                login_rate_limited = state.renault_login_rate_limit
+                if login_rate_limited:
+                    state.renault_rate_limited_calls += 1
+            if login_rate_limited:
+                self._json(429, {"errorCode": 429001, "errorDetails": "rate limit exceeded"})
+                return
             params = parse_qs(raw)
             user = params.get("loginID", [""])[0]
             pw = params.get("password", [""])[0]
@@ -324,6 +337,14 @@ class RenaultHandler(BaseHTTPRequestHandler):
         id_token = self.headers.get("x-gigya-id_token", "")
         api_key = self.headers.get("apikey", "")
 
+        with state.lock:
+            rate_limited = state.renault_rate_limit
+            if rate_limited:
+                state.renault_rate_limited_calls += 1
+        if rate_limited:
+            self._json(429, {"error": "rate limit exceeded"})
+            return
+
         if parsed.path == "/commerce/v1/persons/person-de-001":
             with state.lock:
                 state.renault_person_calls += 1
@@ -342,12 +363,21 @@ class RenaultHandler(BaseHTTPRequestHandler):
             return
 
         kam_base = "/commerce/v1/accounts/acc-myrenault-777/kamereon/kca/car-adapter"
+        if parsed.path == f"{kam_base}/v2/cars/VF1AG000012345678/cockpit":
+            with state.lock:
+                state.renault_cockpit_v2_calls += 1
+            self._json(400, {"error": "unsupported API version"})
+            return
         if parsed.path == f"{kam_base}/v1/cars/VF1AG000012345678/cockpit":
             with state.lock:
                 state.renault_cockpit_calls += 1
                 mileage = state.renault_mileage
+                cockpit_fail = state.renault_cockpit_fail
             if id_token != "jwt-id-token-valid-999" or not api_key:
                 self._json(401, {"error": "unauthorized"})
+                return
+            if cockpit_fail:
+                self._json(400, {"error": "temporarily unavailable"})
                 return
             attrs = {} if mileage is None else {"totalMileage": mileage}
             self._json(200, {"data": {"type": "Car", "attributes": attrs}})
@@ -1834,6 +1864,135 @@ eval(mockEnv);
             "unplugged Zoe card reports BEREIT / neutral / Getrennt",
             failures,
         )
+
+        # 23e2. Cockpit is polled through the v1 endpoint only
+        renault_state.reset_requests()
+        renault_state.renault_battery_level = 70
+        renault_state.renault_autonomy = 200
+        renault_state.renault_plug_status = 1
+        renault_state.renault_charging_status = 1.0
+        zoe_res_v1 = subprocess.run(
+            [str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20
+        )
+        check(zoe_res_v1.returncode == 0, "v1 cockpit poll exits 0", failures)
+        check(
+            renault_state.renault_cockpit_calls == 1
+            and renault_state.renault_cockpit_v2_calls == 0,
+            "cockpit poll uses /v1/ and never /v2/",
+            failures,
+        )
+
+        # 23e2b. A failing optional endpoint must not invalidate a valid session
+        session_before = zoe_session_path.read_text()
+        renault_state.reset_requests()
+        renault_state.renault_cockpit_fail = True
+        zoe_res_ckfail = subprocess.run(
+            [str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20
+        )
+        check(zoe_res_ckfail.returncode == 0, "cockpit 4xx poll exits 0", failures)
+        check(
+            renault_state.renault_login_calls == 0
+            and renault_state.renault_jwt_calls == 0
+            and zoe_session_path.is_file()
+            and zoe_session_path.read_text() == session_before,
+            "cockpit 4xx keeps the valid session and never re-authenticates",
+            failures,
+        )
+        card_ckfail = json.loads(zoe_card_path.read_text())
+        check(
+            card_ckfail.get("primary", {}).get("value") == 70
+            and all(m.get("label") != "KILOMETERSTAND" for m in card_ckfail.get("secondary_metrics", [])),
+            "cockpit 4xx omits only the odometer metric",
+            failures,
+        )
+        renault_state.renault_cockpit_fail = False
+
+        # 23e3. HTTP 429 arms the 1h circuit breaker and stops all requests
+        rate_file = zoe_addon / "state" / "plugins" / ".renault_rate_limited"
+        rate_file.unlink(missing_ok=True)
+        renault_state.reset_requests()
+        renault_state.renault_rate_limit = True
+        rl_res = subprocess.run(
+            [str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20
+        )
+        check(rl_res.returncode == 0, f"rate-limited poll exits 0 (got {rl_res.returncode})", failures)
+        check(rate_file.is_file(), "HTTP 429 arms .renault_rate_limited", failures)
+        check(
+            renault_state.renault_rate_limited_calls == 1,
+            "rate-limited battery request is not retried",
+            failures,
+        )
+        check(
+            renault_state.renault_login_calls == 0,
+            "HTTP 429 does not trigger a fresh login",
+            failures,
+        )
+
+        renault_state.reset_requests()
+        rl_skip = subprocess.run(
+            [str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20
+        )
+        check(
+            rl_skip.returncode == 0
+            and "circuit breaker active" in (rl_skip.stdout + rl_skip.stderr).lower(),
+            "fresh circuit breaker skips execution with a warning",
+            failures,
+        )
+        check(
+            renault_state.renault_battery_calls == 0
+            and renault_state.renault_login_calls == 0
+            and renault_state.renault_cockpit_calls == 0,
+            "circuit breaker performs no network I/O",
+            failures,
+        )
+
+        rate_file.write_text(f"{int(time.time()) - 3601}\n")
+        renault_state.renault_rate_limit = False
+        renault_state.reset_requests()
+        rl_expired = subprocess.run(
+            [str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20
+        )
+        check(
+            rl_expired.returncode == 0
+            and not rate_file.exists()
+            and renault_state.renault_battery_calls == 1,
+            "expired circuit breaker is removed and polling resumes",
+            failures,
+        )
+
+        # 23e4. A 429 from Gigya on a cold start arms the breaker too
+        rl_addon = tmp / "rl-addon"
+        (rl_addon / "plugins.d").mkdir(parents=True)
+        (rl_addon / "config" / "plugins").mkdir(parents=True)
+        (rl_addon / "state" / "plugins").mkdir(parents=True)
+        shutil.copy2(zoe_plugin_path, rl_addon / "plugins.d" / "20_renault_zoe.sh")
+        (rl_addon / "plugins.d" / "20_renault_zoe.sh").chmod(0o755)
+        rl_env_file = rl_addon / "config" / "plugins" / "renault.env"
+        rl_env_file.write_text(
+            "RENAULT_USER='zoe@example.com'\n"
+            "RENAULT_PASS='renault-secret-42'\n"
+            "RENAULT_VIN='VF1AG000012345678'\n"
+        )
+        rl_env_file.chmod(0o600)
+        renault_state.reset_requests()
+        renault_state.renault_login_rate_limit = True
+        rl_login = subprocess.run(
+            [str(rl_addon / "plugins.d" / "20_renault_zoe.sh")],
+            env=zoe_env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        rl_login_lock = rl_addon / "state" / "plugins" / ".renault_rate_limited"
+        check(
+            rl_login.returncode == 0
+            and rl_login_lock.is_file()
+            and renault_state.renault_login_calls == 1
+            and renault_state.renault_battery_calls == 0,
+            "Gigya 429 arms the circuit breaker and aborts the run",
+            failures,
+        )
+        renault_state.renault_login_rate_limit = False
 
         # 23f. test_renault.cgi connection test endpoint
         test_rn_env = os.environ.copy()
