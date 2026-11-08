@@ -175,7 +175,7 @@ for tool in ssh tar; do
     command -v "$tool" >/dev/null 2>&1 || die "required tool not found: $tool"
 done
 
-for file in .env bin/check_soc.sh lib/notify_signal.sh setup_variables.sh \
+for file in VERSION .env bin/check_soc.sh lib/notify_signal.sh setup_variables.sh \
             plugins.d/20_renault_zoe.sh \
             plugins.d/30_forecast_solar.sh \
             config/plugins/renault.env.example \
@@ -183,7 +183,7 @@ for file in .env bin/check_soc.sh lib/notify_signal.sh setup_variables.sh \
             web/index.html web/style.css web/app.js \
             web/api/config.cgi web/api/settings.cgi \
             web/api/test_signal.cgi web/api/test_renault.cgi \
-            web/api/action_zoe.cgi \
+            web/api/action_zoe.cgi web/api/update_check.cgi \
             web/api/plugins.cgi; do
     [ -f "$ROOT/$file" ] || die "missing required file: $file"
 done
@@ -229,6 +229,7 @@ trap cleanup EXIT HUP INT TERM
 
 mkdir -p "$STAGE/bin" "$STAGE/lib" "$STAGE/web/api" \
          "$STAGE/plugins.d" "$STAGE/config/plugins"
+install -m 644 "$ROOT/VERSION"               "$STAGE/VERSION"
 install -m 700 "$ROOT/bin/check_soc.sh"      "$STAGE/bin/check_soc.sh"
 install -m 700 "$ROOT/lib/notify_signal.sh"  "$STAGE/lib/notify_signal.sh"
 install -m 700 "$ROOT/setup_variables.sh"    "$STAGE/setup_variables.sh"
@@ -250,6 +251,7 @@ install -m 755 "$ROOT/web/api/settings.cgi"     "$STAGE/web/api/settings.cgi"
 install -m 755 "$ROOT/web/api/test_signal.cgi"  "$STAGE/web/api/test_signal.cgi"
 install -m 755 "$ROOT/web/api/test_renault.cgi" "$STAGE/web/api/test_renault.cgi"
 install -m 755 "$ROOT/web/api/action_zoe.cgi"   "$STAGE/web/api/action_zoe.cgi"
+install -m 755 "$ROOT/web/api/update_check.cgi" "$STAGE/web/api/update_check.cgi"
 install -m 755 "$ROOT/web/api/plugins.cgi"      "$STAGE/web/api/plugins.cgi"
 
 ssh_ccu() {
@@ -415,7 +417,7 @@ if [ "$SKIP_WEB" != "1" ]; then
 
     # The CGI needs to find the add-on even though lighttpd serves it from a
     # different directory. The path is written once at deploy time.
-    for file in config.cgi settings.cgi test_signal.cgi test_renault.cgi action_zoe.cgi plugins.cgi; do
+    for file in config.cgi settings.cgi test_signal.cgi test_renault.cgi action_zoe.cgi update_check.cgi plugins.cgi; do
         cp -f "$ADDON_DIR/web/api/$file" "$WEB_DIR/api/$file"
         chmod 755 "$WEB_DIR/api/$file"
     done
@@ -434,7 +436,7 @@ if [ "$SKIP_WEB" != "1" ]; then
         cp -f "$ADDON_DIR/web/$file" "$ADDON_DIR/$file"
         chmod 644 "$ADDON_DIR/$file"
     done
-    for file in config.cgi settings.cgi test_signal.cgi test_renault.cgi action_zoe.cgi plugins.cgi; do
+    for file in config.cgi settings.cgi test_signal.cgi test_renault.cgi action_zoe.cgi update_check.cgi plugins.cgi; do
         cp -f "$ADDON_DIR/web/api/$file" "$ADDON_DIR/api/$file"
         chmod 755 "$ADDON_DIR/api/$file"
     done

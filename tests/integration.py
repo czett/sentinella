@@ -2520,6 +2520,77 @@ if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SON
             failures,
         )
 
+        # 26d. Production packaging (tools/build_addon.sh) and update_check.cgi
+        build_script = ROOT / "tools" / "build_addon.sh"
+        check(build_script.is_file() and os.access(build_script, os.X_OK), "tools/build_addon.sh exists and is executable", failures)
+        build_syntax = subprocess.run(["sh", "-n", str(build_script)], capture_output=True, text=True, timeout=10)
+        check(build_syntax.returncode == 0, "tools/build_addon.sh passes sh -n", failures)
+
+        dist_dir = tmp / "dist"
+        build_env = os.environ.copy()
+        build_env["SENTINELLA_DIST_DIR"] = str(dist_dir)
+        build_res = subprocess.run([str(build_script)], env=build_env, capture_output=True, text=True, timeout=30)
+        check(build_res.returncode == 0, f"tools/build_addon.sh builds archive cleanly (exit {build_res.returncode})", failures)
+
+        version_str = (ROOT / "VERSION").read_text().strip()
+        tarball_path = dist_dir / f"sentinella-{version_str}.tar.gz"
+        check(tarball_path.is_file() and tarball_path.stat().st_size > 10000, f"dist/sentinella-{version_str}.tar.gz created", failures)
+
+        unpack_dir = tmp / "unpacked_addon"
+        unpack_dir.mkdir(parents=True, exist_ok=True)
+        unpack_res = subprocess.run(
+            ["tar", "-xzf", str(tarball_path), "-C", str(unpack_dir)],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        check(unpack_res.returncode == 0, "tarball unpacks without errors", failures)
+        check(
+            (unpack_dir / "update_script").is_file()
+            and (unpack_dir / " update_script" if False else (unpack_dir / "update_script")).stat().st_mode & 0o777 == 0o755,
+            "update_script is present in archive with mode 755",
+            failures,
+        )
+        check(
+            (unpack_dir / "rc.d" / "sentinella").is_file()
+            and ((unpack_dir / "rc.d" / "sentinella").stat().st_mode & 0o777) == 0o755,
+            "rc.d/sentinella is present in archive with mode 755",
+            failures,
+        )
+        check(
+            ((unpack_dir / "web" / "index.html").stat().st_mode & 0o777) == 0o644
+            and ((unpack_dir / "web" / "api" / "action_zoe.cgi").stat().st_mode & 0o777) == 0o755
+            and ((unpack_dir / "web" / "api" / "update_check.cgi").stat().st_mode & 0o777) == 0o755,
+            "archive enforces 644 on static files and 755 on CGI endpoints",
+            failures,
+        )
+
+        # Verify update_check.cgi returns installed version
+        upd_env = os.environ.copy()
+        upd_env.update(
+            {
+                "REQUEST_METHOD": "GET",
+                "SCRIPT_NAME": "/addons/sentinella/api/update_check.cgi",
+                "SMA_MONITOR_ADDON_DIR": str(ROOT),
+                "SENTINELLA_OFFLINE": "1",
+            }
+        )
+        upd_res = subprocess.run(
+            ["sh", str(ROOT / "web" / "api" / "update_check.cgi")],
+            env=upd_env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        upd_status, upd_body = parse_cgi(upd_res)
+        check(
+            upd_status == "200 OK"
+            and upd_body.get("ok") is True
+            and upd_body.get("version") == version_str,
+            f"update_check.cgi returns current installed version {version_str} (got {upd_status}: {upd_body})",
+            failures,
+        )
+
     finally:
         sma.shutdown()
         rega.shutdown()
