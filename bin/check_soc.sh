@@ -24,6 +24,11 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 umask 077
 
+DRY_RUN=0
+if [ "${1:-}" = "--dry-run" ] || [ "${1:-}" = "-n" ]; then
+    DRY_RUN=1
+fi
+
 # ---------------------------------------------------------------------------
 # Paths and state
 # ---------------------------------------------------------------------------
@@ -34,8 +39,12 @@ ENV_FILE=${SMA_MONITOR_ENV:-}
 if [ -z "$ENV_FILE" ]; then
     if [ -r "$APP_DIR/.env" ]; then
         ENV_FILE=$APP_DIR/.env
+    elif [ -r "$APP_DIR/config/config.env" ]; then
+        ENV_FILE=$APP_DIR/config/config.env
     elif [ -r "$APP_DIR/config.env" ]; then
         ENV_FILE=$APP_DIR/config.env
+    elif [ "$DRY_RUN" = "1" ] && [ -r "$APP_DIR/.env.example" ]; then
+        ENV_FILE=$APP_DIR/.env.example
     else
         ENV_FILE=$APP_DIR/.env
     fi
@@ -910,6 +919,19 @@ main() {
 
     NOW=$(date +%s 2>/dev/null)
     is_uint "$NOW" || NOW=0
+
+    if [ "$DRY_RUN" = "1" ]; then
+        SOC=85
+        PREV_SOC=84
+        DELTA=1
+        CHARGE_POWER=1200
+        DISCHARGE_POWER=0
+        PREV_SIGNAL=0
+        SIGNAL=$(compute_signal "$SOC" "$PREV_SIGNAL")
+        SIGNAL_STATE=$(derive_signal_state)
+        CHARGE_STATE=$(determine_charge_state)
+        exit 0
+    fi
 
     rotate_log
     acquire_lock || exit 0

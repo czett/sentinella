@@ -542,11 +542,29 @@ a {
 }
 
 /* Massive Poster-Scale SoC Typography */
+@keyframes pulse-charge {
+    from {
+        opacity: 0.85;
+        filter: drop-shadow(0 0 0 rgba(255, 255, 255, 0));
+    }
+    to {
+        opacity: 1;
+        filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.25));
+    }
+}
+
 .soc {
     display: flex;
     align-items: baseline;
     margin: clamp(24px, 4.5vh, 48px) 0;
     line-height: 0.82;
+}
+
+.soc.is-charging,
+.soc-value.is-charging,
+.plugin-stat-hero.is-charging {
+    will-change: opacity;
+    animation: pulse-charge 2.5s ease-in-out infinite alternate;
 }
 
 .soc-value {

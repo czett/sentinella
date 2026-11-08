@@ -22,8 +22,43 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 umask 077
 
-APP_DIR=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)
-[ -n "$APP_DIR" ] || APP_DIR=/usr/local/addons/sentinella
+ADDON_DIR=${FORECAST_ADDON_DIR:-${SMA_MONITOR_ADDON_DIR:-}}
+if [ -z "$ADDON_DIR" ]; then
+    ADDON_DIR=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)
+fi
+[ -n "$ADDON_DIR" ] || ADDON_DIR=/usr/local/addons/sentinella
+APP_DIR=$ADDON_DIR
+
+# ---------------------------------------------------------------------------
+# UI Language & Localized String Maps (DE / EN)
+# ---------------------------------------------------------------------------
+load_ui_language() {
+    _lang=${UI_LANGUAGE:-}
+    if [ -z "$_lang" ]; then
+        for _env_cand in \
+            "${SMA_MONITOR_ENV:-}" \
+            "$ADDON_DIR/config/config.env" \
+            "$ADDON_DIR/.env" \
+            "$ADDON_DIR/config.env" \
+            /usr/local/addons/sentinella/config/config.env \
+            /usr/local/addons/sentinella/.env
+        do
+            [ -n "$_env_cand" ] && [ -r "$_env_cand" ] || continue
+            _raw=$(sed -n 's/^[[:space:]]*UI_LANGUAGE[[:space:]]*=[[:space:]]*//p' "$_env_cand" 2>/dev/null | tail -n 1)
+            _raw=$(printf '%s' "$_raw" | sed -e "s/^['\"]//" -e "s/['\"][[:space:]]*$//")
+            if [ -n "$_raw" ]; then
+                _lang=$_raw
+                break
+            fi
+        done
+    fi
+    case "$_lang" in
+        en|EN|en_US|en-US|en_GB|en-GB) UI_LANGUAGE=en ;;
+        *) UI_LANGUAGE=de ;;
+    esac
+}
+
+load_ui_language
 
 # ---------------------------------------------------------------------------
 # Configuration (first readable file wins)
@@ -31,7 +66,7 @@ APP_DIR=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)
 CONFIG_FILE=${FORECAST_SOLAR_ENV:-}
 if [ -z "$CONFIG_FILE" ]; then
     for _candidate in \
-        "$APP_DIR/config/plugins/forecast_solar.env" \
+        "$ADDON_DIR/config/plugins/forecast_solar.env" \
         /usr/local/addons/sentinella/config/plugins/forecast_solar.env
     do
         if [ -r "$_candidate" ]; then
@@ -44,6 +79,33 @@ if [ -n "$CONFIG_FILE" ] && [ -r "$CONFIG_FILE" ]; then
     chmod 600 "$CONFIG_FILE" 2>/dev/null || true
     # shellcheck source=/dev/null
     . "$CONFIG_FILE"
+fi
+
+case "${UI_LANGUAGE:-}" in
+    en|EN|en_US|en-US|en_GB|en-GB) UI_LANGUAGE=en ;;
+    *) UI_LANGUAGE=de ;;
+esac
+
+if [ "$UI_LANGUAGE" = "en" ]; then
+    I18N_TITLE="SOLAR FORECAST"
+    I18N_LABEL="TODAY FORECAST"
+    I18N_COMPARISON="vs yesterday"
+    I18N_BADGE_SUNNY="SUNNY"
+    I18N_BADGE_MODERATE="MODERATE"
+    I18N_BADGE_CLOUDY="CLOUDY"
+    I18N_METRIC_TOMORROW="TOMORROW"
+    I18N_METRIC_PEAK="PEAK"
+    I18N_OFFLINE_COMP="No connection to forecast.solar"
+else
+    I18N_TITLE="PV-PROGNOSE"
+    I18N_LABEL="PROGNOSE HEUTE"
+    I18N_COMPARISON="von gestern"
+    I18N_BADGE_SUNNY="SONNIG"
+    I18N_BADGE_MODERATE="MODERAT"
+    I18N_BADGE_CLOUDY="BEWÖLKT"
+    I18N_METRIC_TOMORROW="MORGEN"
+    I18N_METRIC_PEAK="SPITZE"
+    I18N_OFFLINE_COMP="Keine Verbindung zu forecast.solar"
 fi
 
 FORECAST_LAT=${FORECAST_LAT:-51.43}
@@ -127,12 +189,12 @@ write_neutral() {
 {
   "id": "forecast_solar",
   "layout": "delta",
-  "title": "Solarprognose",
+  "title": "$I18N_TITLE",
   "status_badge": "OFFLINE",
   "status_color": "neutral",
   "timestamp": "$_ts",
-  "primary": { "value": 0, "unit": "kWh", "label": "Heute" },
-  "delta": { "direction": "neutral", "value": "", "comparison": "Keine Verbindung zu forecast.solar" },
+  "primary": { "value": 0, "unit": "kWh", "label": "$I18N_LABEL" },
+  "delta": { "direction": "neutral", "value": "", "comparison": "$I18N_OFFLINE_COMP" },
   "secondary_metrics": []
 }
 EOF
@@ -197,7 +259,11 @@ is_uint "$TOMORROW_WH" || TOMORROW_WH=0
 # ---------------------------------------------------------------------------
 # Layout values (awk keeps the float maths portable)
 # ---------------------------------------------------------------------------
-CALC=$(awk -v t="$TODAY_WH" -v m="$TOMORROW_WH" -v k="$FORECAST_KWP" 'BEGIN {
+CALC=$(awk -v t="$TODAY_WH" -v m="$TOMORROW_WH" -v k="$FORECAST_KWP" \
+    -v b_sunny="$I18N_BADGE_SUNNY" \
+    -v b_mod="$I18N_BADGE_MODERATE" \
+    -v b_cloudy="$I18N_BADGE_CLOUDY" \
+    'BEGIN {
     tk = t / 1000;
     mk = m / 1000;
     d = mk - tk;
@@ -211,10 +277,10 @@ CALC=$(awk -v t="$TODAY_WH" -v m="$TOMORROW_WH" -v k="$FORECAST_KWP" 'BEGIN {
     else ds = "0.0 kWh";
 
     ratio = (k > 0) ? tk / k : 0;
-    if (t <= 0) { badge = "KEINE SONNE"; color = "neutral"; }
-    else if (ratio >= 2.5) { badge = "OPTIMAL"; color = "green"; }
-    else if (ratio >= 1.0) { badge = "GUT"; color = "blue"; }
-    else { badge = "WENIG"; color = "neutral"; }
+    if (t <= 0) { badge = b_cloudy; color = "neutral"; }
+    else if (ratio >= 2.5) { badge = b_sunny; color = "green"; }
+    else if (ratio >= 1.0) { badge = b_mod; color = "blue"; }
+    else { badge = b_cloudy; color = "neutral"; }
 
     printf "%.1f|%.1f|%s|%s|%s|%s|%.2f\n",
         tk, mk, dir, ds, badge, color, ratio;
@@ -232,7 +298,7 @@ case "$COLOR" in
     green|blue|red|neutral) ;;
     *) COLOR=neutral ;;
 esac
-[ -n "$BADGE" ] || BADGE="KEINE DATEN"
+[ -n "$BADGE" ] || BADGE="$I18N_BADGE_CLOUDY"
 
 NOW_ISO=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null) || NOW_ISO=
 
@@ -243,19 +309,19 @@ cat > "$OUT_FILE.tmp.$$" <<EOF
 {
   "id": "forecast_solar",
   "layout": "delta",
-  "title": "Solarprognose",
+  "title": "$I18N_TITLE",
   "status_badge": "$BADGE",
   "status_color": "$COLOR",
   "timestamp": "$NOW_ISO",
-  "primary": { "value": $TODAY_KWH, "unit": "kWh", "label": "Heute" },
+  "primary": { "value": $TODAY_KWH, "unit": "kWh", "label": "$I18N_LABEL" },
   "delta": {
     "direction": "$DELTA_DIR",
     "value": "$DELTA_VALUE",
-    "comparison": "vs. morgen"
+    "comparison": "$I18N_COMPARISON"
   },
   "secondary_metrics": [
-    { "label": "Morgen", "value": "$TOMORROW_KWH", "unit": "kWh" },
-    { "label": "Spezifisch", "value": "$RATIO", "unit": "kWh/kWp" }
+    { "label": "$I18N_METRIC_TOMORROW", "value": "$TOMORROW_KWH", "unit": "kWh" },
+    { "label": "$I18N_METRIC_PEAK", "value": "$RATIO", "unit": "kWh/kWp" }
   ]
 }
 EOF

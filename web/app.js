@@ -24,6 +24,7 @@
         window.location.protocol === "file:";
 
     var current = null;
+    var currentPlugins = null;
     var pollTimer = null;
     var loading = false;
 
@@ -524,6 +525,9 @@
         } else if (el.pullLabel && !pullActive) {
             el.pullLabel.textContent = t("pullRefresh");
         }
+        if (currentPlugins && currentPlugins.length) {
+            renderPluginsList(currentPlugins);
+        }
         if (noticeRenderer && !el.notice.hidden) {
             noticeRenderer();
         }
@@ -573,6 +577,7 @@
                     currentLanguage === language) {
                 setLanguage(data.ui_language);
             }
+            fetchAndRenderPlugins();
         }).catch(function () {
             showToast("error", t("languageSaveFailed"));
         });
@@ -774,11 +779,26 @@
        Rendering
        ---------------------------------------------------------------------- */
 
+    function isTelemetryCharging(data) {
+        if (!data || typeof data !== "object") {
+            return false;
+        }
+        if (data.charging === true || data.charging === "charging") {
+            return true;
+        }
+        if (Number(data.chargingStatus) === 1) {
+            return true;
+        }
+        var badge = String(data.status_badge || "").toUpperCase();
+        return badge === "LÄDT" || badge === "CHARGING";
+    }
+
     function render(data) {
         var soc = data.soc;
         var thresholds = normalizeThresholds(data);
         var history = Array.isArray(data.history) ? data.history : [];
-        var charge = data.charging || "unknown";
+        var isCharging = isTelemetryCharging(data);
+        var charge = isCharging ? "charging" : (data.charging || "unknown");
         var last = formatTime(data.generated_at);
         var tone = signalTone(data);
 
@@ -787,6 +807,12 @@
 
         if (el.heroBlock) {
             el.heroBlock.dataset.charge = charge;
+        }
+        if (el.gauge) {
+            el.gauge.classList.toggle("is-charging", isCharging);
+        }
+        if (el.socValue) {
+            el.socValue.classList.toggle("is-charging", isCharging);
         }
 
         el.socValue.textContent = String(soc);
@@ -1150,6 +1176,129 @@
        Plugins Ingest & Rendering
        ---------------------------------------------------------------------- */
 
+    var PLUGIN_I18N = {
+        en: {
+            "RENAULT ZOE": "RENAULT ZOE",
+            "Renault Zoe": "RENAULT ZOE",
+            "BATTERIE SOC": "BATTERY SOC",
+            "Batterie SoC": "BATTERY SOC",
+            "BATTERY SOC": "BATTERY SOC",
+            "REICHWEITE": "RANGE",
+            "Reichweite": "RANGE",
+            "RANGE": "RANGE",
+            "STECKER": "CONNECTOR",
+            "CONNECTOR": "CONNECTOR",
+            "LÄDT": "CHARGING",
+            "CHARGING": "CHARGING",
+            "VERBUNDEN": "CONNECTED",
+            "CONNECTED": "CONNECTED",
+            "BEREIT": "READY",
+            "READY": "READY",
+            "Gesteckt": "Connected",
+            "Connected": "Connected",
+            "Getrennt": "Disconnected",
+            "Disconnected": "Disconnected",
+            "PV-PROGNOSE": "SOLAR FORECAST",
+            "Solarprognose": "SOLAR FORECAST",
+            "SOLAR FORECAST": "SOLAR FORECAST",
+            "PROGNOSE HEUTE": "TODAY FORECAST",
+            "TAGESERTRAG": "TODAY FORECAST",
+            "Heute": "TODAY FORECAST",
+            "TODAY FORECAST": "TODAY FORECAST",
+            "von gestern": "vs yesterday",
+            "vs. Gestern": "vs yesterday",
+            "vs. morgen": "vs yesterday",
+            "vs yesterday": "vs yesterday",
+            "SONNIG": "SUNNY",
+            "OPTIMAL": "SUNNY",
+            "SUNNY": "SUNNY",
+            "MODERAT": "MODERATE",
+            "GUT": "MODERATE",
+            "MODERATE": "MODERATE",
+            "BEWÖLKT": "CLOUDY",
+            "WENIG": "CLOUDY",
+            "KEINE SONNE": "CLOUDY",
+            "CLOUDY": "CLOUDY",
+            "MORGEN": "TOMORROW",
+            "Morgen": "TOMORROW",
+            "TOMORROW": "TOMORROW",
+            "SPITZE": "PEAK",
+            "Spezifisch": "PEAK",
+            "PEAK": "PEAK",
+            "Keine Verbindung zu forecast.solar": "No connection to forecast.solar",
+            "No connection to forecast.solar": "No connection to forecast.solar"
+        },
+        de: {
+            "RENAULT ZOE": "RENAULT ZOE",
+            "Renault Zoe": "RENAULT ZOE",
+            "BATTERY SOC": "BATTERIE SOC",
+            "BATTERIE SOC": "BATTERIE SOC",
+            "Batterie SoC": "BATTERIE SOC",
+            "RANGE": "REICHWEITE",
+            "REICHWEITE": "REICHWEITE",
+            "Reichweite": "REICHWEITE",
+            "CONNECTOR": "STECKER",
+            "STECKER": "STECKER",
+            "CHARGING": "LÄDT",
+            "LÄDT": "LÄDT",
+            "CONNECTED": "VERBUNDEN",
+            "VERBUNDEN": "VERBUNDEN",
+            "READY": "BEREIT",
+            "BEREIT": "BEREIT",
+            "Connected": "Gesteckt",
+            "Gesteckt": "Gesteckt",
+            "Disconnected": "Getrennt",
+            "Getrennt": "Getrennt",
+            "SOLAR FORECAST": "PV-PROGNOSE",
+            "PV-PROGNOSE": "PV-PROGNOSE",
+            "Solarprognose": "PV-PROGNOSE",
+            "TODAY FORECAST": "PROGNOSE HEUTE",
+            "PROGNOSE HEUTE": "PROGNOSE HEUTE",
+            "TAGESERTRAG": "PROGNOSE HEUTE",
+            "Heute": "PROGNOSE HEUTE",
+            "vs yesterday": "von gestern",
+            "von gestern": "von gestern",
+            "vs. Gestern": "von gestern",
+            "vs. morgen": "von gestern",
+            "SUNNY": "SONNIG",
+            "SONNIG": "SONNIG",
+            "OPTIMAL": "SONNIG",
+            "MODERATE": "MODERAT",
+            "MODERAT": "MODERAT",
+            "GUT": "MODERAT",
+            "CLOUDY": "BEWÖLKT",
+            "BEWÖLKT": "BEWÖLKT",
+            "WENIG": "BEWÖLKT",
+            "KEINE SONNE": "BEWÖLKT",
+            "TOMORROW": "MORGEN",
+            "MORGEN": "MORGEN",
+            "Morgen": "MORGEN",
+            "PEAK": "SPITZE",
+            "SPITZE": "SPITZE",
+            "Spezifisch": "SPITZE",
+            "No connection to forecast.solar": "Keine Verbindung zu forecast.solar",
+            "Keine Verbindung zu forecast.solar": "Keine Verbindung zu forecast.solar"
+        }
+    };
+
+    function translatePluginText(value) {
+        if (value === null || value === undefined) {
+            return "";
+        }
+        var raw = String(value);
+        var lang = (typeof currentLanguage === "string" && PLUGIN_I18N[currentLanguage])
+            ? currentLanguage : "de";
+        var dict = PLUGIN_I18N[lang];
+        if (dict && Object.prototype.hasOwnProperty.call(dict, raw)) {
+            return dict[raw];
+        }
+        if (typeof I18N === "object" && I18N && I18N[lang] &&
+                Object.prototype.hasOwnProperty.call(I18N[lang], raw)) {
+            return I18N[lang][raw];
+        }
+        return raw;
+    }
+
     function escapeHtml(str) {
         if (str === null || str === undefined) {
             return "";
@@ -1167,8 +1316,8 @@
             return "";
         }
         var rows = metrics.map(function (m) {
-            var label = escapeHtml((m && m.label) || "");
-            var value = escapeHtml((m && m.value !== undefined) ? String(m.value) : "");
+            var label = escapeHtml(translatePluginText((m && m.label) || ""));
+            var value = escapeHtml(translatePluginText((m && m.value !== undefined) ? String(m.value) : ""));
             var unit = (m && m.unit) ? (" " + escapeHtml(m.unit)) : "";
             return (
                 '<div class="plugin-list-row">' +
@@ -1187,11 +1336,16 @@
         var rawLayout = (plugin && plugin.layout) || "stat";
         var layout = (rawLayout === "stat" || rawLayout === "delta" || rawLayout === "list")
             ? rawLayout : "stat";
-        var title = escapeHtml((plugin && plugin.title) || "");
-        var badgeText = (plugin && plugin.status_badge) ? escapeHtml(plugin.status_badge) : "";
+        var title = escapeHtml(translatePluginText((plugin && plugin.title) || ""));
+        var rawBadge = (plugin && plugin.status_badge) ? String(plugin.status_badge) : "";
+        var badgeText = rawBadge ? escapeHtml(translatePluginText(rawBadge)) : "";
         var rawColor = String((plugin && plugin.status_color) || "neutral");
         var badgeColor = (rawColor === "green" || rawColor === "blue" ||
             rawColor === "red" || rawColor === "neutral") ? rawColor : "neutral";
+        var pluginCharging = (plugin && (plugin.charging === true ||
+            Number(plugin.chargingStatus) === 1 ||
+            rawBadge.toUpperCase() === "LÄDT" ||
+            rawBadge.toUpperCase() === "CHARGING"));
 
         var badgeHtml = badgeText ? (
             '<span class="plugin-badge" data-color="' + badgeColor + '">' + badgeText + '</span>'
@@ -1213,7 +1367,7 @@
                 ? rawDir : "neutral";
             var deltaDir = escapeHtml(rawDir);
             var deltaVal = escapeHtml((delta.value !== undefined) ? String(delta.value) : "");
-            var deltaComp = escapeHtml(delta.comparison || "");
+            var deltaComp = escapeHtml(translatePluginText(delta.comparison || ""));
 
             var primary = (plugin && plugin.primary) || {};
             var priVal = escapeHtml((primary.value !== undefined) ? String(primary.value) : "");
@@ -1244,8 +1398,8 @@
             var listRows = "";
             if (Array.isArray(metrics) && metrics.length) {
                 listRows = metrics.map(function (m) {
-                    var l = escapeHtml((m && m.label) || "");
-                    var v = escapeHtml((m && m.value !== undefined) ? String(m.value) : "");
+                    var l = escapeHtml(translatePluginText((m && m.label) || ""));
+                    var v = escapeHtml(translatePluginText((m && m.value !== undefined) ? String(m.value) : ""));
                     var u = (m && m.unit) ? (" " + escapeHtml(m.unit)) : "";
                     return (
                         '<li class="plugin-list-row">' +
@@ -1261,10 +1415,11 @@
             var primaryStat = (plugin && plugin.primary) || {};
             var statVal = escapeHtml((primaryStat.value !== undefined) ? String(primaryStat.value) : "");
             var statUnit = primaryStat.unit ? escapeHtml(primaryStat.unit) : "";
-            var statLabel = primaryStat.label ? escapeHtml(primaryStat.label) : "";
+            var statLabel = primaryStat.label ? escapeHtml(translatePluginText(primaryStat.label)) : "";
+            var heroClass = pluginCharging ? "plugin-stat-hero is-charging" : "plugin-stat-hero";
 
             bodyHtml = (
-                '<div class="plugin-stat-hero">' +
+                '<div class="' + heroClass + '">' +
                     '<span class="plugin-stat-value">' + statVal + '</span>' +
                     (statUnit ? '<span class="plugin-stat-unit">' + statUnit + '</span>' : '') +
                 '</div>' +
@@ -1275,6 +1430,26 @@
 
         card.innerHTML = headerHtml + bodyHtml;
         return card;
+    }
+
+    function renderPluginsList(plugins) {
+        if (!el.pluginsSection || !el.pluginsGrid) {
+            return;
+        }
+        if (!Array.isArray(plugins) || !plugins.length) {
+            el.pluginsSection.style.display = "none";
+            el.pluginsGrid.innerHTML = "";
+            return;
+        }
+        var fragment = document.createDocumentFragment();
+        plugins.forEach(function (plugin) {
+            if (plugin && typeof plugin === "object") {
+                fragment.appendChild(renderPluginCard(plugin));
+            }
+        });
+        el.pluginsGrid.innerHTML = "";
+        el.pluginsGrid.appendChild(fragment);
+        el.pluginsSection.style.display = "";
     }
 
     function fetchAndRenderPlugins() {
@@ -1293,21 +1468,11 @@
                 return res.json();
             })
             .then(function (plugins) {
-                if (!Array.isArray(plugins) || !plugins.length) {
-                    el.pluginsSection.style.display = "none";
-                    el.pluginsGrid.innerHTML = "";
-                    return;
-                }
-
-                el.pluginsGrid.innerHTML = "";
-                plugins.forEach(function (plugin) {
-                    if (plugin && typeof plugin === "object") {
-                        el.pluginsGrid.appendChild(renderPluginCard(plugin));
-                    }
-                });
-                el.pluginsSection.style.display = "";
+                currentPlugins = Array.isArray(plugins) ? plugins : [];
+                renderPluginsList(currentPlugins);
             })
             .catch(function () {
+                currentPlugins = [];
                 el.pluginsSection.style.display = "none";
                 el.pluginsGrid.innerHTML = "";
             });

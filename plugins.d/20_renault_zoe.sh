@@ -34,6 +34,41 @@ fi
 [ -n "$ADDON_DIR" ] || ADDON_DIR=/usr/local/addons/sentinella
 APP_DIR=$ADDON_DIR
 
+trim_ws() {
+    printf '%s' "${1:-}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+}
+
+# ---------------------------------------------------------------------------
+# UI Language & Localized String Maps (DE / EN)
+# ---------------------------------------------------------------------------
+load_ui_language() {
+    _lang=${UI_LANGUAGE:-}
+    if [ -z "$_lang" ]; then
+        for _env_cand in \
+            "${SMA_MONITOR_ENV:-}" \
+            "$ADDON_DIR/config/config.env" \
+            "$ADDON_DIR/.env" \
+            "$ADDON_DIR/config.env" \
+            /usr/local/addons/sentinella/config/config.env \
+            /usr/local/addons/sentinella/.env
+        do
+            [ -n "$_env_cand" ] && [ -r "$_env_cand" ] || continue
+            _raw=$(sed -n 's/^[[:space:]]*UI_LANGUAGE[[:space:]]*=[[:space:]]*//p' "$_env_cand" 2>/dev/null | tail -n 1)
+            _raw=$(printf '%s' "$_raw" | sed -e "s/^['\"]//" -e "s/['\"][[:space:]]*$//")
+            if [ -n "$_raw" ]; then
+                _lang=$_raw
+                break
+            fi
+        done
+    fi
+    case "$_lang" in
+        en|EN|en_US|en-US|en_GB|en-GB) UI_LANGUAGE=en ;;
+        *) UI_LANGUAGE=de ;;
+    esac
+}
+
+load_ui_language
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -56,9 +91,32 @@ if [ -n "$CONFIG_FILE" ] && [ -r "$CONFIG_FILE" ]; then
     . "$CONFIG_FILE"
 fi
 
-trim_ws() {
-    printf '%s' "${1:-}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
-}
+case "${UI_LANGUAGE:-}" in
+    en|EN|en_US|en-US|en_GB|en-GB) UI_LANGUAGE=en ;;
+    *) UI_LANGUAGE=de ;;
+esac
+
+if [ "$UI_LANGUAGE" = "en" ]; then
+    I18N_TITLE="RENAULT ZOE"
+    I18N_LABEL="BATTERY SOC"
+    I18N_METRIC_RANGE="RANGE"
+    I18N_METRIC_PLUG="CONNECTOR"
+    I18N_BADGE_CHARGING="CHARGING"
+    I18N_BADGE_CONNECTED="CONNECTED"
+    I18N_BADGE_READY="READY"
+    I18N_PLUG_CONNECTED="Connected"
+    I18N_PLUG_DISCONNECTED="Disconnected"
+else
+    I18N_TITLE="RENAULT ZOE"
+    I18N_LABEL="BATTERIE SOC"
+    I18N_METRIC_RANGE="REICHWEITE"
+    I18N_METRIC_PLUG="STECKER"
+    I18N_BADGE_CHARGING="LÄDT"
+    I18N_BADGE_CONNECTED="VERBUNDEN"
+    I18N_BADGE_READY="BEREIT"
+    I18N_PLUG_CONNECTED="Gesteckt"
+    I18N_PLUG_DISCONNECTED="Getrennt"
+fi
 
 RENAULT_USER=$(trim_ws "${RENAULT_USER:-}")
 RENAULT_PASS=${RENAULT_PASS:-}
@@ -453,20 +511,26 @@ fi
 is_number "$PLUG_STATUS" || PLUG_STATUS=0
 is_number "$CHARGING_STATUS" || CHARGING_STATUS=0.0
 
-CALC=$(awk -v p="$PLUG_STATUS" -v c="$CHARGING_STATUS" 'BEGIN {
+CALC=$(awk -v p="$PLUG_STATUS" -v c="$CHARGING_STATUS" \
+    -v b_charge="$I18N_BADGE_CHARGING" \
+    -v b_conn="$I18N_BADGE_CONNECTED" \
+    -v b_ready="$I18N_BADGE_READY" \
+    -v p_conn="$I18N_PLUG_CONNECTED" \
+    -v p_disc="$I18N_PLUG_DISCONNECTED" \
+    'BEGIN {
     is_charging = (c + 0 == 1.0);
     is_plugged = (p + 0 == 1);
     if (is_charging) {
-        badge = "LÄDT";
+        badge = b_charge;
         color = "green";
     } else if (is_plugged) {
-        badge = "VERBUNDEN";
+        badge = b_conn;
         color = "blue";
     } else {
-        badge = "BEREIT";
+        badge = b_ready;
         color = "neutral";
     }
-    plug_text = is_plugged ? "Gesteckt" : "Getrennt";
+    plug_text = is_plugged ? p_conn : p_disc;
     printf "%s|%s|%s\n", badge, color, plug_text;
 }')
 
@@ -478,8 +542,8 @@ case "$COLOR" in
     green|blue|red|neutral) ;;
     *) COLOR=neutral ;;
 esac
-[ -n "$BADGE" ] || BADGE="BEREIT"
-[ -n "$PLUG_TEXT" ] || PLUG_TEXT="Getrennt"
+[ -n "$BADGE" ] || BADGE="$I18N_BADGE_READY"
+[ -n "$PLUG_TEXT" ] || PLUG_TEXT="$I18N_PLUG_DISCONNECTED"
 
 NOW_ISO=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null) || NOW_ISO=
 
@@ -487,18 +551,18 @@ cat > "$OUT_FILE.tmp.$$" <<EOF
 {
   "id": "renault_zoe",
   "layout": "stat",
-  "title": "Renault Zoe",
+  "title": "$I18N_TITLE",
   "status_badge": "$BADGE",
   "status_color": "$COLOR",
   "timestamp": "$NOW_ISO",
   "primary": {
     "value": $BATTERY_LEVEL,
     "unit": "%",
-    "label": "BATTERIE SOC"
+    "label": "$I18N_LABEL"
   },
   "secondary_metrics": [
-    { "label": "REICHWEITE", "value": "${BATTERY_AUTONOMY} km" },
-    { "label": "STECKER", "value": "$PLUG_TEXT" }
+    { "label": "$I18N_METRIC_RANGE", "value": "${BATTERY_AUTONOMY} km" },
+    { "label": "$I18N_METRIC_PLUG", "value": "$PLUG_TEXT" }
   ]
 }
 EOF

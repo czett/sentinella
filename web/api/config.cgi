@@ -65,12 +65,15 @@ ENV_FILE=${SMA_MONITOR_ENV:-}
 if [ -z "$ENV_FILE" ]; then
     if [ -r "$ADDON_DIR/.env" ]; then
         ENV_FILE=$ADDON_DIR/.env
+    elif [ -r "$ADDON_DIR/config/config.env" ]; then
+        ENV_FILE=$ADDON_DIR/config/config.env
     elif [ -r "$ADDON_DIR/config.env" ]; then
         ENV_FILE=$ADDON_DIR/config.env
     else
         ENV_FILE=$ADDON_DIR/.env
     fi
 fi
+CONFIG_ENV_FILE=$ADDON_DIR/config/config.env
 
 STATE_DIR=$ADDON_DIR/state
 RENAULT_CONFIG_DIR=$ADDON_DIR/config/plugins
@@ -957,6 +960,21 @@ save_config() {
     mv -f "$TMP_FILE" "$ENV_FILE" 2>/dev/null \
         || fail "500 Internal Server Error" "$(msg replace_config)"
     TMP_FILE=
+
+    if [ "$_want_language" = "1" ]; then
+        mkdir -p "$ADDON_DIR/config" 2>/dev/null || true
+        chmod 700 "$ADDON_DIR/config" 2>/dev/null || true
+        if [ -f "$CONFIG_ENV_FILE" ]; then
+            env_set "$CONFIG_ENV_FILE" UI_LANGUAGE "$_language" 2>/dev/null || true
+        else
+            (
+                umask 077
+                printf "UI_LANGUAGE='%s'\n" "$_language" > "$CONFIG_ENV_FILE.tmp.$$" 2>/dev/null \
+                    && mv -f "$CONFIG_ENV_FILE.tmp.$$" "$CONFIG_ENV_FILE" 2>/dev/null
+            ) || true
+        fi
+        chmod 600 "$CONFIG_ENV_FILE" 2>/dev/null || true
+    fi
 
     if [ "$_want_renault" = "1" ]; then
         save_renault_env "$_ruser" "$_rpass" "$_rvin" \

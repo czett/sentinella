@@ -1316,15 +1316,18 @@ if (!appCode.includes("renderPluginCard")) fail("renderPluginCard missing in app
 if (!appCode.includes("escapeHtml")) fail("escapeHtml missing in app.js");
 
 // 3. Test renderPluginCard logic in a mocked DOM environment
+const pluginI18nMatch = appCode.match(/var PLUGIN_I18N = \{[\s\S]*?\n    \};/);
+const translatePluginMatch = appCode.match(/function translatePluginText\([\s\S]*?\n    \}/);
 const escapeHtmlMatch = appCode.match(/function escapeHtml\([\s\S]*?\n    \}/);
 const secondaryMetricsMatch = appCode.match(/function renderSecondaryMetrics\([\s\S]*?\n    \}/);
 const renderPluginCardMatch = appCode.match(/function renderPluginCard\([\s\S]*?\n    \}/);
 
-if (!escapeHtmlMatch || !secondaryMetricsMatch || !renderPluginCardMatch) {
+if (!pluginI18nMatch || !translatePluginMatch || !escapeHtmlMatch || !secondaryMetricsMatch || !renderPluginCardMatch) {
     fail("could not extract plugin functions from app.js");
 }
 
 const mockEnv = `
+var currentLanguage = "de";
 const document = {
     createElement: function(tag) {
         return {
@@ -1335,7 +1338,7 @@ const document = {
         };
     }
 };
-` + escapeHtmlMatch[0] + "\n" + secondaryMetricsMatch[0] + "\n" + renderPluginCardMatch[0] + "\n" + `
+` + pluginI18nMatch[0] + "\n" + translatePluginMatch[0] + "\n" + escapeHtmlMatch[0] + "\n" + secondaryMetricsMatch[0] + "\n" + renderPluginCardMatch[0] + "\n" + `
 
 // Test Layout: stat
 const statCard = renderPluginCard({
@@ -1451,9 +1454,9 @@ eval(mockEnv);
         fc_data = json.loads(fc_json_path.read_text()) if fc_json_path.is_file() else {}
         check(fc_data.get("layout") == "delta", "forecast card uses delta layout", failures)
         check(fc_data.get("id") == "forecast_solar", "forecast card id", failures)
-        check(fc_data.get("title") == "Solarprognose", "forecast card title", failures)
+        check(fc_data.get("title") == "PV-PROGNOSE", "forecast card title (DE default)", failures)
         check(
-            fc_data.get("status_badge") in {"OPTIMAL", "GUT", "WENIG", "KEINE SONNE"},
+            fc_data.get("status_badge") in {"SONNIG", "MODERAT", "BEWÖLKT"},
             f"forecast badge set (got {fc_data.get('status_badge')!r})",
             failures,
         )
@@ -1472,11 +1475,12 @@ eval(mockEnv);
             failures,
         )
         check(fc_primary.get("unit") == "kWh", "primary unit is kWh", failures)
+        check(fc_primary.get("label") == "PROGNOSE HEUTE", "primary label is PROGNOSE HEUTE", failures)
         check(fc_delta.get("direction") == "down", "delta points down vs. tomorrow", failures)
         check(fc_delta.get("value") == "-3.2 kWh", "delta value is -3.2 kWh", failures)
-        check(fc_delta.get("comparison") == "vs. morgen", "delta comparison label", failures)
+        check(fc_delta.get("comparison") == "von gestern", "delta comparison label (DE)", failures)
         fc_labels = {m.get("label") for m in fc_metrics if isinstance(m, dict)}
-        check({"Morgen", "Spezifisch"}.issubset(fc_labels), "secondary metrics present", failures)
+        check({"MORGEN", "SPITZE"}.issubset(fc_labels), "secondary metrics present (DE)", failures)
 
         # Offline must keep the last good card byte-for-byte.
         before = fc_json_path.read_text()
@@ -1657,7 +1661,9 @@ eval(mockEnv);
             failures,
         )
 
-        # 23c. Full 4-step auth chain + telemetry parse (chargingStatus=1.0 -> LÄDT / green)
+        # 23c. Full 4-step auth chain + telemetry parse (chargingStatus=1.0 -> LÄDT / green when UI_LANGUAGE=de)
+        (zoe_addon / "config" / "config.env").write_text('UI_LANGUAGE="de"\n')
+        (zoe_addon / "config" / "config.env").chmod(0o600)
         zoe_env = os.environ.copy()
         zoe_env["RENAULT_GIGYA_URL"] = f"http://127.0.0.1:{renault_port}"
         zoe_env["RENAULT_KAMEREON_URL"] = f"http://127.0.0.1:{renault_port}"
@@ -2065,6 +2071,266 @@ eval(mockEnv);
             "index.html ships a Content Security Policy",
             failures,
         )
+
+        print("\n25. Plugin i18n (DE / EN), charging pulse animation, benchmark & CONTRIBUTING.md")
+        # 25a. Renault Zoe plugin i18n: UI_LANGUAGE=en vs UI_LANGUAGE=de in config/config.env
+        (zoe_addon / "config" / "config.env").write_text('UI_LANGUAGE="en"\n')
+        (zoe_addon / "config" / "config.env").chmod(0o600)
+        renault_state.reset_requests()
+        renault_state.renault_battery_level = 84
+        renault_state.renault_autonomy = 230
+        renault_state.renault_plug_status = 1
+        renault_state.renault_charging_status = 1.0
+        zoe_en_res = subprocess.run(
+            [str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20
+        )
+        check(zoe_en_res.returncode == 0, "Renault Zoe EN run exits 0", failures)
+        zoe_en_card = json.loads(zoe_card_path.read_text())
+        check(zoe_en_card.get("title") == "RENAULT ZOE", "Renault EN title is RENAULT ZOE", failures)
+        check(zoe_en_card.get("status_badge") == "CHARGING", "Renault EN charging badge is CHARGING", failures)
+        check(
+            zoe_en_card.get("primary") == {"value": 84, "unit": "%", "label": "BATTERY SOC"},
+            f"Renault EN primary is BATTERY SOC (got {zoe_en_card.get('primary')})",
+            failures,
+        )
+        check(
+            zoe_en_card.get("secondary_metrics")
+            == [
+                {"label": "RANGE", "value": "230 km"},
+                {"label": "CONNECTOR", "value": "Connected"},
+            ],
+            f"Renault EN secondary metrics match RANGE / CONNECTOR / Connected (got {zoe_en_card.get('secondary_metrics')})",
+            failures,
+        )
+
+        # Renault Zoe EN: CONNECTED & READY states
+        renault_state.renault_plug_status = 1
+        renault_state.renault_charging_status = 0.0
+        subprocess.run([str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20)
+        zoe_en_conn = json.loads(zoe_card_path.read_text())
+        check(
+            zoe_en_conn.get("status_badge") == "CONNECTED"
+            and zoe_en_conn.get("secondary_metrics")[1] == {"label": "CONNECTOR", "value": "Connected"},
+            "Renault EN plugged idle -> CONNECTED / Connected",
+            failures,
+        )
+
+        renault_state.renault_plug_status = 0
+        renault_state.renault_charging_status = 0.0
+        subprocess.run([str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20)
+        zoe_en_ready = json.loads(zoe_card_path.read_text())
+        check(
+            zoe_en_ready.get("status_badge") == "READY"
+            and zoe_en_ready.get("secondary_metrics")[1] == {"label": "CONNECTOR", "value": "Disconnected"},
+            "Renault EN unplugged -> READY / Disconnected",
+            failures,
+        )
+
+        # Switch back to DE via config/config.env and verify DE outputs
+        (zoe_addon / "config" / "config.env").write_text('UI_LANGUAGE="de"\n')
+        renault_state.renault_plug_status = 1
+        renault_state.renault_charging_status = 1.0
+        subprocess.run([str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20)
+        zoe_de_card = json.loads(zoe_card_path.read_text())
+        check(
+            zoe_de_card.get("title") == "RENAULT ZOE"
+            and zoe_de_card.get("status_badge") == "LÄDT"
+            and zoe_de_card.get("primary", {}).get("label") == "BATTERIE SOC"
+            and zoe_de_card.get("secondary_metrics")
+            == [
+                {"label": "REICHWEITE", "value": "230 km"},
+                {"label": "STECKER", "value": "Gesteckt"},
+            ],
+            "Renault DE card matches BATTERIE SOC / REICHWEITE / STECKER / LÄDT / Gesteckt",
+            failures,
+        )
+
+        # 25b. forecast.solar plugin i18n: UI_LANGUAGE=en vs UI_LANGUAGE=de in config/config.env
+        (fc_addon / "config" / "config.env").write_text('UI_LANGUAGE="en"\n')
+        (fc_addon / "config" / "config.env").chmod(0o600)
+        fc_en_res = subprocess.run(
+            [str(fc_script)], env=fc_env, capture_output=True, text=True, timeout=20
+        )
+        check(fc_en_res.returncode == 0, "forecast.solar EN run exits 0", failures)
+        fc_en_card = json.loads(fc_json_path.read_text())
+        check(fc_en_card.get("title") == "SOLAR FORECAST", "forecast EN title is SOLAR FORECAST", failures)
+        check(
+            fc_en_card.get("status_badge") in {"SUNNY", "MODERATE", "CLOUDY"},
+            f"forecast EN badge is localized (got {fc_en_card.get('status_badge')!r})",
+            failures,
+        )
+        check(
+            fc_en_card.get("primary", {}).get("label") == "TODAY FORECAST",
+            f"forecast EN primary label is TODAY FORECAST (got {fc_en_card.get('primary')})",
+            failures,
+        )
+        check(
+            fc_en_card.get("delta", {}).get("comparison") == "vs yesterday",
+            f"forecast EN comparison is 'vs yesterday' (got {fc_en_card.get('delta')})",
+            failures,
+        )
+        fc_en_labels = [m.get("label") for m in fc_en_card.get("secondary_metrics", [])]
+        check(
+            fc_en_labels == ["TOMORROW", "PEAK"],
+            f"forecast EN secondary metrics are TOMORROW / PEAK (got {fc_en_labels})",
+            failures,
+        )
+
+        # Switch forecast_solar to DE via config/config.env
+        (fc_addon / "config" / "config.env").write_text('UI_LANGUAGE="de"\n')
+        subprocess.run([str(fc_script)], env=fc_env, capture_output=True, text=True, timeout=20)
+        fc_de_card = json.loads(fc_json_path.read_text())
+        fc_de_labels = [m.get("label") for m in fc_de_card.get("secondary_metrics", [])]
+        check(
+            fc_de_card.get("title") == "PV-PROGNOSE"
+            and fc_de_card.get("status_badge") in {"SONNIG", "MODERAT", "BEWÖLKT"}
+            and fc_de_card.get("primary", {}).get("label") == "PROGNOSE HEUTE"
+            and fc_de_card.get("delta", {}).get("comparison") == "von gestern"
+            and fc_de_labels == ["MORGEN", "SPITZE"],
+            "forecast DE card matches PV-PROGNOSE / PROGNOSE HEUTE / von gestern / MORGEN / SPITZE",
+            failures,
+        )
+
+        # 25c. CSS pulse-charge animation & JS .is-charging + frontend plugin i18n dictionary
+        style_css = (ROOT / "web" / "style.css").read_text()
+        check("@keyframes pulse-charge" in style_css, "style.css defines @keyframes pulse-charge", failures)
+        check("will-change: opacity" in style_css, "style.css uses will-change: opacity", failures)
+        check("is-charging" in style_css, "style.css defines .is-charging rules", failures)
+
+        if shutil.which("node"):
+            pulse_i18n_js = r"""
+const fs = require("fs");
+const code = fs.readFileSync(process.argv[1], "utf8");
+const pluginI18nMatch = code.match(/var PLUGIN_I18N = \{[\s\S]*?\n    \};/);
+const translateMatch = code.match(/function translatePluginText\([\s\S]*?\n    \}/);
+const chargingMatch = code.match(/function isTelemetryCharging\([\s\S]*?\n    \}/);
+const escapeHtmlMatch = code.match(/function escapeHtml\([\s\S]*?\n    \}/);
+const secondaryMetricsMatch = code.match(/function renderSecondaryMetrics\([\s\S]*?\n    \}/);
+const renderPluginCardMatch = code.match(/function renderPluginCard\([\s\S]*?\n    \}/);
+if (!pluginI18nMatch || !translateMatch || !chargingMatch || !renderPluginCardMatch) {
+    console.error("Missing required functions in web/app.js");
+    process.exit(1);
+}
+const runner = new Function(
+    "var currentLanguage = 'en';\n" +
+    "const document = { createElement: (t) => ({ tagName: t, className: '', innerHTML: '' }) };\n" +
+    pluginI18nMatch[0] + "\n" +
+    translateMatch[0] + "\n" +
+    chargingMatch[0] + "\n" +
+    escapeHtmlMatch[0] + "\n" +
+    secondaryMetricsMatch[0] + "\n" +
+    renderPluginCardMatch[0] + "\n" +
+    "return { setLang: (l) => { currentLanguage = l; }, translatePluginText, isTelemetryCharging, renderPluginCard };"
+)();
+
+if (!runner.isTelemetryCharging({ charging: "charging" })) throw new Error("charging string not detected");
+if (!runner.isTelemetryCharging({ charging: true })) throw new Error("charging boolean not detected");
+if (!runner.isTelemetryCharging({ chargingStatus: 1 })) throw new Error("chargingStatus 1 not detected");
+if (!runner.isTelemetryCharging({ status_badge: "LÄDT" })) throw new Error("status_badge LÄDT not detected");
+if (!runner.isTelemetryCharging({ status_badge: "CHARGING" })) throw new Error("status_badge CHARGING not detected");
+if (runner.isTelemetryCharging({ charging: "discharging", chargingStatus: 0, status_badge: "BEREIT" })) {
+    throw new Error("discharging/idle wrongly marked as charging");
+}
+if (runner.isTelemetryCharging({ charging: "idle" })) {
+    throw new Error("idle wrongly marked as charging");
+}
+
+// Verify dynamic card translation DE -> EN and EN -> DE
+runner.setLang("en");
+const cardEn = runner.renderPluginCard({
+    layout: "stat",
+    title: "RENAULT ZOE",
+    status_badge: "LÄDT",
+    status_color: "green",
+    primary: { value: 78, unit: "%", label: "BATTERIE SOC" },
+    secondary_metrics: [
+        { label: "REICHWEITE", value: "214 km" },
+        { label: "STECKER", value: "Gesteckt" }
+    ]
+});
+if (!cardEn.innerHTML.includes("CHARGING") || !cardEn.innerHTML.includes("BATTERY SOC") ||
+    !cardEn.innerHTML.includes("RANGE") || !cardEn.innerHTML.includes("CONNECTOR") ||
+    !cardEn.innerHTML.includes("Connected") || !cardEn.innerHTML.includes("is-charging")) {
+    throw new Error("EN translation or .is-charging failed: " + cardEn.innerHTML);
+}
+
+runner.setLang("de");
+const cardDe = runner.renderPluginCard({
+    layout: "delta",
+    title: "SOLAR FORECAST",
+    status_badge: "SUNNY",
+    status_color: "green",
+    primary: { value: 18.4, unit: "kWh", label: "TODAY FORECAST" },
+    delta: { direction: "up", value: "+3.2 kWh", comparison: "vs yesterday" },
+    secondary_metrics: [
+        { label: "TOMORROW", value: "15.2", unit: "kWh" },
+        { label: "PEAK", value: "1.84", unit: "kWh/kWp" }
+    ]
+});
+if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SONNIG") ||
+    !cardDe.innerHTML.includes("von gestern") || !cardDe.innerHTML.includes("MORGEN") ||
+    !cardDe.innerHTML.includes("SPITZE")) {
+    throw new Error("DE translation failed: " + cardDe.innerHTML);
+}
+"""
+            pulse_res = subprocess.run(
+                ["node", "-e", pulse_i18n_js, str(ROOT / "web" / "app.js")],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            check(
+                pulse_res.returncode == 0,
+                f"isTelemetryCharging and dynamic plugin i18n dictionary pass ({pulse_res.stderr.strip() or 'ok'})",
+                failures,
+            )
+
+        # 25d. tools/benchmark_footprint.sh execution and budget guard
+        bench_script = ROOT / "tools" / "benchmark_footprint.sh"
+        check(bench_script.is_file(), "tools/benchmark_footprint.sh exists", failures)
+        check(os.access(bench_script, os.X_OK), "tools/benchmark_footprint.sh is executable", failures)
+        bench_syntax = subprocess.run(
+            ["sh", "-n", str(bench_script)], capture_output=True, text=True, timeout=10
+        )
+        check(bench_syntax.returncode == 0, "benchmark_footprint.sh passes sh -n", failures)
+        bench_run = subprocess.run(
+            [str(bench_script)], capture_output=True, text=True, timeout=60
+        )
+        check(
+            bench_run.returncode == 0,
+            f"benchmark_footprint.sh passes budget guards (exit {bench_run.returncode})",
+            failures,
+        )
+        check(
+            "| Release Tarball Package Size |" in bench_run.stdout
+            and "| Installed Add-on Footprint |" in bench_run.stdout
+            and "bin/check_soc.sh --dry-run" in bench_run.stdout
+            and "plugins.d/20_renault_zoe.sh" in bench_run.stdout,
+            "benchmark_footprint.sh prints Markdown table with all required rows",
+            failures,
+        )
+
+        # 25e. CONTRIBUTING.md completeness check
+        contrib_path = ROOT / "CONTRIBUTING.md"
+        check(contrib_path.is_file(), "CONTRIBUTING.md exists", failures)
+        contrib_text = contrib_path.read_text() if contrib_path.is_file() else ""
+        for marker in (
+            "BusyBox",
+            "/state/plugins/*.json",
+            "stat",
+            "delta",
+            "list",
+            "--config -",
+            "chmod 600",
+            "umask 077",
+            "is_safe_id",
+            "python3 tests/integration.py",
+        ):
+            check(
+                marker in contrib_text,
+                f"CONTRIBUTING.md documents {marker}",
+                failures,
+            )
 
     finally:
         sma.shutdown()
