@@ -2315,7 +2315,7 @@ eval(mockEnv);
         )
         check(zoe_en_res.returncode == 0, "Renault Zoe EN run exits 0", failures)
         zoe_en_card = json.loads(zoe_card_path.read_text())
-        check(zoe_en_card.get("title") == "RENAULT ZOE", "Renault EN title is RENAULT ZOE", failures)
+        check(zoe_en_card.get("title") == "RENAULT E-TECH", "Renault EN title is RENAULT E-TECH", failures)
         check(zoe_en_card.get("status_badge") == "CHARGING", "Renault EN charging badge is CHARGING", failures)
         check(
             zoe_en_card.get("primary") == {"value": 84, "unit": "%", "label": "BATTERY SOC"},
@@ -2363,7 +2363,7 @@ eval(mockEnv);
         subprocess.run([str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20)
         zoe_de_card = json.loads(zoe_card_path.read_text())
         check(
-            zoe_de_card.get("title") == "RENAULT ZOE"
+            zoe_de_card.get("title") == "RENAULT E-TECH"
             and zoe_de_card.get("status_badge") == "LÄDT"
             and zoe_de_card.get("primary", {}).get("label") == "BATTERIE SOC"
             and zoe_de_card.get("secondary_metrics")

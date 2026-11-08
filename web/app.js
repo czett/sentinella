@@ -144,14 +144,14 @@
             inverterPassword: "Inverter password",
             unchanged: "Unchanged",
             storedPasswordHint: "A password is stored. Leave the field empty to keep it.",
-            renaultSection: "RENAULT ZOE",
-            renaultNote: "Optional MY Renault cloud credentials for live Zoe battery and charging telemetry.",
+            renaultSection: "RENAULT E-TECH",
+            renaultNote: "Optional MY Renault cloud credentials for live E-Tech battery and charging telemetry.",
             renaultEmail: "Renault E-Mail",
             renaultPassword: "Renault Passwort",
             renaultVin: "Renault VIN",
             testRenaultConnection: "Verbindung testen",
             testingRenault: "Testing Renault connection…",
-            renaultTestSuccess: "Renault Zoe: Connection verified.",
+            renaultTestSuccess: "Renault: Connection verified.",
             renaultTestFailed: "Renault connection failed. Check email, password and VIN.",
             renaultEmailInvalid: "Enter a valid Renault email address.",
             renaultVinInvalid: "Enter a valid Renault VIN (e.g. VF1...).",
@@ -307,14 +307,14 @@
             inverterPassword: "Wechselrichter-Passwort",
             unchanged: "Unverändert",
             storedPasswordHint: "Ein Passwort ist gespeichert. Feld leer lassen, um es zu behalten.",
-            renaultSection: "RENAULT ZOE",
-            renaultNote: "Optionale MY-Renault-Zugangsdaten für Live-Ladezustand und Reichweite der Zoe.",
+            renaultSection: "RENAULT E-TECH",
+            renaultNote: "Optionale MY-Renault-Zugangsdaten für Live-Ladezustand und Reichweite des Renault E-Tech.",
             renaultEmail: "Renault E-Mail",
             renaultPassword: "Renault Passwort",
             renaultVin: "Renault VIN",
             testRenaultConnection: "Verbindung testen",
             testingRenault: "Renault-Verbindung wird getestet…",
-            renaultTestSuccess: "Renault Zoe: Verbindung erfolgreich hergestellt.",
+            renaultTestSuccess: "Renault: Verbindung erfolgreich hergestellt.",
             renaultTestFailed: "Renault-Verbindung fehlgeschlagen. Prüfen Sie E-Mail, Passwort und VIN.",
             renaultEmailInvalid: "Geben Sie eine gültige Renault-E-Mail-Adresse ein.",
             renaultVinInvalid: "Geben Sie eine gültige Fahrzeug-Identifizierungsnummer (VIN, z. B. VF1...) ein.",
@@ -1271,8 +1271,11 @@
 
     var PLUGIN_I18N = {
         en: {
-            "RENAULT ZOE": "RENAULT ZOE",
-            "Renault Zoe": "RENAULT ZOE",
+            "RENAULT E-TECH": "RENAULT E-TECH",
+            "RENAULT ZOE": "RENAULT E-TECH",
+            "Renault Zoe": "RENAULT E-TECH",
+            "Renault E-Tech": "RENAULT E-TECH",
+            "RENAULT": "RENAULT E-TECH",
             "BATTERIE SOC": "BATTERY SOC",
             "Batterie SoC": "BATTERY SOC",
             "BATTERY SOC": "BATTERY SOC",
@@ -1349,8 +1352,11 @@
             "No connection to forecast.solar": "No connection to forecast.solar"
         },
         de: {
-            "RENAULT ZOE": "RENAULT ZOE",
-            "Renault Zoe": "RENAULT ZOE",
+            "RENAULT E-TECH": "RENAULT E-TECH",
+            "RENAULT ZOE": "RENAULT E-TECH",
+            "Renault Zoe": "RENAULT E-TECH",
+            "Renault E-Tech": "RENAULT E-TECH",
+            "RENAULT": "RENAULT E-TECH",
             "BATTERY SOC": "BATTERIE SOC",
             "BATTERIE SOC": "BATTERIE SOC",
             "Batterie SoC": "BATTERIE SOC",
@@ -1616,11 +1622,13 @@
     }
 
     function isRenaultZoeCard(plugin) {
-        return Boolean(
-            plugin &&
-            (plugin.id === "renault_zoe" ||
-                (typeof plugin.title === "string" && plugin.title.toUpperCase() === "RENAULT ZOE"))
-        );
+        if (!plugin) return false;
+        if (plugin.id === "renault_zoe") return true;
+        if (typeof plugin.title === "string") {
+            var t = plugin.title.toUpperCase();
+            return t === "RENAULT ZOE" || t === "RENAULT E-TECH" || t === "RENAULT";
+        }
+        return false;
     }
 
     function pluginTimestampMs(plugin) {

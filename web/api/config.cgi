@@ -325,10 +325,10 @@ msg() {
         en:write_renault) printf 'Cannot write the Renault configuration.' ;;
         de:renault_test_credentials) printf 'Speichern Sie zuerst Renault E-Mail, Passwort und VIN.' ;;
         en:renault_test_credentials) printf 'Enter Renault email, password and VIN before testing.' ;;
-        de:renault_plugin_missing) printf 'Das Renault-Zoe-Plugin fehlt oder ist nicht ausführbar.' ;;
-        en:renault_plugin_missing) printf 'The Renault Zoe plugin is missing or not executable.' ;;
-        de:renault_test_ok) printf 'Renault Zoe: Verbindung erfolgreich hergestellt.' ;;
-        en:renault_test_ok) printf 'Renault Zoe: Connection verified.' ;;
+        de:renault_plugin_missing) printf 'Das Renault-Plugin fehlt oder ist nicht ausführbar.' ;;
+        en:renault_plugin_missing) printf 'The Renault plugin is missing or not executable.' ;;
+        de:renault_test_ok) printf 'Renault: Verbindung erfolgreich hergestellt.' ;;
+        en:renault_test_ok) printf 'Renault: Connection verified.' ;;
         de:renault_test_failed) printf 'Renault-Verbindung fehlgeschlagen. Prüfen Sie E-Mail, Passwort und VIN.' ;;
         en:renault_test_failed) printf 'Renault connection failed. Check email, password and VIN.' ;;
         *) printf 'Request failed.' ;;
