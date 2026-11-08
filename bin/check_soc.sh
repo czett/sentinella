@@ -912,6 +912,24 @@ notify_event() {
 }
 
 # ---------------------------------------------------------------------------
+# Modular plugins runner (executes enabled plugins in plugins.d/*.sh)
+# ---------------------------------------------------------------------------
+run_plugins() {
+    [ "${SENTINELLA_RUN_PLUGINS:-0}" = "1" ] || return 0
+    _plugins_dir=$APP_DIR/plugins.d
+    [ -d "$_plugins_dir" ] || return 0
+    for _plugin in "$_plugins_dir"/*.sh; do
+        [ -f "$_plugin" ] || continue
+        [ ! -L "$_plugin" ] || continue
+        [ -x "$_plugin" ] || continue
+        SMA_MONITOR_ADDON_DIR="$APP_DIR" \
+        SMA_MONITOR_ENV="$ENV_FILE" \
+            "$_plugin" >/dev/null 2>&1 || true
+    done
+    return 0
+}
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 main() {
@@ -981,6 +999,7 @@ EOF
     fi
 
     write_status
+    run_plugins
 
     if [ "$CCU_OK" = "1" ]; then
         if [ -n "$PREV_SIGNAL" ] && [ "$SIGNAL" != "$PREV_SIGNAL" ]; then

@@ -29,6 +29,36 @@ if [ -z "$ADDON_DIR" ]; then
 fi
 [ -n "$ADDON_DIR" ] || ADDON_DIR=/usr/local/addons/sentinella
 APP_DIR=$ADDON_DIR
+STATE_DIR=${WEATHER_STATE_DIR:-$ADDON_DIR/state/plugins}
+OUT_FILE=$STATE_DIR/weather.json
+
+# ---------------------------------------------------------------------------
+# Plugin Manager Execution Guard (config/plugins.env or .disabled marker)
+# ---------------------------------------------------------------------------
+if [ "${1:-}" != "--print-coords" ] && [ "${WEATHER_PRINT_COORDS:-0}" != "1" ]; then
+    PLUGIN_WEATHER=1
+    for _pm_env in \
+        "${SENTINELLA_PLUGINS_ENV:-}" \
+        "$ADDON_DIR/config/plugins.env" \
+        /usr/local/addons/sentinella/config/plugins.env
+    do
+        if [ -n "$_pm_env" ] && [ -r "$_pm_env" ]; then
+            # shellcheck source=/dev/null
+            . "$_pm_env" 2>/dev/null || true
+            break
+        fi
+    done
+    case "${PLUGIN_WEATHER:-1}" in
+        0|false|FALSE|off|OFF|no|NO)
+            rm -f "$OUT_FILE" 2>/dev/null || true
+            exit 0
+            ;;
+    esac
+    if [ -f "$ADDON_DIR/plugins.d/15_weather.sh.disabled" ]; then
+        rm -f "$OUT_FILE" 2>/dev/null || true
+        exit 0
+    fi
+fi
 
 # ---------------------------------------------------------------------------
 # UI Language & Localized String Maps (DE / EN)

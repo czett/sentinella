@@ -26,6 +26,10 @@
 
     var current = null;
     var currentPlugins = null;
+    var PLUGIN_MANAGER_URL = new URL("./api/plugin_manager.cgi", window.location.href);
+    /* Enabled map from plugin_manager.cgi, keyed by script id (e.g. "15_weather").
+       Unknown / not yet loaded plugins are treated as enabled. */
+    var pluginStates = {};
     /* Epoch ms of the last explicit local HVAC stop. Until a plugin poll
        carries a newer timestamp, its hvac_active value is forced to false. */
     var hvacStopOverrideAt = 0;
@@ -161,6 +165,12 @@
             footnotePrefix: "Values are written to",
             footnoteSuffix: "on the CCU. The next monitor run applies them within two minutes.",
             displaySection: "Display",
+            pluginManagerSection: "PLUGINS",
+            pluginNameCcuHealth: "CCU3 System Status",
+            pluginNameWeather: "Weather (Open-Meteo)",
+            pluginNameForecastSolar: "PV Forecast (Forecast.solar)",
+            pluginNameRenault: "Renault E-Tech",
+            pluginToggleFailed: "Plugin state could not be saved.",
             animations: "ANIMATIONS",
             animationsLabel: "ANIMATIONS",
             animationsDesc: "(On / Off)",
@@ -324,6 +334,12 @@
             footnotePrefix: "Werte werden in",
             footnoteSuffix: "auf der CCU gespeichert und beim nächsten Lauf (innerhalb von zwei Minuten) übernommen.",
             displaySection: "Darstellung",
+            pluginManagerSection: "ERWEITERUNGEN",
+            pluginNameCcuHealth: "CCU3 System-Status",
+            pluginNameWeather: "Wetter (Open-Meteo)",
+            pluginNameForecastSolar: "PV-Prognose (Forecast.solar)",
+            pluginNameRenault: "Renault E-Tech",
+            pluginToggleFailed: "Plugin-Status konnte nicht gespeichert werden.",
             animations: "ANIMATIONEN",
             animationsLabel: "ANIMATIONEN",
             animationsDesc: "(Ein / Aus)",
@@ -1836,15 +1852,87 @@
             el.pluginsGrid.innerHTML = "";
             return;
         }
+        var visible = filterEnabledPlugins(plugins, pluginStates);
+        if (!visible.length) {
+            el.pluginsSection.style.display = "none";
+            el.pluginsGrid.innerHTML = "";
+            return;
+        }
         var fragment = document.createDocumentFragment();
-        plugins.forEach(function (plugin) {
-            if (plugin && typeof plugin === "object") {
-                fragment.appendChild(renderPluginCard(plugin));
-            }
+        visible.forEach(function (plugin) {
+            fragment.appendChild(renderPluginCard(plugin));
         });
         el.pluginsGrid.innerHTML = "";
         el.pluginsGrid.appendChild(fragment);
         el.pluginsSection.style.display = "";
+    }
+
+    /* Drops cards whose plugin is disabled. Card ids ("weather") map to
+       script ids ("15_weather") by stripping the numeric order prefix. */
+    function filterEnabledPlugins(plugins, states) {
+        var disabled = {};
+        Object.keys(states || {}).forEach(function (key) {
+            if (states[key] === false) {
+                disabled[String(key).replace(/^[0-9]+_/, "")] = true;
+            }
+        });
+        return (plugins || []).filter(function (plugin) {
+            return plugin && typeof plugin === "object" && !disabled[plugin.id];
+        });
+    }
+
+    function syncPluginToggles() {
+        var toggles = document.querySelectorAll(".plugin-toggle");
+        Array.prototype.forEach.call(toggles, function (input) {
+            var id = input.getAttribute("data-plugin-id");
+            input.checked = pluginStates[id] !== false;
+        });
+    }
+
+    function applyPluginStates(data) {
+        if (data && data.plugins && typeof data.plugins === "object") {
+            pluginStates = data.plugins;
+            syncPluginToggles();
+            if (currentPlugins) {
+                renderPluginsList(currentPlugins);
+            }
+        }
+    }
+
+    function loadPluginStates() {
+        return requestJSON(PLUGIN_MANAGER_URL, { method: "GET" })
+            .then(applyPluginStates)
+            .catch(function () {});
+    }
+
+    function togglePlugin(input) {
+        var id = input.getAttribute("data-plugin-id");
+        var enabled = !!input.checked;
+        var previous = pluginStates[id];
+        pluginStates[id] = enabled;
+        if (currentPlugins) {
+            renderPluginsList(currentPlugins);
+        }
+        input.disabled = true;
+        return requestJSON(PLUGIN_MANAGER_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: id, enabled: enabled })
+        }).then(function (data) {
+            applyPluginStates(data);
+            if (enabled) {
+                fetchAndRenderPlugins();
+            }
+        }).catch(function () {
+            pluginStates[id] = previous;
+            syncPluginToggles();
+            if (currentPlugins) {
+                renderPluginsList(currentPlugins);
+            }
+            window.alert(t("pluginToggleFailed"));
+        }).then(function () {
+            input.disabled = false;
+        });
     }
 
     function fetchAndRenderPlugins() {
@@ -2823,6 +2911,13 @@
         });
         setSignalLocked(!el.signalEnabled.checked);
     }
+
+    Array.prototype.forEach.call(document.querySelectorAll(".plugin-toggle"), function (input) {
+        input.addEventListener("change", function () {
+            togglePlugin(input);
+        });
+    });
+    loadPluginStates();
 
     if (el.animationsToggle) {
         el.animationsToggle.checked = animationsEnabled;

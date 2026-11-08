@@ -40,6 +40,36 @@ if [ -z "$ADDON_DIR" ]; then
 fi
 [ -n "$ADDON_DIR" ] || ADDON_DIR=/usr/local/addons/sentinella
 APP_DIR=$ADDON_DIR
+STATE_DIR=${RENAULT_STATE_DIR:-$ADDON_DIR/state/plugins}
+OUT_FILE=${RENAULT_OUT_FILE:-$STATE_DIR/renault_zoe.json}
+
+# ---------------------------------------------------------------------------
+# Plugin Manager Execution Guard (config/plugins.env or .disabled marker)
+# ---------------------------------------------------------------------------
+if [ "$TEST_MODE" = "0" ] && [ "$HVAC_MODE" = "0" ]; then
+    PLUGIN_RENAULT_ZOE=1
+    for _pm_env in \
+        "${SENTINELLA_PLUGINS_ENV:-}" \
+        "$ADDON_DIR/config/plugins.env" \
+        /usr/local/addons/sentinella/config/plugins.env
+    do
+        if [ -n "$_pm_env" ] && [ -r "$_pm_env" ]; then
+            # shellcheck source=/dev/null
+            . "$_pm_env" 2>/dev/null || true
+            break
+        fi
+    done
+    case "${PLUGIN_RENAULT_ZOE:-1}" in
+        0|false|FALSE|off|OFF|no|NO)
+            rm -f "$OUT_FILE" 2>/dev/null || true
+            exit 0
+            ;;
+    esac
+    if [ -f "$ADDON_DIR/plugins.d/20_renault_zoe.sh.disabled" ]; then
+        rm -f "$OUT_FILE" 2>/dev/null || true
+        exit 0
+    fi
+fi
 
 trim_ws() {
     printf '%s' "${1:-}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'

@@ -28,6 +28,34 @@ if [ -z "$ADDON_DIR" ]; then
 fi
 [ -n "$ADDON_DIR" ] || ADDON_DIR=/usr/local/addons/sentinella
 APP_DIR=$ADDON_DIR
+STATE_DIR=${CCU_HEALTH_STATE_DIR:-$APP_DIR/state/plugins}
+OUT_FILE=$STATE_DIR/ccu_health.json
+
+# ---------------------------------------------------------------------------
+# Plugin Manager Execution Guard (config/plugins.env or .disabled marker)
+# ---------------------------------------------------------------------------
+PLUGIN_CCU_HEALTH=1
+for _pm_env in \
+    "${SENTINELLA_PLUGINS_ENV:-}" \
+    "$ADDON_DIR/config/plugins.env" \
+    /usr/local/addons/sentinella/config/plugins.env
+do
+    if [ -n "$_pm_env" ] && [ -r "$_pm_env" ]; then
+        # shellcheck source=/dev/null
+        . "$_pm_env" 2>/dev/null || true
+        break
+    fi
+done
+case "${PLUGIN_CCU_HEALTH:-1}" in
+    0|false|FALSE|off|OFF|no|NO)
+        rm -f "$OUT_FILE" 2>/dev/null || true
+        exit 0
+        ;;
+esac
+if [ -f "$ADDON_DIR/plugins.d/10_ccu_health.sh.disabled" ]; then
+    rm -f "$OUT_FILE" 2>/dev/null || true
+    exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # UI Language & Localized String Maps (DE / EN)

@@ -187,7 +187,7 @@ for file in VERSION .env bin/check_soc.sh lib/notify_signal.sh setup_variables.s
             web/api/config.cgi web/api/settings.cgi \
             web/api/test_signal.cgi web/api/test_renault.cgi \
             web/api/action_zoe.cgi web/api/update_check.cgi \
-            web/api/plugins.cgi; do
+            web/api/plugins.cgi web/api/plugin_manager.cgi; do
     [ -f "$ROOT/$file" ] || die "missing required file: $file"
 done
 
@@ -261,6 +261,7 @@ install -m 755 "$ROOT/web/api/test_signal.cgi"  "$STAGE/web/api/test_signal.cgi"
 install -m 755 "$ROOT/web/api/test_renault.cgi" "$STAGE/web/api/test_renault.cgi"
 install -m 755 "$ROOT/web/api/action_zoe.cgi"   "$STAGE/web/api/action_zoe.cgi"
 install -m 755 "$ROOT/web/api/update_check.cgi" "$STAGE/web/api/update_check.cgi"
+install -m 755 "$ROOT/web/api/plugin_manager.cgi" "$STAGE/web/api/plugin_manager.cgi"
 install -m 755 "$ROOT/web/api/plugins.cgi"      "$STAGE/web/api/plugins.cgi"
 
 ssh_ccu() {

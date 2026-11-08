@@ -3060,6 +3060,108 @@ if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SON
         for term in ["WETTER", "WEATHER", "TEMPERATUR", "FEUCHTE", "HUMIDITY", "WIND", "MIN / MAX", "KLAR", "CLEAR", "REGEN", "RAIN", "SCHNEE", "SNOW"]:
             check(f'"{term}"' in app_js_text, f"web/app.js PLUGIN_I18N contains {term}", failures)
 
+        print("\n29. Plugin manager: persistence, CGI, execution guards & UI filtering")
+        pm_addon = tmp / "plugin_manager"
+        (pm_addon / "state" / "plugins").mkdir(parents=True)
+        pm_cards = pm_addon / "state" / "plugins"
+        pm_env = pm_addon / "config" / "plugins.env"
+        all_ids = {"10_ccu_health", "15_weather", "20_renault_zoe", "30_forecast_solar"}
+
+        def pm_post(payload: str, **extra: str) -> subprocess.CompletedProcess:
+            env = os.environ.copy()
+            env.update({
+                "REQUEST_METHOD": "POST",
+                "CONTENT_TYPE": "application/json",
+                "CONTENT_LENGTH": str(len(payload.encode())),
+                "SMA_MONITOR_ADDON_DIR": str(pm_addon),
+            })
+            env.update(extra)
+            return subprocess.run(["sh", str(ROOT / "web" / "api" / "plugin_manager.cgi")],
+                                  input=payload, env=env, capture_output=True, text=True, timeout=20)
+
+        st, pm_get = parse_cgi(run_cgi(pm_addon, "GET", "plugin_manager"))
+        check(st == "Content-Type: application/json; charset=utf-8", "plugin_manager GET headers", failures)
+        check(pm_get.get("plugins") == {i: True for i in all_ids},
+              f"all plugins enabled by default (got {pm_get.get('plugins')})", failures)
+
+        (pm_cards / "weather.json").write_text('{"id":"weather"}')
+        st, pm_res = parse_cgi(pm_post('{"id":"15_weather","enabled":false}'))
+        check(pm_res.get("ok") is True and pm_res["plugins"]["15_weather"] is False,
+              "POST disables 15_weather", failures)
+        check("PLUGIN_WEATHER='0'" in pm_env.read_text(), "plugins.env persists PLUGIN_WEATHER='0'", failures)
+        check("PLUGIN_CCU_HEALTH='1'" in pm_env.read_text(), "other plugin flags preserved", failures)
+        check(not (pm_cards / "weather.json").exists(), "disabling removes the stale weather card", failures)
+        _, pm_get2 = parse_cgi(run_cgi(pm_addon, "GET", "plugin_manager"))
+        check(pm_get2["plugins"]["15_weather"] is False, "GET reflects persisted disabled state", failures)
+        _, pm_res = parse_cgi(pm_post('{"id":"15_weather","enabled":true}'))
+        check(pm_res["plugins"]["15_weather"] is True, "POST re-enables 15_weather", failures)
+
+        for bad_body, label in [
+            ('{"id":"../../etc/passwd","enabled":false}', "path traversal id"),
+            ('{"id":"PLUGIN_WEATHER","enabled":false}', "env variable name as id"),
+            ('{"id":"15_weather;rm -rf /","enabled":false}', "shell metacharacters"),
+            ('{"id":"15_weather","enabled":"yes"}', "non-boolean enabled"),
+        ]:
+            st, res = parse_cgi(pm_post(bad_body))
+            check(st == "400 Bad Request" and res.get("ok") is False, f"rejects {label} (got {st})", failures)
+        st, _ = parse_cgi(pm_post('{"id":"15_weather","enabled":false}', CONTENT_TYPE="text/plain"))
+        check(st == "400 Bad Request", "rejects non-JSON content type", failures)
+        st, _ = parse_cgi(pm_post('{"id":"15_weather","enabled":false}', HTTP_HOST="ccu3", HTTP_ORIGIN="http://evil.example"))
+        check(st == "403 Forbidden", "rejects cross-origin POST", failures)
+        st, _ = parse_cgi(pm_post('{"id":"15_weather","enabled":false}', HTTP_HOST="ccu3"))
+        check(st == "403 Forbidden", "rejects HTTP POST without X-Requested-With", failures)
+        st, _ = parse_cgi(pm_post('{"id":"15_weather","enabled":false}', HTTP_HOST="ccu3",
+                                  HTTP_ORIGIN="http://ccu3", HTTP_X_REQUESTED_WITH="XMLHttpRequest"))
+        check(st == "Content-Type: application/json; charset=utf-8", "accepts same-origin XHR POST", failures)
+        check("PLUGIN_WEATHER='0'" in pm_env.read_text(), "same-origin POST persisted", failures)
+        check(not list((pm_addon / "config").glob("plugins.env.tmp.*")), "no temp files left behind", failures)
+        check(not (pm_addon / "config" / ".plugins.lock").exists(), "lock released", failures)
+
+        # Execution bypass: every disabled plugin exits 0 without writing a card.
+        guard_env_file = pm_addon / "config" / "plugins_all_off.env"
+        guard_env_file.write_text(
+            "PLUGIN_CCU_HEALTH='0'\nPLUGIN_WEATHER='0'\nPLUGIN_FORECAST_SOLAR='0'\nPLUGIN_RENAULT_ZOE='0'\n"
+        )
+        for script, card in [("10_ccu_health.sh", "ccu_health.json"), ("15_weather.sh", "weather.json"),
+                             ("20_renault_zoe.sh", "renault_zoe.json"), ("30_forecast_solar.sh", "forecast_solar.json")]:
+            (pm_cards / card).write_text('{"id":"stale"}')
+            genv = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                    "SMA_MONITOR_ADDON_DIR": str(pm_addon),
+                    "SENTINELLA_PLUGINS_ENV": str(guard_env_file)}
+            gres = subprocess.run(["sh", str(ROOT / "plugins.d" / script)], env=genv,
+                                  capture_output=True, text=True, timeout=10)
+            check(gres.returncode == 0, f"disabled {script} exits 0", failures)
+            check(not (pm_cards / card).exists(), f"disabled {script} removes its card and skips I/O", failures)
+
+        # Deploy ships the new endpoint.
+        check("plugin_manager.cgi" in (ROOT / "deploy.sh").read_text(), "deploy.sh installs plugin_manager.cgi", failures)
+
+        # UI: settings drawer section and card filtering.
+        html_text = (ROOT / "web" / "index.html").read_text()
+        check('id="plugin-manager-group"' in html_text, "settings drawer has plugin manager fieldset", failures)
+        for pid in all_ids:
+            check(f'data-plugin-id="{pid}"' in html_text, f"switch row for {pid}", failures)
+        for term in ["ERWEITERUNGEN", "CCU3 System-Status", "Wetter (Open-Meteo)",
+                     "PV-Prognose (Forecast.solar)", "Renault E-Tech"]:
+            check(f'"{term}"' in app_js_text, f"web/app.js i18n contains {term}", failures)
+        if shutil.which("node"):
+            filter_script = r"""
+const fs = require("fs");
+const code = fs.readFileSync(process.argv[1], "utf8");
+const m = code.match(/function filterEnabledPlugins\([\s\S]*?\n    \}\n/);
+if (!m) { console.error("filterEnabledPlugins not found"); process.exit(1); }
+const f = new Function(m[0] + "; return filterEnabledPlugins;")();
+const cards = [{id:"ccu_health"},{id:"weather"},{id:"forecast_solar"},{id:"renault_zoe"},null];
+const out = f(cards, {"15_weather": false, "10_ccu_health": true}).map(c => c.id);
+if (JSON.stringify(out) !== JSON.stringify(["ccu_health","forecast_solar","renault_zoe"])) {
+    console.error("unexpected " + JSON.stringify(out)); process.exit(1);
+}
+if (f(cards, {}).length !== 4) { console.error("default should show all"); process.exit(1); }
+"""
+            fres = subprocess.run(["node", "-e", filter_script, str(ROOT / "web" / "app.js")],
+                                  capture_output=True, text=True, timeout=20)
+            check(fres.returncode == 0, f"disabled plugin cards are omitted from grid ({fres.stderr.strip() or 'ok'})", failures)
+
 
     finally:
         sma.shutdown()
