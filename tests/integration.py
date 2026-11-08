@@ -2590,51 +2590,61 @@ if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SON
                 failures,
             )
 
-        print("\n26. Renault Zoe Remote HVAC Pre-Conditioning (--start-hvac & action_zoe.cgi)")
-        # 26a. CLI --start-hvac reuses cached session and sends Kamereon HvacStart payload
+        print("\n26. Renault Zoe read-only telemetry (active HVAC controls disabled)")
+
+        # 26a. CLI HVAC actions are refused before any network I/O.
         renault_state.reset_requests()
-        hvac_cli_res = subprocess.run(
-            [str(zoe_script), "--start-hvac"],
-            env=zoe_env,
-            capture_output=True,
-            text=True,
-            timeout=20,
-        )
-        check(hvac_cli_res.returncode == 0, "20_renault_zoe.sh --start-hvac exits 0", failures)
-        try:
-            hvac_cli_json = json.loads(hvac_cli_res.stdout.strip())
-        except json.JSONDecodeError:
-            hvac_cli_json = {}
+        for flag in ("--start-hvac", "--stop-hvac"):
+            hvac_cli_res = subprocess.run(
+                [str(zoe_script), flag],
+                env=zoe_env,
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+            try:
+                hvac_cli_json = json.loads(hvac_cli_res.stdout.strip())
+            except json.JSONDecodeError:
+                hvac_cli_json = {}
+            check(
+                hvac_cli_res.returncode != 0
+                and hvac_cli_json == {
+                    "ok": False,
+                    "error": "HVAC feature temporarily disabled",
+                },
+                f"20_renault_zoe.sh {flag} reports HVAC disabled (got {hvac_cli_res.stdout.strip()!r})",
+                failures,
+            )
         check(
-            hvac_cli_json == {"ok": True, "action": "hvac_started"},
-            f"--start-hvac returns {{'ok':true,'action':'hvac_started'}} (got {hvac_cli_res.stdout.strip()!r})",
-            failures,
-        )
-        check(
-            renault_state.renault_login_calls == 0 and renault_state.renault_hvac_calls == 1,
-            "--start-hvac reuses cached session token without re-login",
+            renault_state.renault_hvac_calls == 0
+            and renault_state.renault_login_calls == 0,
+            "disabled HVAC actions perform no login or hvac request",
             failures,
         )
 
-        # 26b. CLI --start-hvac refreshes expired session on 401
+        # 26b. The card is read-only telemetry: no active state, odometer intact.
         renault_state.reset_requests()
-        renault_state.renault_force_401_once = True
-        hvac_401_res = subprocess.run(
-            [str(zoe_script), "--start-hvac"],
-            env=zoe_env,
-            capture_output=True,
-            text=True,
-            timeout=20,
+        renault_state.renault_mileage = 45210
+        subprocess.run([str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20)
+        card_readonly = json.loads(zoe_card_path.read_text())
+        check(
+            card_readonly.get("hvac_active") is False,
+            "Renault card pins hvac_active=false",
+            failures,
         )
         check(
-            hvac_401_res.returncode == 0
-            and renault_state.renault_login_calls == 1
-            and renault_state.renault_hvac_calls == 2,
-            "--start-hvac refreshes session on HTTP 401 and succeeds on retry",
+            {"label": "KILOMETERSTAND", "value": "45.210 km"} in card_readonly.get("secondary_metrics", [])
+            and renault_state.renault_cockpit_calls >= 1,
+            "read-only card still renders cockpit odometer",
+            failures,
+        )
+        check(
+            renault_state.renault_hvac_calls == 0,
+            "telemetry poll performs no hvac request",
             failures,
         )
 
-        # 26c. action_zoe.cgi security (GET rejected, CSRF check, rate limiting, and execution)
+        # 26c. action_zoe.cgi keeps its security checks but refuses to execute.
         hvac_lock = zoe_addon / "state" / ".zoe_hvac.lock"
         hvac_lock.unlink(missing_ok=True)
 
@@ -2677,153 +2687,45 @@ if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SON
         check(st_csrf == "403 Forbidden", f"action_zoe.cgi rejects cross-origin POST with 403 (got {st_csrf})", failures)
 
         renault_state.reset_requests()
-        st_ok, body_ok = parse_cgi(call_action_zoe())
+        st_disabled, body_disabled = parse_cgi(call_action_zoe())
         check(
-            st_ok == "200 OK"
-            and body_ok.get("ok") is True
-            and body_ok.get("action") == "hvac_started"
-            and renault_state.renault_hvac_calls == 1,
-            f"action_zoe.cgi triggers HVAC and returns 200 OK (got {st_ok}: {body_ok})",
+            st_disabled in ("200 OK", "503 Service Unavailable")
+            and body_disabled == {"ok": False, "error": "HVAC feature temporarily disabled"},
+            f"action_zoe.cgi returns HVAC-disabled JSON (got {st_disabled}: {body_disabled})",
             failures,
         )
         check(
-            hvac_lock.is_file() and (hvac_lock.stat().st_mode & 0o777) == 0o600,
-            ".zoe_hvac.lock created with mode 600",
-            failures,
-        )
-
-        # Second call within 60s must be rate-limited (429 Too Many Requests)
-        st_rl, body_rl = parse_cgi(call_action_zoe())
-        check(
-            st_rl == "429 Too Many Requests"
-            and body_rl.get("ok") is False
-            and renault_state.renault_hvac_calls == 1,
-            f"action_zoe.cgi rate-limits rapid repeat calls within 60s (got {st_rl})",
+            renault_state.renault_hvac_calls == 0 and not hvac_lock.exists(),
+            "disabled action_zoe.cgi performs no hvac call and creates no lock",
             failures,
         )
 
-        # 26c2. Odometer fallback, hvac_active, --stop-hvac and CGI stop routing
-        zoe_dir_state = zoe_addon / "state" / "plugins"
-        hvac_marker = zoe_dir_state / ".renault_hvac_active"
-        hvac_stopped_marker = zoe_dir_state / ".renault_hvac_stopped"
-        renault_state.renault_mileage = None
-        subprocess.run([str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20)
-        card_nomile = json.loads(zoe_card_path.read_text())
-        check(
-            all(m.get("label") != "KILOMETERSTAND" for m in card_nomile.get("secondary_metrics", []))
-            and len(card_nomile.get("secondary_metrics", [])) == 2,
-            "missing totalMileage omits odometer metric without breaking card",
-            failures,
-        )
-        renault_state.renault_mileage = 45210
-        check(
-            hvac_marker.is_file(),
-            ".renault_hvac_active marker written by --start-hvac",
-            failures,
-        )
-        subprocess.run([str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20)
-        card_active = json.loads(zoe_card_path.read_text())
-        check(card_active.get("hvac_active") is True, "card exposes hvac_active=true after start", failures)
-        check(
-            {"label": "KILOMETERSTAND", "value": "45.210 km"} in card_active.get("secondary_metrics", [])
-            and renault_state.renault_cockpit_calls >= 1,
-            "cockpit totalMileage rendered as KILOMETERSTAND secondary metric",
-            failures,
-        )
-
-        renault_state.reset_requests()
-        stop_cli = subprocess.run(
-            [str(zoe_script), "--stop-hvac"], env=zoe_env, capture_output=True, text=True, timeout=20
-        )
-        check(
-            stop_cli.returncode == 0
-            and stop_cli.stdout.strip() == '{"ok":true,"action":"hvac_stopped"}',
-            f"--stop-hvac returns hvac_stopped (got {stop_cli.stdout.strip()!r})",
-            failures,
-        )
-        check(
-            renault_state.renault_hvac_calls == 1
-            and '"action":"cancel"' in renault_state.renault_hvac_bodies[-1]
-            and not hvac_marker.exists()
-            and hvac_stopped_marker.is_file(),
-            "--stop-hvac POSTs cancel payload, clears active marker, and writes stopped marker",
-            failures,
-        )
-        check(
-            json.loads(zoe_card_path.read_text()).get("hvac_active") is False,
-            "--stop-hvac immediately updates renault_zoe.json to hvac_active=false",
-            failures,
-        )
-
-        # Stale cloud status lag: hvacStatus "on" is suppressed during 180s stop window
-        renault_state.renault_hvac_status = "on"
-        subprocess.run([str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20)
-        check(
-            json.loads(zoe_card_path.read_text()).get("hvac_active") is False,
-            "--stop-hvac suppresses stale cloud 'on' response within 180s window",
-            failures,
-        )
-
-        # Once stopped marker is older than 180 seconds, it expires and cloud "on" is accepted again
-        old_stop_ts = int(time.time()) - 181
-        hvac_stopped_marker.write_text(f"{old_stop_ts}\n")
-        subprocess.run([str(zoe_script)], env=zoe_env, capture_output=True, text=True, timeout=20)
-        check(
-            json.loads(zoe_card_path.read_text()).get("hvac_active") is True,
-            "expired stopped marker (>180s) is removed and cloud 'on' status accepted",
-            failures,
-        )
-        check(not hvac_stopped_marker.exists(), "expired stopped marker removed", failures)
-        renault_state.renault_hvac_status = None
-
-        # --start-hvac removes stopped marker and sets hvac_active: true immediately
-        hvac_stopped_marker.write_text(f"{int(time.time())}\n")
-        subprocess.run([str(zoe_script), "--start-hvac"], env=zoe_env, capture_output=True, text=True, timeout=20)
-        check(not hvac_stopped_marker.exists(), "--start-hvac removes stopped marker", failures)
-        check(
-            json.loads(zoe_card_path.read_text()).get("hvac_active") is True,
-            "--start-hvac immediately updates renault_zoe.json to hvac_active=true",
-            failures,
-        )
-        subprocess.run([str(zoe_script), "--stop-hvac"], env=zoe_env, capture_output=True, text=True, timeout=20)
-
-        # CGI: start sets lock, stop bypasses cooldown, cancels and clears lock
-        renault_state.reset_requests()
-        st_start2, body_start2 = parse_cgi(call_action_zoe(body='{"action":"start"}'))
-        check(
-            st_start2 in ("200 OK", "429 Too Many Requests"),
-            f"action_zoe.cgi accepts action=start (got {st_start2})",
-            failures,
-        )
-        hvac_lock.write_text(str(int(time.time())) + "\n")
-        renault_state.reset_requests()
-        st_stop, body_stop = parse_cgi(call_action_zoe(body='{"action":"stop"}'))
-        check(
-            st_stop == "200 OK"
-            and body_stop.get("action") == "hvac_stopped"
-            and renault_state.renault_hvac_calls == 1
-            and '"action":"cancel"' in renault_state.renault_hvac_bodies[-1],
-            f"action_zoe.cgi action=stop dispatches --stop-hvac despite cooldown (got {st_stop}: {body_stop})",
-            failures,
-        )
-        check(not hvac_lock.exists(), "action=stop clears .zoe_hvac.lock", failures)
-        st_bad, _ = parse_cgi(call_action_zoe(body='{"action":"explode"}'))
-        check(st_bad == "400 Bad Request", f"action_zoe.cgi rejects unknown action (got {st_bad})", failures)
-
-        # WebUI check for HVAC button & i18n
+        # 26c2. Plugin and UI surface: no active button or hvac polling.
         app_hvac_text = (ROOT / "web" / "app.js").read_text()
         check(
-            "action_zoe.cgi" in app_hvac_text
-            and "KLIMATISIERUNG STARTEN" in app_hvac_text
-            and "START PRE-CONDITIONING" in app_hvac_text
-            and "WIRD GESTARTET..." in app_hvac_text
-            and "KLIMA LÄUFT (STOPPEN)" in app_hvac_text
-            and "HVAC RUNNING (STOP)" in app_hvac_text
-            and "WIRD BEENDET..." in app_hvac_text
-            and "STOPPING..." in app_hvac_text
+            "+ hvacActionHtml" not in app_hvac_text
+            and "action_zoe.cgi" in app_hvac_text
             and "KILOMETERSTAND" in app_hvac_text
             and "ODOMETER" in app_hvac_text,
-            "web/app.js includes Zoe HVAC button, endpoint, and DE/EN labels",
+            "web/app.js renders Zoe as read-only telemetry (no HVAC action appended)",
+            failures,
+        )
+        plugin_hvac_text = zoe_plugin_path.read_text()
+        hvac_poll_lines = [
+            line.strip()
+            for line in plugin_hvac_text.splitlines()
+            if "hvac-status" in line and "kamereon_get" in line
+        ]
+        check(
+            hvac_poll_lines
+            and all(line.startswith("#") for line in hvac_poll_lines),
+            "20_renault_zoe.sh keeps hvac-status polling commented out",
+            failures,
+        )
+        check(
+            '"hvac_active": $HVAC_ACTIVE' in plugin_hvac_text
+            and "HVAC_ACTIVE=false" in plugin_hvac_text,
+            "20_renault_zoe.sh pins hvac_active to false",
             failures,
         )
 

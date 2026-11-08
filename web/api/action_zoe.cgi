@@ -189,6 +189,11 @@ fi
 
 check_origin
 
+# Active remote HVAC control is temporarily shelved. Reject any direct call
+# even though the plugin backend remains present for a future re-enablement.
+emit_json "503 Service Unavailable" \
+    '{"ok":false,"error":"HVAC feature temporarily disabled"}'
+
 CONTENT_LENGTH=${CONTENT_LENGTH:-0}
 is_uint "$CONTENT_LENGTH" || fail "400 Bad Request" "$(msg cross_origin)"
 [ "$CONTENT_LENGTH" -le 4096 ] || fail "413 Payload Too Large" "$(msg body_too_large)"

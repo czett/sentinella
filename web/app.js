@@ -1492,6 +1492,9 @@
             var rawStatLabel = primaryStat.label ? String(primaryStat.label) : "";
             var statLabel = rawStatLabel ? escapeHtml(translatePluginText(rawStatLabel, currentLanguage)) : "";
             var heroClass = pluginCharging ? "plugin-stat-hero is-charging" : "plugin-stat-hero";
+            /* Active HVAC controls are temporarily shelved. The Zoe card is a
+               read-only telemetry card; the button markup below is retained
+               (commented) for a future re-enablement.
             var isRenaultZoe = Boolean(
                 (plugin && plugin.id === "renault_zoe") ||
                 rawTitle.toUpperCase() === "RENAULT ZOE"
@@ -1509,6 +1512,7 @@
                     '</button>' +
                 '</div>'
             ) : "";
+            */
 
             bodyHtml = (
                 '<div class="' + heroClass + '">' +
@@ -1516,8 +1520,7 @@
                     (statUnit ? '<span class="plugin-stat-unit">' + statUnit + '</span>' : '') +
                 '</div>' +
                 (statLabel ? '<div class="plugin-stat-label" data-orig-text="' + escapeHtml(rawStatLabel) + '">' + statLabel + '</div>' : '') +
-                renderSecondaryMetrics(plugin && plugin.secondary_metrics) +
-                hvacActionHtml
+                renderSecondaryMetrics(plugin && plugin.secondary_metrics)
             );
         }
 
@@ -2617,11 +2620,14 @@
             if (!target || typeof target.closest !== "function") {
                 return;
             }
+            /* HVAC action handling is temporarily disabled together with the
+               action button in the plugin card. Keep for future re-enablement:
             var btn = target.closest("[data-plugin-action='start-hvac'], [data-plugin-action='stop-hvac']");
             if (btn) {
                 event.preventDefault();
                 triggerZoeHvac(btn, btn.getAttribute("data-plugin-action") === "stop-hvac" ? "stop" : "start");
             }
+            */
         });
     }
     el.settingsClose.addEventListener("click", closeSettings);

@@ -25,6 +25,9 @@ umask 077
 TEST_MODE=0
 HVAC_MODE=0
 HVAC_ACTION=start
+# Active remote HVAC control is temporarily shelved for reliability. The
+# implementation below is retained intact; set this flag to 1 to re-enable it.
+RENAULT_HVAC_CONTROLS_ENABLED=${RENAULT_HVAC_CONTROLS_ENABLED:-0}
 case "${1:-}" in
     --test) TEST_MODE=1 ;;
     --start-hvac) HVAC_MODE=1; HVAC_ACTION=start ;;
@@ -571,6 +574,13 @@ mark_hvac_started() {
 }
 
 if [ "$HVAC_MODE" = "1" ]; then
+    # Remote HVAC actions are temporarily disabled. Keep the block below
+    # intact for future re-enablement, but never reach the network while the
+    # feature flag is off.
+    if [ "$RENAULT_HVAC_CONTROLS_ENABLED" != "1" ]; then
+        printf '{"ok":false,"error":"HVAC feature temporarily disabled"}\n'
+        exit 1
+    fi
     if [ -n "${RENAULT_MOCK_HVAC_JSON:-}" ] && [ -r "${RENAULT_MOCK_HVAC_JSON:-}" ]; then
         cp -f "$RENAULT_MOCK_HVAC_JSON" "$RAW_FILE"
         HVAC_HTTP_CODE=200
@@ -789,47 +799,50 @@ if [ -n "$ID_TOKEN" ] && [ -n "$ACCOUNT_ID" ]; then
         log "NOTE: Kamereon cockpit unavailable (HTTP $_ck); odometer omitted, session retained"
     fi
 
-    if [ "$RATE_LIMITED_DURING_POLL" = "0" ]; then
-        _hs=$(kamereon_get "v1/cars/$RENAULT_VIN/hvac-status" "$HVAC_STATUS_FILE")
-        if rate_limit_detected "$_hs" "$HVAC_STATUS_FILE"; then
-            mark_rate_limited "$_hs"
-            RATE_LIMITED_DURING_POLL=1
-        elif [ "$_hs" = "200" ] && [ -s "$HVAC_STATUS_FILE" ]; then
-            [ "$(extract_json_str "$HVAC_STATUS_FILE" hvacStatus)" = "on" ] && HVAC_ACTIVE=true
-        else
-            log "NOTE: Kamereon hvac-status unavailable (HTTP $_hs); session retained"
-        fi
-    fi
+    # HVAC status polling is temporarily disabled: the card is read-only
+    # telemetry until active climate control is re-enabled.
+    # if [ "$RATE_LIMITED_DURING_POLL" = "0" ]; then
+    #     _hs=$(kamereon_get "v1/cars/$RENAULT_VIN/hvac-status" "$HVAC_STATUS_FILE")
+    #     if rate_limit_detected "$_hs" "$HVAC_STATUS_FILE"; then
+    #         mark_rate_limited "$_hs"
+    #         RATE_LIMITED_DURING_POLL=1
+    #     elif [ "$_hs" = "200" ] && [ -s "$HVAC_STATUS_FILE" ]; then
+    #         [ "$(extract_json_str "$HVAC_STATUS_FILE" hvacStatus)" = "on" ] && HVAC_ACTIVE=true
+    #     else
+    #         log "NOTE: Kamereon hvac-status unavailable (HTTP $_hs); session retained"
+    #     fi
+    # fi
 fi
 
-# Strict local evaluation. A recent stop always wins; otherwise the cloud
-# "on" status must be explicit, or a start marker must be younger than 120s.
-_hnow=$(date +%s 2>/dev/null)
-_hstop_fresh=false
-if [ -r "$HVAC_STOPPED_FILE" ]; then
-    _hstop=$(sed -n '1p' "$HVAC_STOPPED_FILE" 2>/dev/null | tr -cd '0-9')
-    if is_uint "$_hstop" && is_uint "$_hnow" && [ "$_hnow" -ge "$_hstop" ] \
-        && [ $((_hnow - _hstop)) -lt "$HVAC_STOP_WINDOW" ]; then
-        _hstop_fresh=true
-    else
-        rm -f "$HVAC_STOPPED_FILE" 2>/dev/null || true
-    fi
-fi
-
-if [ "$_hstop_fresh" = "true" ]; then
-    HVAC_ACTIVE=false
-    rm -f "$HVAC_ACTIVE_FILE" 2>/dev/null || true
-else
-    if [ "$HVAC_ACTIVE" != "true" ] && [ -r "$HVAC_ACTIVE_FILE" ]; then
-        _hstart=$(sed -n '1p' "$HVAC_ACTIVE_FILE" 2>/dev/null | tr -cd '0-9')
-        if is_uint "$_hstart" && is_uint "$_hnow" && [ "$_hnow" -ge "$_hstart" ] \
-            && [ $((_hnow - _hstart)) -lt "$HVAC_DURATION" ]; then
-            HVAC_ACTIVE=true
-        else
-            rm -f "$HVAC_ACTIVE_FILE" 2>/dev/null || true
-        fi
-    fi
-fi
+# HVAC state is intentionally pinned to false while the active feature is
+# shelved. The strict local evaluation below is retained for re-enablement.
+HVAC_ACTIVE=false
+# _hnow=$(date +%s 2>/dev/null)
+# _hstop_fresh=false
+# if [ -r "$HVAC_STOPPED_FILE" ]; then
+#     _hstop=$(sed -n '1p' "$HVAC_STOPPED_FILE" 2>/dev/null | tr -cd '0-9')
+#     if is_uint "$_hstop" && is_uint "$_hnow" && [ "$_hnow" -ge "$_hstop" ] \
+#         && [ $((_hnow - _hstop)) -lt "$HVAC_STOP_WINDOW" ]; then
+#         _hstop_fresh=true
+#     else
+#         rm -f "$HVAC_STOPPED_FILE" 2>/dev/null || true
+#     fi
+# fi
+#
+# if [ "$_hstop_fresh" = "true" ]; then
+#     HVAC_ACTIVE=false
+#     rm -f "$HVAC_ACTIVE_FILE" 2>/dev/null || true
+# else
+#     if [ "$HVAC_ACTIVE" != "true" ] && [ -r "$HVAC_ACTIVE_FILE" ]; then
+#         _hstart=$(sed -n '1p' "$HVAC_ACTIVE_FILE" 2>/dev/null | tr -cd '0-9')
+#         if is_uint "$_hstart" && is_uint "$_hnow" && [ "$_hnow" -ge "$_hstart" ] \
+#             && [ $((_hnow - _hstart)) -lt "$HVAC_DURATION" ]; then
+#             HVAC_ACTIVE=true
+#         else
+#             rm -f "$HVAC_ACTIVE_FILE" 2>/dev/null || true
+#         fi
+#     fi
+# fi
 
 NOW_ISO=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null) || NOW_ISO=
 
