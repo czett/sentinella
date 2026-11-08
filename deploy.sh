@@ -433,7 +433,7 @@ if [ "$SKIP_WEB" != "1" ]; then
 
     # The CGI needs to find the add-on even though lighttpd serves it from a
     # different directory. The path is written once at deploy time.
-    for file in config.cgi settings.cgi test_signal.cgi test_renault.cgi action_zoe.cgi update_check.cgi plugins.cgi; do
+    for file in config.cgi settings.cgi test_signal.cgi test_renault.cgi action_zoe.cgi update_check.cgi plugin_manager.cgi plugins.cgi; do
         cp -f "$ADDON_DIR/web/api/$file" "$WEB_DIR/api/$file"
         chmod 755 "$WEB_DIR/api/$file"
     done
@@ -452,7 +452,7 @@ if [ "$SKIP_WEB" != "1" ]; then
         cp -f "$ADDON_DIR/web/$file" "$ADDON_DIR/$file"
         chmod 644 "$ADDON_DIR/$file"
     done
-    for file in config.cgi settings.cgi test_signal.cgi test_renault.cgi action_zoe.cgi update_check.cgi plugins.cgi; do
+    for file in config.cgi settings.cgi test_signal.cgi test_renault.cgi action_zoe.cgi update_check.cgi plugin_manager.cgi plugins.cgi; do
         cp -f "$ADDON_DIR/web/api/$file" "$ADDON_DIR/api/$file"
         chmod 755 "$ADDON_DIR/api/$file"
     done
