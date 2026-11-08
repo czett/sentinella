@@ -177,8 +177,10 @@ done
 
 for file in VERSION .env bin/check_soc.sh lib/notify_signal.sh setup_variables.sh \
             plugins.d/10_ccu_health.sh \
+            plugins.d/15_weather.sh \
             plugins.d/20_renault_zoe.sh \
             plugins.d/30_forecast_solar.sh \
+            config/plugins/weather.env.example \
             config/plugins/renault.env.example \
             config/plugins/forecast_solar.env.example \
             web/index.html web/style.css web/app.js \
@@ -236,10 +238,14 @@ install -m 700 "$ROOT/lib/notify_signal.sh"  "$STAGE/lib/notify_signal.sh"
 install -m 700 "$ROOT/setup_variables.sh"    "$STAGE/setup_variables.sh"
 install -m 755 "$ROOT/plugins.d/10_ccu_health.sh" \
     "$STAGE/plugins.d/10_ccu_health.sh"
+install -m 755 "$ROOT/plugins.d/15_weather.sh" \
+    "$STAGE/plugins.d/15_weather.sh"
 install -m 755 "$ROOT/plugins.d/20_renault_zoe.sh" \
     "$STAGE/plugins.d/20_renault_zoe.sh"
 install -m 755 "$ROOT/plugins.d/30_forecast_solar.sh" \
     "$STAGE/plugins.d/30_forecast_solar.sh"
+install -m 644 "$ROOT/config/plugins/weather.env.example" \
+    "$STAGE/config/plugins/weather.env.example"
 install -m 644 "$ROOT/config/plugins/renault.env.example" \
     "$STAGE/config/plugins/renault.env.example"
 install -m 644 "$ROOT/config/plugins/forecast_solar.env.example" \
@@ -297,6 +303,12 @@ done
 
 # Ship the plugin defaults as an example only. An operator's
 # forecast_solar.env and renault.env must survive every redeployment untouched.
+if [ -f "$ADDON_DIR/config/plugins/weather.env.example" ]; then
+    chmod 644 "$ADDON_DIR/config/plugins/weather.env.example"
+fi
+if [ -f "$ADDON_DIR/config/plugins/weather.env" ]; then
+    chmod 600 "$ADDON_DIR/config/plugins/weather.env" 2>/dev/null || true
+fi
 if [ -f "$ADDON_DIR/config/plugins/forecast_solar.env.example" ]; then
     chmod 644 "$ADDON_DIR/config/plugins/forecast_solar.env.example"
     if [ ! -f "$ADDON_DIR/config/plugins/forecast_solar.env" ]; then
@@ -542,6 +554,14 @@ if [ "$SKIP_TEST" != "1" ]; then
             printf 'ccu_health plugin checked.\n'
         else
             printf 'WARNING: ccu_health plugin failed; existing card kept.\n' >&2
+        fi
+    fi
+
+    if [ -x "$ADDON_DIR/plugins.d/15_weather.sh" ]; then
+        if "$ADDON_DIR/plugins.d/15_weather.sh"; then
+            printf 'weather plugin checked.\n'
+        else
+            printf 'WARNING: weather plugin failed; existing card kept.\n' >&2
         fi
     fi
 

@@ -1363,7 +1363,27 @@
             "WARNUNG": "WARNING",
             "WARNING": "WARNING",
             "KRITISCH": "CRITICAL",
-            "CRITICAL": "CRITICAL"
+            "CRITICAL": "CRITICAL",
+            "WETTER": "WEATHER",
+            "WEATHER": "WEATHER",
+            "TEMPERATUR": "TEMPERATURE",
+            "TEMPERATURE": "TEMPERATURE",
+            "FEUCHTE": "HUMIDITY",
+            "HUMIDITY": "HUMIDITY",
+            "WIND": "WIND",
+            "MIN / MAX": "MIN / MAX",
+            "KLAR": "CLEAR",
+            "CLEAR": "CLEAR",
+            "NEBEL": "FOG",
+            "FOG": "FOG",
+            "NIESELREGEN": "DRIZZLE",
+            "DRIZZLE": "DRIZZLE",
+            "REGEN": "RAIN",
+            "RAIN": "RAIN",
+            "SCHNEE": "SNOW",
+            "SNOW": "SNOW",
+            "GEWITTER": "THUNDERSTORM",
+            "THUNDERSTORM": "THUNDERSTORM"
         },
         de: {
             "RENAULT E-TECH": "RENAULT E-TECH",
@@ -1458,7 +1478,27 @@
             "WARNING": "WARNUNG",
             "WARNUNG": "WARNUNG",
             "CRITICAL": "KRITISCH",
-            "KRITISCH": "KRITISCH"
+            "KRITISCH": "KRITISCH",
+            "WEATHER": "WETTER",
+            "WETTER": "WETTER",
+            "TEMPERATURE": "TEMPERATUR",
+            "TEMPERATUR": "TEMPERATUR",
+            "HUMIDITY": "FEUCHTE",
+            "FEUCHTE": "FEUCHTE",
+            "WIND": "WIND",
+            "MIN / MAX": "MIN / MAX",
+            "CLEAR": "KLAR",
+            "KLAR": "KLAR",
+            "FOG": "NEBEL",
+            "NEBEL": "NEBEL",
+            "DRIZZLE": "NIESELREGEN",
+            "NIESELREGEN": "NIESELREGEN",
+            "RAIN": "REGEN",
+            "REGEN": "REGEN",
+            "SNOW": "SCHNEE",
+            "SCHNEE": "SCHNEE",
+            "THUNDERSTORM": "GEWITTER",
+            "GEWITTER": "GEWITTER"
         }
     };
 
@@ -1530,8 +1570,9 @@
         var rawBadge = (plugin && plugin.status_badge) ? String(plugin.status_badge) : "";
         var badgeText = rawBadge ? escapeHtml(translatePluginText(rawBadge, currentLanguage)) : "";
         var rawColor = String((plugin && plugin.status_color) || "neutral");
-        var badgeColor = (rawColor === "green" || rawColor === "blue" ||
-            rawColor === "red" || rawColor === "neutral") ? rawColor : "neutral";
+        var badgeColor = (rawColor === "green" || rawColor === "ok" ||
+            rawColor === "blue" || rawColor === "red" ||
+            rawColor === "warning" || rawColor === "neutral") ? rawColor : "neutral";
         var pluginCharging = (plugin && (plugin.charging === true ||
             Number(plugin.chargingStatus) === 1 ||
             rawBadge.toUpperCase() === "LÄDT" ||

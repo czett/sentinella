@@ -2935,6 +2935,132 @@ if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SON
             failures,
         )
 
+        print("\n28. Open-Meteo weather telemetry plugin (15_weather.sh)")
+        weather_plugin = ROOT / "plugins.d" / "15_weather.sh"
+        check(weather_plugin.is_file(), "plugins.d/15_weather.sh exists", failures)
+        check(os.access(weather_plugin, os.X_OK), "plugins.d/15_weather.sh is executable", failures)
+        weather_syntax = subprocess.run(["sh", "-n", str(weather_plugin)], capture_output=True, text=True)
+        check(weather_syntax.returncode == 0, "plugins.d/15_weather.sh passes sh -n", failures)
+
+        weather_test_dir = tmp / "weather_test"
+        weather_state_dir = weather_test_dir / "state" / "plugins"
+        weather_state_dir.mkdir(parents=True, exist_ok=True)
+        weather_card_path = weather_state_dir / "weather.json"
+
+        # 28a. Mock parsing of full Open-Meteo response
+        mock_weather_json = weather_test_dir / "mock_weather.json"
+        mock_weather_json.write_text(json.dumps({
+            "latitude": 51.51,
+            "longitude": 7.46,
+            "current": {
+                "time": "2026-11-08T15:45",
+                "temperature_2m": 14.2,
+                "relative_humidity_2m": 68,
+                "weather_code": 0,
+                "wind_speed_10m": 18.4
+            },
+            "daily": {
+                "temperature_2m_max": [16.1, 15.0],
+                "temperature_2m_min": [8.2, 7.0]
+            }
+        }))
+
+        weather_env = dict(os.environ)
+        weather_env["WEATHER_ADDON_DIR"] = str(weather_test_dir)
+        weather_env["WEATHER_STATE_DIR"] = str(weather_state_dir)
+        weather_env["WEATHER_MOCK_JSON"] = str(mock_weather_json)
+        weather_env["UI_LANGUAGE"] = "de"
+
+        w_res = subprocess.run([str(weather_plugin)], env=weather_env, capture_output=True, text=True, timeout=10)
+        check(w_res.returncode == 0, f"15_weather.sh mock run exits 0 (got {w_res.returncode})", failures)
+        check(weather_card_path.is_file(), "weather.json generated on mock run", failures)
+
+        w_card = json.loads(weather_card_path.read_text())
+        check(w_card.get("id") == "weather", f"card id is weather (got {w_card.get('id')!r})", failures)
+        check(w_card.get("layout") == "stat", f"card layout is stat (got {w_card.get('layout')!r})", failures)
+        check(w_card.get("title") == "WETTER", f"DE title is WETTER (got {w_card.get('title')!r})", failures)
+        check(w_card.get("status_badge") == "KLAR", f"WMO 0 is KLAR (got {w_card.get('status_badge')!r})", failures)
+        check(w_card.get("status_color") == "ok", f"WMO 0 color is ok (got {w_card.get('status_color')!r})", failures)
+        check(
+            w_card.get("primary") == {"value": "14.2", "unit": "°C", "label": "TEMPERATUR"},
+            f"primary metric formatted properly (got {w_card.get('primary')})",
+            failures,
+        )
+
+        w_sec_map = {m["label"]: m["value"] for m in w_card.get("secondary_metrics", [])}
+        check(w_sec_map.get("MIN / MAX") == "8°C / 16°C", f"MIN / MAX matches 8°C / 16°C (got {w_sec_map.get('MIN / MAX')!r})", failures)
+        check(w_sec_map.get("FEUCHTE") == "68%", f"FEUCHTE matches 68% (got {w_sec_map.get('FEUCHTE')!r})", failures)
+        check(w_sec_map.get("WIND") == "18 km/h", f"WIND matches 18 km/h (got {w_sec_map.get('WIND')!r})", failures)
+
+        # 28b. WMO weather code translations (cloudy, rain, snow, thunderstorm)
+        wmo_cases = [
+            (2, "BEWÖLKT", "neutral"),
+            (63, "REGEN", "neutral"),
+            (71, "SCHNEE", "warning"),
+            (95, "GEWITTER", "warning"),
+        ]
+        for code, exp_badge, exp_color in wmo_cases:
+            mock_weather_json.write_text(json.dumps({
+                "current": {"temperature_2m": 5.0, "relative_humidity_2m": 80, "weather_code": code, "wind_speed_10m": 10},
+                "daily": {"temperature_2m_max": [8.0], "temperature_2m_min": [2.0]}
+            }))
+            subprocess.run([str(weather_plugin)], env=weather_env, capture_output=True, text=True, timeout=10)
+            c = json.loads(weather_card_path.read_text())
+            check(c.get("status_badge") == exp_badge, f"WMO {code} translates to {exp_badge} (got {c.get('status_badge')!r})", failures)
+            check(c.get("status_color") == exp_color, f"WMO {code} color is {exp_color} (got {c.get('status_color')!r})", failures)
+
+        # 28c. English localization (UI_LANGUAGE=en)
+        weather_env["UI_LANGUAGE"] = "en"
+        mock_weather_json.write_text(json.dumps({
+            "current": {"temperature_2m": 14.2, "relative_humidity_2m": 68, "weather_code": 0, "wind_speed_10m": 18.4},
+            "daily": {"temperature_2m_max": [16.1], "temperature_2m_min": [8.2]}
+        }))
+        subprocess.run([str(weather_plugin)], env=weather_env, capture_output=True, text=True, timeout=10)
+        en_w = json.loads(weather_card_path.read_text())
+        check(en_w.get("title") == "WEATHER", f"EN title is WEATHER (got {en_w.get('title')!r})", failures)
+        check(en_w.get("status_badge") == "CLEAR", f"EN WMO 0 badge is CLEAR (got {en_w.get('status_badge')!r})", failures)
+        check(en_w.get("primary", {}).get("label") == "TEMPERATURE", "EN primary label is TEMPERATURE", failures)
+        en_sec_map = {m["label"]: m["value"] for m in en_w.get("secondary_metrics", [])}
+        check("HUMIDITY" in en_sec_map, "EN secondary metric contains HUMIDITY", failures)
+
+        # 28d. Offline fallback preserves existing card
+        weather_env["WEATHER_MOCK_JSON"] = str(weather_test_dir / "non_existent_mock.json")
+        # Point API URL to unreachable port so curl fails
+        weather_env["WEATHER_CONNECT_TIMEOUT"] = "1"
+        weather_env["WEATHER_MAX_TIME"] = "1"
+        offline_res = subprocess.run([str(weather_plugin)], env=weather_env, capture_output=True, text=True, timeout=10)
+        check(offline_res.returncode == 0, f"offline run with existing card exits 0 (got {offline_res.returncode})", failures)
+        preserved_card = json.loads(weather_card_path.read_text())
+        check(preserved_card.get("title") == "WEATHER", "existing card preserved on network failure", failures)
+
+        # 28e. Offline fallback emits neutral card when no card exists yet
+        weather_card_path.unlink()
+        subprocess.run([str(weather_plugin)], env=weather_env, capture_output=True, text=True, timeout=10)
+        check(weather_card_path.is_file(), "neutral offline card created when none existed", failures)
+        neutral_card = json.loads(weather_card_path.read_text())
+        check(neutral_card.get("status_badge") == "OFFLINE", "neutral card status is OFFLINE", failures)
+        check(neutral_card.get("status_color") == "neutral", "neutral card color is neutral", failures)
+        check(neutral_card.get("primary", {}).get("value") == "--", "neutral primary value is --", failures)
+
+        # 28f. Fallback to forecast_solar.env coordinates
+        weather_env.pop("WEATHER_MOCK_JSON", None)
+        fc_env_file = weather_test_dir / "config" / "plugins" / "forecast_solar.env"
+        fc_env_file.parent.mkdir(parents=True, exist_ok=True)
+        fc_env_file.write_text("FORECAST_LAT=52.20\nFORECAST_LON=8.10\n")
+        # Verify fallback detection in script
+        sh_check = subprocess.run(
+            [str(weather_plugin), "--print-coords"],
+            env={"WEATHER_ADDON_DIR": str(weather_test_dir), "UI_LANGUAGE": "de"},
+            capture_output=True, text=True
+        )
+        check("52.20,8.10" in sh_check.stdout, f"fell back to forecast_solar.env coords (got {sh_check.stdout.strip()!r})", failures)
+
+        # 28g. WebUI I18N dictionary coverage
+        app_js_text = (ROOT / "web" / "app.js").read_text()
+        for term in ["WETTER", "WEATHER", "TEMPERATUR", "FEUCHTE", "HUMIDITY", "WIND", "MIN / MAX", "KLAR", "CLEAR", "REGEN", "RAIN", "SCHNEE", "SNOW"]:
+            check(f'"{term}"' in app_js_text, f"web/app.js PLUGIN_I18N contains {term}", failures)
+
+
     finally:
         sma.shutdown()
         rega.shutdown()
