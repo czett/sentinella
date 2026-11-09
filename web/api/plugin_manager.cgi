@@ -68,7 +68,7 @@ fail() {
     exit 0
 }
 
-# Prints 1 or 0 for the given variable, defaulting to enabled.
+# Prints 1 or 0 for the given variable. PLUGIN_FORECAST_SOLAR defaults to 0 (disabled).
 flag_value() {
     _v=""
     if [ -f "$PLUGINS_ENV" ] && [ ! -L "$PLUGINS_ENV" ]; then
@@ -76,8 +76,15 @@ flag_value() {
             | tail -n 1 | tr -d "\"' \r")
     fi
     case "$_v" in
+        1|true|TRUE|on|ON|yes|YES) printf '1' ;;
         0|false|FALSE|off|OFF|no|NO) printf '0' ;;
-        *) printf '1' ;;
+        *)
+            if [ "$1" = "PLUGIN_FORECAST_SOLAR" ]; then
+                printf '0'
+            else
+                printf '1'
+            fi
+            ;;
     esac
 }
 

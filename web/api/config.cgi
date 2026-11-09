@@ -85,6 +85,12 @@ RENAULT_TMP_FILE=
 CCU_HEALTH_CONFIG_DIR=$ADDON_DIR/config/plugins
 CCU_HEALTH_ENV_FILE=${CCU_HEALTH_ENV:-$CCU_HEALTH_CONFIG_DIR/ccu_health.env}
 CCU_HEALTH_TMP_FILE=
+WEATHER_CONFIG_DIR=$ADDON_DIR/config/plugins
+WEATHER_ENV_FILE=${WEATHER_ENV:-$WEATHER_CONFIG_DIR/weather.env}
+WEATHER_TMP_FILE=
+FORECAST_CONFIG_DIR=$ADDON_DIR/config/plugins
+FORECAST_ENV_FILE=${FORECAST_SOLAR_ENV:-$FORECAST_CONFIG_DIR/forecast_solar.env}
+FORECAST_TMP_FILE=
 NOTIFY_SCRIPT=$ADDON_DIR/lib/notify_signal.sh
 TEST_RESULT=$STATE_DIR/notify_test.result
 TEST_LOG=$STATE_DIR/notify_test.log
@@ -102,6 +108,14 @@ RENAULT_NOTIFY_HIGH_ENABLED=0
 RENAULT_NOTIFY_HIGH_SOC=80
 CCU_NOTIFY_DC_ENABLED=0
 CCU_NOTIFY_DC_THRESHOLD=80
+WEATHER_CITY=LOKAL
+WEATHER_LAT=51.51
+WEATHER_LON=7.46
+FORECAST_KWP=
+FORECAST_DEC=35
+FORECAST_AZ=0
+FORECAST_LAT=
+FORECAST_LON=
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -127,6 +141,32 @@ is_uint() {
         ''|*[!0-9]*) return 1 ;;
     esac
     return 0
+}
+
+is_float() {
+    case "$1" in
+        ''|*[!0-9.-]*) return 1 ;;
+    esac
+    _f_rest=${1#-}
+    case "$_f_rest" in
+        ''|.*|*.|*.*.*|*..*|*.-*|*--*|*[!0-9.]*) return 1 ;;
+    esac
+    return 0
+}
+
+is_float_in_range() {
+    is_float "$1" || return 1
+    awk -v v="$1" -v lo="$2" -v hi="$3" 'BEGIN { exit !((v + 0) >= (lo + 0) && (v + 0) <= (hi + 0)) }' 2>/dev/null
+}
+
+is_safe_label() {
+    case "$1" in
+        *'"'*|*\\*|*'$'*|*'`'*) return 1 ;;
+    esac
+    if printf '%s' "$1" | grep -q '[[:cntrl:]]'; then
+        return 1
+    fi
+    [ "${#1}" -le 64 ]
 }
 
 is_safe_host() {
@@ -354,6 +394,26 @@ msg() {
         en:ccu_dc_en_bool) printf 'Invalid boolean for Duty Cycle warning.' ;;
         de:write_ccu_health) printf 'Die CCU3-System-Konfiguration kann nicht geschrieben werden.' ;;
         en:write_ccu_health) printf 'Cannot write the CCU3 system configuration.' ;;
+        de:weather_city_invalid) printf 'Geben Sie einen gültigen Stadtnamen/Standort ein.' ;;
+        en:weather_city_invalid) printf 'Enter a valid city or location label.' ;;
+        de:weather_lat_invalid) printf 'Geben Sie einen gültigen Breitengrad (-90 bis 90) ein.' ;;
+        en:weather_lat_invalid) printf 'Enter a valid latitude (-90 to 90).' ;;
+        de:weather_lon_invalid) printf 'Geben Sie einen gültigen Längengrad (-180 bis 180) ein.' ;;
+        en:weather_lon_invalid) printf 'Enter a valid longitude (-180 to 180).' ;;
+        de:write_weather) printf 'Die Wetter-Konfiguration kann nicht geschrieben werden.' ;;
+        en:write_weather) printf 'Cannot write the weather configuration.' ;;
+        de:forecast_kwp_invalid) printf 'Geben Sie eine gültige Peak-Leistung in kWp (> 0) ein.' ;;
+        en:forecast_kwp_invalid) printf 'Enter a valid peak power in kWp (> 0).' ;;
+        de:forecast_dec_invalid) printf 'Geben Sie eine gültige Dachneigung zwischen 0 und 90° ein.' ;;
+        en:forecast_dec_invalid) printf 'Enter a valid roof tilt between 0 and 90°.' ;;
+        de:forecast_az_invalid) printf 'Geben Sie eine gültige Ausrichtung zwischen -180 und 180° ein.' ;;
+        en:forecast_az_invalid) printf 'Enter a valid azimuth between -180 and 180°.' ;;
+        de:forecast_lat_invalid) printf 'Geben Sie einen gültigen Breitengrad (-90 bis 90) ein.' ;;
+        en:forecast_lat_invalid) printf 'Enter a valid latitude (-90 to 90).' ;;
+        de:forecast_lon_invalid) printf 'Geben Sie einen gültigen Längengrad (-180 bis 180) ein.' ;;
+        en:forecast_lon_invalid) printf 'Enter a valid longitude (-180 to 180).' ;;
+        de:write_forecast) printf 'Die PV-Prognose-Konfiguration kann nicht geschrieben werden.' ;;
+        en:write_forecast) printf 'Cannot write the PV forecast configuration.' ;;
         *) printf 'Request failed.' ;;
     esac
 }
@@ -362,6 +422,9 @@ msg() {
 cleanup() {
     [ -n "${TMP_FILE:-}" ] && rm -f "$TMP_FILE" 2>/dev/null
     [ -n "${RENAULT_TMP_FILE:-}" ] && rm -f "$RENAULT_TMP_FILE" 2>/dev/null
+    [ -n "${CCU_HEALTH_TMP_FILE:-}" ] && rm -f "$CCU_HEALTH_TMP_FILE" 2>/dev/null
+    [ -n "${WEATHER_TMP_FILE:-}" ] && rm -f "$WEATHER_TMP_FILE" 2>/dev/null
+    [ -n "${FORECAST_TMP_FILE:-}" ] && rm -f "$FORECAST_TMP_FILE" 2>/dev/null
     [ -n "$TEST_WRAPPER" ] && rm -f "$TEST_WRAPPER" 2>/dev/null
     if [ "${CONFIG_LOCK_OWNED:-0}" = "1" ]; then
         rm -rf "$CONFIG_LOCK" 2>/dev/null
@@ -553,6 +616,16 @@ body_num() {
         | head -n 1
 }
 
+body_float() {
+    _bf_raw=$(body_str "$1")
+    if [ -z "$_bf_raw" ]; then
+        _bf_raw=$(body_lines \
+            | sed -n 's/^[[:space:]]*"'"$1"'"[[:space:]]*:[[:space:]]*\(-\{0,1\}[0-9][0-9]*\(\.[0-9][0-9]*\)\{0,1\}\).*$/\1/p' \
+            | head -n 1)
+    fi
+    printf '%s' "$_bf_raw" | tr ',' '.'
+}
+
 body_bool() {
     _bool_raw=$(body_str "$1")
     if [ -z "$_bool_raw" ]; then
@@ -604,9 +677,47 @@ load_ccu_health_env() {
     return 0
 }
 
+load_weather_env() {
+    WEATHER_CITY=LOKAL
+    WEATHER_LAT=51.51
+    WEATHER_LON=7.46
+    if [ -r "$WEATHER_ENV_FILE" ]; then
+        # shellcheck source=/dev/null
+        . "$WEATHER_ENV_FILE" 2>/dev/null || true
+    fi
+    WEATHER_CITY=$(trim_ws "${WEATHER_CITY:-}")
+    [ -n "$WEATHER_CITY" ] && is_safe_label "$WEATHER_CITY" || WEATHER_CITY=LOKAL
+    is_float "${WEATHER_LAT:-}" || WEATHER_LAT=51.51
+    is_float "${WEATHER_LON:-}" || WEATHER_LON=7.46
+    return 0
+}
+
+load_forecast_env() {
+    FORECAST_KWP=
+    FORECAST_DEC=35
+    FORECAST_AZ=0
+    FORECAST_LAT=
+    FORECAST_LON=
+    if [ -r "$FORECAST_ENV_FILE" ]; then
+        # shellcheck source=/dev/null
+        . "$FORECAST_ENV_FILE" 2>/dev/null || true
+    fi
+    FORECAST_KWP=$(trim_ws "${FORECAST_KWP:-}" | tr ',' '.')
+    is_float "$FORECAST_KWP" || FORECAST_KWP=
+    is_float "${FORECAST_DEC:-}" || FORECAST_DEC=35
+    is_float "${FORECAST_AZ:-}" || FORECAST_AZ=0
+    FORECAST_LAT=$(trim_ws "${FORECAST_LAT:-}" | tr ',' '.')
+    is_float "$FORECAST_LAT" || FORECAST_LAT=
+    FORECAST_LON=$(trim_ws "${FORECAST_LON:-}" | tr ',' '.')
+    is_float "$FORECAST_LON" || FORECAST_LON=
+    return 0
+}
+
 load_env() {
     load_renault_env
     load_ccu_health_env
+    load_weather_env
+    load_forecast_env
     [ -r "$ENV_FILE" ] || return 1
     # shellcheck source=/dev/null
     . "$ENV_FILE" || return 1
@@ -625,6 +736,8 @@ load_env() {
     esac
     load_renault_env
     load_ccu_health_env
+    load_weather_env
+    load_forecast_env
     return 0
 }
 
@@ -675,6 +788,14 @@ config_payload() {
     printf ',"renault_notify_high_soc":%s' "$RENAULT_NOTIFY_HIGH_SOC"
     printf ',"ccu_notify_dc_enabled":%s' "$_ccu_dc_en"
     printf ',"ccu_notify_dc_threshold":%s' "$CCU_NOTIFY_DC_THRESHOLD"
+    printf ',"weather_city":%s' "$(json_str "$WEATHER_CITY")"
+    printf ',"weather_lat":%s' "$(json_str "$WEATHER_LAT")"
+    printf ',"weather_lon":%s' "$(json_str "$WEATHER_LON")"
+    printf ',"forecast_kwp":%s' "$(json_str "$FORECAST_KWP")"
+    printf ',"forecast_dec":%s' "$(json_str "$FORECAST_DEC")"
+    printf ',"forecast_az":%s' "$(json_str "$FORECAST_AZ")"
+    printf ',"forecast_lat":%s' "$(json_str "$FORECAST_LAT")"
+    printf ',"forecast_lon":%s' "$(json_str "$FORECAST_LON")"
     printf ',"writable":%s' "$_writable"
     printf '}\n'
 }
@@ -820,6 +941,82 @@ EOF
     return 0
 }
 
+save_weather_env() {
+    _w_city=${1:-$WEATHER_CITY}
+    _w_lat=${2:-$WEATHER_LAT}
+    _w_lon=${3:-$WEATHER_LON}
+
+    mkdir -p "$WEATHER_CONFIG_DIR" 2>/dev/null || return 1
+    chmod 700 "$ADDON_DIR/config" "$WEATHER_CONFIG_DIR" 2>/dev/null || true
+
+    WEATHER_TMP_FILE="$WEATHER_ENV_FILE.tmp.$$"
+    (
+        umask 077
+        if [ -f "$WEATHER_ENV_FILE" ]; then
+            cp -p "$WEATHER_ENV_FILE" "$WEATHER_TMP_FILE" 2>/dev/null
+        else
+            cat > "$WEATHER_TMP_FILE" <<'EOF'
+# Sentinella - Weather plugin configuration (mode 600)
+WEATHER_CITY='LOKAL'
+WEATHER_LAT='51.51'
+WEATHER_LON='7.46'
+EOF
+        fi
+    ) || return 1
+
+    chmod 600 "$WEATHER_TMP_FILE" 2>/dev/null || true
+    env_set "$WEATHER_TMP_FILE" WEATHER_CITY "$_w_city" || return 1
+    env_set "$WEATHER_TMP_FILE" WEATHER_LAT "$_w_lat" || return 1
+    env_set "$WEATHER_TMP_FILE" WEATHER_LON "$_w_lon" || return 1
+    chmod 600 "$WEATHER_TMP_FILE" 2>/dev/null || true
+
+    mv -f "$WEATHER_TMP_FILE" "$WEATHER_ENV_FILE" 2>/dev/null || return 1
+    chmod 600 "$WEATHER_ENV_FILE" 2>/dev/null || true
+    WEATHER_TMP_FILE=
+    return 0
+}
+
+save_forecast_env() {
+    _f_kwp=${1:-$FORECAST_KWP}
+    _f_dec=${2:-$FORECAST_DEC}
+    _f_az=${3:-$FORECAST_AZ}
+    _f_lat=${4:-$FORECAST_LAT}
+    _f_lon=${5:-$FORECAST_LON}
+
+    mkdir -p "$FORECAST_CONFIG_DIR" 2>/dev/null || return 1
+    chmod 700 "$ADDON_DIR/config" "$FORECAST_CONFIG_DIR" 2>/dev/null || true
+
+    FORECAST_TMP_FILE="$FORECAST_ENV_FILE.tmp.$$"
+    (
+        umask 077
+        if [ -f "$FORECAST_ENV_FILE" ]; then
+            cp -p "$FORECAST_ENV_FILE" "$FORECAST_TMP_FILE" 2>/dev/null
+        else
+            cat > "$FORECAST_TMP_FILE" <<'EOF'
+# Sentinella - PV Forecast (EXPERIMENTAL) plugin configuration (mode 600)
+FORECAST_KWP=''
+FORECAST_DEC='35'
+FORECAST_AZ='0'
+FORECAST_LAT=''
+FORECAST_LON=''
+EOF
+        fi
+    ) || return 1
+
+    chmod 600 "$FORECAST_TMP_FILE" 2>/dev/null || true
+    env_set "$FORECAST_TMP_FILE" FORECAST_KWP "$_f_kwp" || return 1
+    env_set "$FORECAST_TMP_FILE" FORECAST_DEC "$_f_dec" || return 1
+    env_set "$FORECAST_TMP_FILE" FORECAST_AZ "$_f_az" || return 1
+    env_set "$FORECAST_TMP_FILE" FORECAST_LAT "$_f_lat" || return 1
+    env_set "$FORECAST_TMP_FILE" FORECAST_LON "$_f_lon" || return 1
+    chmod 600 "$FORECAST_TMP_FILE" 2>/dev/null || true
+
+    mv -f "$FORECAST_TMP_FILE" "$FORECAST_ENV_FILE" 2>/dev/null || return 1
+    chmod 600 "$FORECAST_ENV_FILE" 2>/dev/null || true
+    FORECAST_TMP_FILE=
+    return 0
+}
+
 parse_and_validate_renault() {
     _ruser=$RENAULT_USER
     _rpass=$RENAULT_PASS
@@ -926,6 +1123,95 @@ parse_and_validate_ccu_health() {
         fi
         _c_dc_thresh_val=$_c_dc_thresh
         _want_ccu_health=1
+    fi
+}
+
+parse_and_validate_weather() {
+    _w_city_val=$WEATHER_CITY
+    _w_lat_val=$WEATHER_LAT
+    _w_lon_val=$WEATHER_LON
+    _want_weather=0
+
+    if body_has weather_city; then
+        _w_city=$(trim_ws "$(body_str weather_city)")
+        [ -n "$_w_city" ] || _w_city=LOKAL
+        if ! is_safe_label "$_w_city"; then
+            fail "400 Bad Request" "$(msg weather_city_invalid)" "weather_city"
+        fi
+        _w_city_val=$_w_city
+        _want_weather=1
+    fi
+
+    if body_has weather_lat; then
+        _w_lat=$(trim_ws "$(body_float weather_lat)")
+        if [ -n "$_w_lat" ]; then
+            is_float_in_range "$_w_lat" -90 90 || fail "400 Bad Request" "$(msg weather_lat_invalid)" "weather_lat"
+            _w_lat_val=$_w_lat
+        fi
+        _want_weather=1
+    fi
+
+    if body_has weather_lon; then
+        _w_lon=$(trim_ws "$(body_float weather_lon)")
+        if [ -n "$_w_lon" ]; then
+            is_float_in_range "$_w_lon" -180 180 || fail "400 Bad Request" "$(msg weather_lon_invalid)" "weather_lon"
+            _w_lon_val=$_w_lon
+        fi
+        _want_weather=1
+    fi
+}
+
+parse_and_validate_forecast() {
+    _f_kwp_val=$FORECAST_KWP
+    _f_dec_val=$FORECAST_DEC
+    _f_az_val=$FORECAST_AZ
+    _f_lat_val=$FORECAST_LAT
+    _f_lon_val=$FORECAST_LON
+    _want_forecast=0
+
+    if body_has forecast_kwp; then
+        _f_kwp=$(trim_ws "$(body_float forecast_kwp)")
+        if [ -n "$_f_kwp" ]; then
+            is_float_in_range "$_f_kwp" 0.01 10000 || fail "400 Bad Request" "$(msg forecast_kwp_invalid)" "forecast_kwp"
+        fi
+        _f_kwp_val=$_f_kwp
+        _want_forecast=1
+    fi
+
+    if body_has forecast_dec; then
+        _f_dec=$(trim_ws "$(body_float forecast_dec)")
+        if [ -n "$_f_dec" ]; then
+            is_float_in_range "$_f_dec" 0 90 || fail "400 Bad Request" "$(msg forecast_dec_invalid)" "forecast_dec"
+            _f_dec_val=$_f_dec
+        fi
+        _want_forecast=1
+    fi
+
+    if body_has forecast_az; then
+        _f_az=$(trim_ws "$(body_float forecast_az)")
+        if [ -n "$_f_az" ]; then
+            is_float_in_range "$_f_az" -180 180 || fail "400 Bad Request" "$(msg forecast_az_invalid)" "forecast_az"
+            _f_az_val=$_f_az
+        fi
+        _want_forecast=1
+    fi
+
+    if body_has forecast_lat; then
+        _f_lat=$(trim_ws "$(body_float forecast_lat)")
+        if [ -n "$_f_lat" ]; then
+            is_float_in_range "$_f_lat" -90 90 || fail "400 Bad Request" "$(msg forecast_lat_invalid)" "forecast_lat"
+        fi
+        _f_lat_val=$_f_lat
+        _want_forecast=1
+    fi
+
+    if body_has forecast_lon; then
+        _f_lon=$(trim_ws "$(body_float forecast_lon)")
+        if [ -n "$_f_lon" ]; then
+            is_float_in_range "$_f_lon" -180 180 || fail "400 Bad Request" "$(msg forecast_lon_invalid)" "forecast_lon"
+        fi
+        _f_lon_val=$_f_lon
+        _want_forecast=1
     fi
 }
 
@@ -1077,6 +1363,8 @@ save_config() {
 
     parse_and_validate_renault
     parse_and_validate_ccu_health
+    parse_and_validate_weather
+    parse_and_validate_forecast
 
     acquire_config_lock || fail "409 Conflict" \
         "$(msg config_busy)"
@@ -1154,7 +1442,25 @@ save_config() {
             || fail "500 Internal Server Error" "$(msg write_ccu_health)"
     fi
 
+    if [ "$_want_weather" = "1" ]; then
+        save_weather_env "$_w_city_val" "$_w_lat_val" "$_w_lon_val" \
+            || fail "500 Internal Server Error" "$(msg write_weather)"
+    fi
+
+    if [ "$_want_forecast" = "1" ]; then
+        save_forecast_env "$_f_kwp_val" "$_f_dec_val" "$_f_az_val" "$_f_lat_val" "$_f_lon_val" \
+            || fail "500 Internal Server Error" "$(msg write_forecast)"
+    fi
+
     release_config_lock
+    if [ "$_want_weather" = "1" ] && [ -x "$ADDON_DIR/plugins.d/15_weather.sh" ]; then
+        WEATHER_ADDON_DIR="$ADDON_DIR" WEATHER_ENV="$WEATHER_ENV_FILE" \
+            "$ADDON_DIR/plugins.d/15_weather.sh" </dev/null >/dev/null 2>&1 &
+    fi
+    if [ "$_want_forecast" = "1" ] && [ -x "$ADDON_DIR/plugins.d/30_forecast_solar.sh" ]; then
+        FORECAST_SOLAR_ADDON_DIR="$ADDON_DIR" FORECAST_SOLAR_ENV="$FORECAST_ENV_FILE" \
+            "$ADDON_DIR/plugins.d/30_forecast_solar.sh" </dev/null >/dev/null 2>&1 &
+    fi
     load_env || fail "500 Internal Server Error" \
         "$(msg readback)"
     emit_json "200 OK" "$(config_payload)"

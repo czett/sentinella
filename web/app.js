@@ -168,9 +168,23 @@
             pluginManagerSection: "PLUGINS",
             pluginNameCcuHealth: "CCU3 System Status",
             pluginNameWeather: "Weather (Open-Meteo)",
-            pluginNameForecastSolar: "PV Forecast (Forecast.solar)",
+            pluginNameForecastSolar: "PV Forecast (Experimental)",
             pluginNameRenault: "Renault E-Tech",
             pluginToggleFailed: "Plugin state could not be saved.",
+            weatherCity: "City / Location",
+            weatherLat: "Latitude",
+            weatherLon: "Longitude",
+            forecastKwp: "Peak Power (kWp)",
+            forecastDec: "Roof Tilt (°)",
+            forecastAz: "Azimuth (°)",
+            forecastLat: "Latitude",
+            forecastLon: "Longitude",
+            weatherCityInvalid: "Enter a valid city or location label.",
+            latInvalid: "Enter a valid latitude (-90 to 90).",
+            lonInvalid: "Enter a valid longitude (-180 to 180).",
+            forecastKwpInvalid: "Enter a valid peak power in kWp (> 0).",
+            forecastDecInvalid: "Enter a valid roof tilt between 0 and 90°.",
+            forecastAzInvalid: "Enter a valid azimuth between -180 and 180°.",
             renaultNotifyLow: "Low battery warning",
             renaultNotifyLowSoc: "Low SoC threshold",
             renaultNotifyHigh: "Target charge notification",
@@ -344,9 +358,23 @@
             pluginManagerSection: "ERWEITERUNGEN",
             pluginNameCcuHealth: "CCU3 System-Status",
             pluginNameWeather: "Wetter (Open-Meteo)",
-            pluginNameForecastSolar: "PV-Prognose (Forecast.solar)",
+            pluginNameForecastSolar: "PV-Prognose (Experimentell)",
             pluginNameRenault: "Renault E-Tech",
             pluginToggleFailed: "Plugin-Status konnte nicht gespeichert werden.",
+            weatherCity: "Stadtname / Standort",
+            weatherLat: "Breitengrad",
+            weatherLon: "Längengrad",
+            forecastKwp: "Peak-Leistung (kWp)",
+            forecastDec: "Dachneigung (°)",
+            forecastAz: "Ausrichtung (°)",
+            forecastLat: "Breitengrad",
+            forecastLon: "Längengrad",
+            weatherCityInvalid: "Geben Sie einen gültigen Stadtnamen/Standort ein.",
+            latInvalid: "Geben Sie einen gültigen Breitengrad (-90 bis 90) ein.",
+            lonInvalid: "Geben Sie einen gültigen Längengrad (-180 bis 180) ein.",
+            forecastKwpInvalid: "Geben Sie eine gültige Peak-Leistung in kWp (> 0) ein.",
+            forecastDecInvalid: "Geben Sie eine gültige Dachneigung zwischen 0 und 90° ein.",
+            forecastAzInvalid: "Geben Sie eine gültige Ausrichtung zwischen -180 und 180° ein.",
             renaultNotifyLow: "Warnung bei niedrigem SoC",
             renaultNotifyLowSoc: "Schwellenwert niedriger SoC",
             renaultNotifyHigh: "Benachrichtigung bei Ladeziel",
@@ -519,6 +547,14 @@
         renaultTestStatus: $("renault-test-status"),
         ccuNotifyDc: $("ccu-notify-dc-enabled"),
         ccuNotifyDcThreshold: $("ccu-notify-dc-threshold"),
+        weatherCity: $("weather-city"),
+        weatherLat: $("weather-lat"),
+        weatherLon: $("weather-lon"),
+        forecastKwp: $("forecast-kwp"),
+        forecastDec: $("forecast-dec"),
+        forecastAz: $("forecast-az"),
+        forecastLat: $("forecast-lat"),
+        forecastLon: $("forecast-lon"),
         renaultNotifyLow: $("renault-notify-low-enabled"),
         renaultNotifyLowSoc: $("renault-notify-low-soc"),
         renaultNotifyHigh: $("renault-notify-high-enabled"),
@@ -1331,6 +1367,8 @@
             "Getrennt": "Disconnected",
             "Disconnected": "Disconnected",
             "PV-PROGNOSE": "SOLAR FORECAST",
+            "PV-PROGNOSE (EXP)": "SOLAR FORECAST (EXP)",
+            "SOLAR FORECAST (EXP)": "SOLAR FORECAST (EXP)",
             "Solarprognose": "SOLAR FORECAST",
             "SOLAR FORECAST": "SOLAR FORECAST",
             "PROGNOSE HEUTE": "TODAY FORECAST",
@@ -1343,13 +1381,28 @@
             "vs yesterday": "vs yesterday",
             "SONNIG": "SUNNY",
             "SUNNY": "SUNNY",
+            "SONNIG [EXP]": "SUNNY [EXP]",
+            "SUNNY [EXP]": "SUNNY [EXP]",
             "MODERAT": "MODERATE",
             "GUT": "MODERATE",
             "MODERATE": "MODERATE",
+            "MODERAT [EXP]": "MODERATE [EXP]",
+            "MODERATE [EXP]": "MODERATE [EXP]",
             "BEWÖLKT": "CLOUDY",
             "WENIG": "CLOUDY",
             "KEINE SONNE": "CLOUDY",
             "CLOUDY": "CLOUDY",
+            "BEWÖLKT [EXP]": "CLOUDY [EXP]",
+            "CLOUDY [EXP]": "CLOUDY [EXP]",
+            "SETUP": "SETUP",
+            "KONFIG": "CONFIG",
+            "CONFIG": "CONFIG",
+            "Parameter in Einstellungen definieren": "Configure in Settings",
+            "Configure in Settings": "Configure in Settings",
+            "STANDORT": "LOCATION",
+            "LOCATION": "LOCATION",
+            "LOKAL": "LOCAL",
+            "LOCAL": "LOCAL",
             "MORGEN": "TOMORROW",
             "Morgen": "TOMORROW",
             "TOMORROW": "TOMORROW",
@@ -1445,6 +1498,8 @@
             "Disconnected": "Getrennt",
             "Getrennt": "Getrennt",
             "SOLAR FORECAST": "PV-PROGNOSE",
+            "SOLAR FORECAST (EXP)": "PV-PROGNOSE (EXP)",
+            "PV-PROGNOSE (EXP)": "PV-PROGNOSE (EXP)",
             "PV-PROGNOSE": "PV-PROGNOSE",
             "Solarprognose": "PV-PROGNOSE",
             "TODAY FORECAST": "PROGNOSE HEUTE",
@@ -1457,13 +1512,28 @@
             "vs. morgen": "von gestern",
             "SUNNY": "SONNIG",
             "SONNIG": "SONNIG",
+            "SUNNY [EXP]": "SONNIG [EXP]",
+            "SONNIG [EXP]": "SONNIG [EXP]",
             "MODERATE": "MODERAT",
             "MODERAT": "MODERAT",
             "GUT": "MODERAT",
+            "MODERATE [EXP]": "MODERAT [EXP]",
+            "MODERAT [EXP]": "MODERAT [EXP]",
             "CLOUDY": "BEWÖLKT",
             "BEWÖLKT": "BEWÖLKT",
             "WENIG": "BEWÖLKT",
             "KEINE SONNE": "BEWÖLKT",
+            "CLOUDY [EXP]": "BEWÖLKT [EXP]",
+            "BEWÖLKT [EXP]": "BEWÖLKT [EXP]",
+            "SETUP": "SETUP",
+            "CONFIG": "KONFIG",
+            "KONFIG": "KONFIG",
+            "Configure in Settings": "Parameter in Einstellungen definieren",
+            "Parameter in Einstellungen definieren": "Parameter in Einstellungen definieren",
+            "LOCATION": "STANDORT",
+            "STANDORT": "STANDORT",
+            "LOCAL": "LOKAL",
+            "LOKAL": "LOKAL",
             "TOMORROW": "MORGEN",
             "MORGEN": "MORGEN",
             "Morgen": "MORGEN",
@@ -1642,9 +1712,18 @@
             '<span class="plugin-badge" data-color="' + badgeColor + '" data-orig-text="' + escapeHtml(rawBadge) + '">' + badgeText + '</span>'
         ) : "";
 
+        var rawCity = (plugin && plugin.city) ? String(plugin.city).trim() : "";
+        var cityText = rawCity ? escapeHtml(translatePluginText(rawCity, currentLanguage)) : "";
+        var subtitleHtml = cityText ? (
+            '<div class="plugin-subtitle" data-orig-text="' + escapeHtml(rawCity) + '">' + cityText + '</div>'
+        ) : "";
+
         var headerHtml = (
             '<div class="plugin-header">' +
-                '<h3 class="plugin-title" data-orig-text="' + escapeHtml(rawTitle) + '">' + title + '</h3>' +
+                '<div class="plugin-title-group">' +
+                    '<h3 class="plugin-title" data-orig-text="' + escapeHtml(rawTitle) + '">' + title + '</h3>' +
+                    subtitleHtml +
+                '</div>' +
                 badgeHtml +
             '</div>'
         );
@@ -1912,12 +1991,22 @@
     }
 
     /* Drops cards whose plugin is disabled. Card ids ("weather") map to
-       script ids ("15_weather") by stripping the numeric order prefix. */
+       script ids ("15_weather") by stripping the numeric order prefix.
+       PV Forecast ("30_forecast_solar" / "forecast_solar") is experimental and
+       disabled by default unless explicitly enabled. */
+    function isPluginDefaultEnabled(id) {
+        return id !== "30_forecast_solar" && id !== "forecast_solar";
+    }
+
     function filterEnabledPlugins(plugins, states) {
-        var disabled = {};
-        Object.keys(states || {}).forEach(function (key) {
-            if (states[key] === false) {
-                disabled[String(key).replace(/^[0-9]+_/, "")] = true;
+        var st = states || {};
+        var disabled = { forecast_solar: true };
+        Object.keys(st).forEach(function (key) {
+            var cardId = String(key).replace(/^[0-9]+_/, "");
+            if (st[key] === false) {
+                disabled[cardId] = true;
+            } else if (st[key] === true) {
+                delete disabled[cardId];
             }
         });
         return (plugins || []).filter(function (plugin) {
@@ -1929,7 +2018,11 @@
         var toggles = document.querySelectorAll(".plugin-toggle");
         Array.prototype.forEach.call(toggles, function (input) {
             var id = input.getAttribute("data-plugin-id");
-            input.checked = pluginStates[id] !== false;
+            if (pluginStates[id] === undefined) {
+                input.checked = isPluginDefaultEnabled(id);
+            } else {
+                input.checked = pluginStates[id] === true;
+            }
         });
     }
 
@@ -2380,6 +2473,30 @@
         if (el.ccuNotifyDcThreshold) {
             el.ccuNotifyDcThreshold.value = String(data.ccu_notify_dc_threshold !== undefined ? data.ccu_notify_dc_threshold : 80);
         }
+        if (el.weatherCity) {
+            el.weatherCity.value = String(data.weather_city !== undefined ? data.weather_city : "LOKAL");
+        }
+        if (el.weatherLat) {
+            el.weatherLat.value = String(data.weather_lat !== undefined ? data.weather_lat : "51.51");
+        }
+        if (el.weatherLon) {
+            el.weatherLon.value = String(data.weather_lon !== undefined ? data.weather_lon : "7.46");
+        }
+        if (el.forecastKwp) {
+            el.forecastKwp.value = data.forecast_kwp !== undefined && data.forecast_kwp !== null ? String(data.forecast_kwp) : "";
+        }
+        if (el.forecastDec) {
+            el.forecastDec.value = String(data.forecast_dec !== undefined && data.forecast_dec !== "" ? data.forecast_dec : 35);
+        }
+        if (el.forecastAz) {
+            el.forecastAz.value = String(data.forecast_az !== undefined && data.forecast_az !== "" ? data.forecast_az : 0);
+        }
+        if (el.forecastLat) {
+            el.forecastLat.value = data.forecast_lat !== undefined && data.forecast_lat !== null ? String(data.forecast_lat) : "";
+        }
+        if (el.forecastLon) {
+            el.forecastLon.value = data.forecast_lon !== undefined && data.forecast_lon !== null ? String(data.forecast_lon) : "";
+        }
         if (el.renaultNotifyLow) {
             el.renaultNotifyLow.checked = data.renault_notify_low_enabled === true;
         }
@@ -2548,6 +2665,80 @@
             }
         }
 
+        if (el.weatherCity) {
+            var wCity = el.weatherCity.value.trim();
+            if (wCity.length > 64 || /["\\$`]/.test(wCity)) {
+                return {
+                    field: "weather-city",
+                    text: t("weatherCityInvalid")
+                };
+            }
+        }
+        if (el.weatherLat) {
+            var wLatRaw = el.weatherLat.value.trim().replace(",", ".");
+            if (wLatRaw !== "") {
+                var wLat = Number(wLatRaw);
+                if (!Number.isFinite(wLat) || wLat < -90 || wLat > 90) {
+                    return { field: "weather-lat", text: t("latInvalid") };
+                }
+            }
+        }
+        if (el.weatherLon) {
+            var wLonRaw = el.weatherLon.value.trim().replace(",", ".");
+            if (wLonRaw !== "") {
+                var wLon = Number(wLonRaw);
+                if (!Number.isFinite(wLon) || wLon < -180 || wLon > 180) {
+                    return { field: "weather-lon", text: t("lonInvalid") };
+                }
+            }
+        }
+
+        if (el.forecastKwp) {
+            var fKwpRaw = el.forecastKwp.value.trim().replace(",", ".");
+            if (fKwpRaw !== "") {
+                var fKwp = Number(fKwpRaw);
+                if (!Number.isFinite(fKwp) || fKwp <= 0 || fKwp > 10000) {
+                    return { field: "forecast-kwp", text: t("forecastKwpInvalid") };
+                }
+            }
+        }
+        if (el.forecastDec) {
+            var fDecRaw = el.forecastDec.value.trim().replace(",", ".");
+            if (fDecRaw !== "") {
+                var fDec = Number(fDecRaw);
+                if (!Number.isFinite(fDec) || fDec < 0 || fDec > 90) {
+                    return { field: "forecast-dec", text: t("forecastDecInvalid") };
+                }
+            }
+        }
+        if (el.forecastAz) {
+            var fAzRaw = el.forecastAz.value.trim().replace(",", ".");
+            if (fAzRaw !== "") {
+                var fAz = Number(fAzRaw);
+                if (!Number.isFinite(fAz) || fAz < -180 || fAz > 180) {
+                    return { field: "forecast-az", text: t("forecastAzInvalid") };
+                }
+            }
+        }
+        if (el.forecastLat) {
+            var fLatRaw = el.forecastLat.value.trim().replace(",", ".");
+            if (fLatRaw !== "") {
+                var fLat = Number(fLatRaw);
+                if (!Number.isFinite(fLat) || fLat < -90 || fLat > 90) {
+                    return { field: "forecast-lat", text: t("latInvalid") };
+                }
+            }
+        }
+        if (el.forecastLon) {
+            var fLonRaw = el.forecastLon.value.trim().replace(",", ".");
+            if (fLonRaw !== "") {
+                var fLon = Number(fLonRaw);
+                if (!Number.isFinite(fLon) || fLon < -180 || fLon > 180) {
+                    return { field: "forecast-lon", text: t("lonInvalid") };
+                }
+            }
+        }
+
         return null;
     }
 
@@ -2591,6 +2782,30 @@
         if (el.ccuNotifyDcThreshold) {
             payload.ccu_notify_dc_threshold = Number(el.ccuNotifyDcThreshold.value.trim() || 80);
         }
+        if (el.weatherCity) {
+            payload.weather_city = el.weatherCity.value.trim() || "LOKAL";
+        }
+        if (el.weatherLat) {
+            payload.weather_lat = el.weatherLat.value.trim().replace(",", ".");
+        }
+        if (el.weatherLon) {
+            payload.weather_lon = el.weatherLon.value.trim().replace(",", ".");
+        }
+        if (el.forecastKwp) {
+            payload.forecast_kwp = el.forecastKwp.value.trim().replace(",", ".");
+        }
+        if (el.forecastDec) {
+            payload.forecast_dec = el.forecastDec.value.trim().replace(",", ".") || "35";
+        }
+        if (el.forecastAz) {
+            payload.forecast_az = el.forecastAz.value.trim().replace(",", ".") || "0";
+        }
+        if (el.forecastLat) {
+            payload.forecast_lat = el.forecastLat.value.trim().replace(",", ".");
+        }
+        if (el.forecastLon) {
+            payload.forecast_lon = el.forecastLon.value.trim().replace(",", ".");
+        }
         if (el.renaultNotifyLow) {
             payload.renault_notify_low_enabled = el.renaultNotifyLow.checked;
         }
@@ -2631,6 +2846,10 @@
         }).then(function (data) {
             fillSettingsForm(data);
             adoptConfig(data);
+            fetchAndRenderPlugins();
+            setTimeout(function () {
+                fetchAndRenderPlugins();
+            }, 600);
             if (!silent) {
                 showSettingsStatus(
                     "success",

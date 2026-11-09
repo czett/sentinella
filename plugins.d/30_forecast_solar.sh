@@ -46,7 +46,7 @@ do
         break
     fi
 done
-case "${PLUGIN_FORECAST_SOLAR:-1}" in
+case "${PLUGIN_FORECAST_SOLAR:-0}" in
     0|false|FALSE|off|OFF|no|NO)
         rm -f "$OUT_FILE" 2>/dev/null || true
         exit 0
@@ -91,6 +91,12 @@ load_ui_language
 # ---------------------------------------------------------------------------
 # Configuration (first readable file wins)
 # ---------------------------------------------------------------------------
+FORECAST_LAT=${FORECAST_LAT:-}
+FORECAST_LON=${FORECAST_LON:-}
+FORECAST_DEC=${FORECAST_DEC:-}
+FORECAST_AZ=${FORECAST_AZ:-}
+FORECAST_KWP=${FORECAST_KWP:-}
+
 CONFIG_FILE=${FORECAST_SOLAR_ENV:-}
 if [ -z "$CONFIG_FILE" ]; then
     for _candidate in \
@@ -115,32 +121,31 @@ case "${UI_LANGUAGE:-}" in
 esac
 
 if [ "$UI_LANGUAGE" = "en" ]; then
-    I18N_TITLE="SOLAR FORECAST"
+    I18N_TITLE="SOLAR FORECAST (EXP)"
     I18N_LABEL="TODAY FORECAST"
     I18N_COMPARISON="vs yesterday"
-    I18N_BADGE_SUNNY="SUNNY"
-    I18N_BADGE_MODERATE="MODERATE"
-    I18N_BADGE_CLOUDY="CLOUDY"
+    I18N_BADGE_SUNNY="SUNNY [EXP]"
+    I18N_BADGE_MODERATE="MODERATE [EXP]"
+    I18N_BADGE_CLOUDY="CLOUDY [EXP]"
     I18N_METRIC_TOMORROW="TOMORROW"
     I18N_METRIC_PEAK="PEAK"
     I18N_OFFLINE_COMP="No connection to forecast.solar"
+    I18N_SETUP_VAL="CONFIG"
+    I18N_SETUP_MSG="Configure in Settings"
 else
-    I18N_TITLE="PV-PROGNOSE"
+    I18N_TITLE="PV-PROGNOSE (EXP)"
     I18N_LABEL="PROGNOSE HEUTE"
     I18N_COMPARISON="von gestern"
-    I18N_BADGE_SUNNY="SONNIG"
-    I18N_BADGE_MODERATE="MODERAT"
-    I18N_BADGE_CLOUDY="BEWÖLKT"
+    I18N_BADGE_SUNNY="SONNIG [EXP]"
+    I18N_BADGE_MODERATE="MODERAT [EXP]"
+    I18N_BADGE_CLOUDY="BEWÖLKT [EXP]"
     I18N_METRIC_TOMORROW="MORGEN"
     I18N_METRIC_PEAK="SPITZE"
     I18N_OFFLINE_COMP="Keine Verbindung zu forecast.solar"
+    I18N_SETUP_VAL="KONFIG"
+    I18N_SETUP_MSG="Parameter in Einstellungen definieren"
 fi
 
-FORECAST_LAT=${FORECAST_LAT:-51.43}
-FORECAST_LON=${FORECAST_LON:-7.76}
-FORECAST_DEC=${FORECAST_DEC:-35}
-FORECAST_AZ=${FORECAST_AZ:-0}
-FORECAST_KWP=${FORECAST_KWP:-10}
 API_BASE=${FORECAST_API_URL:-https://api.forecast.solar/estimate}
 CONNECT_TIMEOUT=${FORECAST_CONNECT_TIMEOUT:-5}
 MAX_TIME=${FORECAST_MAX_TIME:-20}
@@ -185,14 +190,45 @@ is_uint() {
     return 0
 }
 
-is_number "$FORECAST_LAT" || FORECAST_LAT=51.43
-is_number "$FORECAST_LON" || FORECAST_LON=7.76
+mkdir -p "$STATE_DIR" 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
+# Setup required card (no hardcoded coordinates or kWp defaults)
+# ---------------------------------------------------------------------------
+write_setup() {
+    _ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null) || _ts=
+    cat > "$OUT_FILE.tmp.$$" <<EOF
+{
+  "id": "forecast_solar",
+  "layout": "delta",
+  "title": "$I18N_TITLE",
+  "status_badge": "SETUP",
+  "status_color": "blue",
+  "timestamp": "$_ts",
+  "primary": { "value": "$I18N_SETUP_VAL", "unit": "", "label": "$I18N_SETUP_MSG" },
+  "delta": { "direction": "neutral", "value": "", "comparison": "$I18N_SETUP_MSG" },
+  "secondary_metrics": []
+}
+EOF
+    if mv -f "$OUT_FILE.tmp.$$" "$OUT_FILE" 2>/dev/null; then
+        chmod 644 "$OUT_FILE" 2>/dev/null || true
+        return 0
+    fi
+    rm -f "$OUT_FILE.tmp.$$" 2>/dev/null || true
+    return 1
+}
+
+if ! is_number "$FORECAST_LAT" || ! is_number "$FORECAST_LON" || ! is_number "$FORECAST_KWP"; then
+    write_setup || true
+    exit 0
+fi
+if ! awk -v k="$FORECAST_KWP" 'BEGIN { exit !(k > 0) }'; then
+    write_setup || true
+    exit 0
+fi
+
 is_number "$FORECAST_DEC" || FORECAST_DEC=35
 is_number "$FORECAST_AZ" || FORECAST_AZ=0
-is_number "$FORECAST_KWP" || FORECAST_KWP=10
-if ! awk -v k="$FORECAST_KWP" 'BEGIN { exit !(k > 0) }'; then
-    FORECAST_KWP=10
-fi
 is_uint "$CONNECT_TIMEOUT" || CONNECT_TIMEOUT=5
 is_uint "$MAX_TIME" || MAX_TIME=20
 
@@ -205,8 +241,6 @@ esac
 case "$API_BASE" in
     *[[:space:]]*|*[[:cntrl:]]*) API_BASE=https://api.forecast.solar/estimate ;;
 esac
-
-mkdir -p "$STATE_DIR" 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # Neutral fallback card

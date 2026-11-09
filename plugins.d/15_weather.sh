@@ -142,6 +142,8 @@ esac
 if [ "$UI_LANGUAGE" = "en" ]; then
     I18N_TITLE="WEATHER"
     I18N_LABEL_PRIMARY="TEMPERATURE"
+    I18N_LOCATION="LOCATION"
+    I18N_DEFAULT_CITY="LOCAL"
     I18N_MIN_MAX="MIN / MAX"
     I18N_HUMIDITY="HUMIDITY"
     I18N_WIND="WIND"
@@ -149,11 +151,16 @@ if [ "$UI_LANGUAGE" = "en" ]; then
 else
     I18N_TITLE="WETTER"
     I18N_LABEL_PRIMARY="TEMPERATUR"
+    I18N_LOCATION="STANDORT"
+    I18N_DEFAULT_CITY="LOKAL"
     I18N_MIN_MAX="MIN / MAX"
     I18N_HUMIDITY="FEUCHTE"
     I18N_WIND="WIND"
     I18N_OFFLINE_MSG="Keine Verbindung zu Open-Meteo"
 fi
+
+WEATHER_CITY=$(printf '%s' "${WEATHER_CITY:-}" | tr -d '\r\n\"\\' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+[ -n "$WEATHER_CITY" ] || WEATHER_CITY="$I18N_DEFAULT_CITY"
 
 STATE_DIR=${WEATHER_STATE_DIR:-$ADDON_DIR/state/plugins}
 OUT_FILE=$STATE_DIR/weather.json
@@ -212,11 +219,13 @@ write_neutral() {
   "id": "weather",
   "layout": "stat",
   "title": "$I18N_TITLE",
+  "city": "$WEATHER_CITY",
   "status_badge": "OFFLINE",
   "status_color": "neutral",
   "timestamp": "$_ts",
   "primary": { "value": "--", "unit": "°C", "label": "$I18N_LABEL_PRIMARY" },
   "secondary_metrics": [
+    { "label": "$I18N_LOCATION", "value": "$WEATHER_CITY" },
     { "label": "$I18N_MIN_MAX", "value": "--" },
     { "label": "$I18N_HUMIDITY", "value": "--" },
     { "label": "$I18N_WIND", "value": "--" }
@@ -418,11 +427,13 @@ cat > "$OUT_FILE.tmp.$$" <<EOF
   "id": "weather",
   "layout": "stat",
   "title": "$I18N_TITLE",
+  "city": "$WEATHER_CITY",
   "status_badge": "$BADGE_TEXT",
   "status_color": "$BADGE_COLOR",
   "timestamp": "$NOW_ISO",
   "primary": { "value": "$FINAL_TEMP", "unit": "°C", "label": "$I18N_LABEL_PRIMARY" },
   "secondary_metrics": [
+    { "label": "$I18N_LOCATION", "value": "$WEATHER_CITY" },
     { "label": "$I18N_MIN_MAX", "value": "$FINAL_MINMAX" },
     { "label": "$I18N_HUMIDITY", "value": "$FINAL_RH" },
     { "label": "$I18N_WIND", "value": "$FINAL_WIND" }

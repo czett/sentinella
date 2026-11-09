@@ -1526,6 +1526,31 @@ eval(mockEnv);
         fc_script = fc_addon / "plugins.d" / "30_forecast_solar.sh"
         shutil.copy2(plugin_path, fc_script)
         fc_script.chmod(0o755)
+        fc_json_path = fc_addon / "state" / "plugins" / "forecast_solar.json"
+
+        fc_env = os.environ.copy()
+        fc_env["FORECAST_API_URL"] = f"http://127.0.0.1:{forecast_port}/estimate"
+        fc_env.pop("FORECAST_STATE_DIR", None)
+
+        # Unconfigured forecast_solar must NOT query the API and must emit a SETUP card.
+        forecast_state.reset_requests()
+        fc_unconf_res = subprocess.run(
+            [str(fc_script)], env=fc_env, capture_output=True, text=True, timeout=20
+        )
+        check(fc_unconf_res.returncode == 0, "unconfigured forecast plugin exits 0", failures)
+        check(not forecast_state.forecast_requests, "unconfigured forecast plugin does not query API", failures)
+        check(fc_json_path.is_file(), "unconfigured forecast plugin writes setup card", failures)
+        fc_unconf_data = json.loads(fc_json_path.read_text()) if fc_json_path.is_file() else {}
+        check(fc_unconf_data.get("title") == "PV-PROGNOSE (EXP)", f"unconfigured title is PV-PROGNOSE (EXP) (got {fc_unconf_data.get('title')!r})", failures)
+        check(fc_unconf_data.get("status_badge") == "SETUP", f"unconfigured badge is SETUP (got {fc_unconf_data.get('status_badge')!r})", failures)
+        check(fc_unconf_data.get("status_color") == "blue", f"unconfigured color is blue (got {fc_unconf_data.get('status_color')!r})", failures)
+        check(
+            fc_unconf_data.get("primary") == {"value": "KONFIG", "unit": "", "label": "Parameter in Einstellungen definieren"},
+            f"unconfigured primary is KONFIG / Parameter in Einstellungen definieren (got {fc_unconf_data.get('primary')})",
+            failures,
+        )
+
+        # Now configure explicit parameters and verify live forecast
         (fc_addon / "config" / "plugins" / "forecast_solar.env").write_text(
             'FORECAST_LAT="51.43"\n'
             'FORECAST_LON="7.76"\n'
@@ -1534,9 +1559,6 @@ eval(mockEnv);
             'FORECAST_KWP="10"\n'
         )
 
-        fc_env = os.environ.copy()
-        fc_env["FORECAST_API_URL"] = f"http://127.0.0.1:{forecast_port}/estimate"
-        fc_env.pop("FORECAST_STATE_DIR", None)
         forecast_state.reset_requests()
         fc_result = subprocess.run(
             [str(fc_script)], env=fc_env, capture_output=True, text=True, timeout=20
@@ -1547,15 +1569,14 @@ eval(mockEnv);
             failures,
         )
         check(bool(forecast_state.forecast_requests), "forecast API queried once", failures)
-        fc_json_path = fc_addon / "state" / "plugins" / "forecast_solar.json"
         check(fc_json_path.is_file(), "forecast_solar.json written", failures)
         fc_data = json.loads(fc_json_path.read_text()) if fc_json_path.is_file() else {}
         check(fc_data.get("layout") == "delta", "forecast card uses delta layout", failures)
         check(fc_data.get("id") == "forecast_solar", "forecast card id", failures)
-        check(fc_data.get("title") == "PV-PROGNOSE", "forecast card title (DE default)", failures)
+        check(fc_data.get("title") == "PV-PROGNOSE (EXP)", "forecast card title (DE default)", failures)
         check(
-            fc_data.get("status_badge") in {"SONNIG", "MODERAT", "BEWÖLKT"},
-            f"forecast badge set (got {fc_data.get('status_badge')!r})",
+            fc_data.get("status_badge") in {"SONNIG [EXP]", "MODERAT [EXP]", "BEWÖLKT [EXP]"},
+            f"forecast badge set with [EXP] (got {fc_data.get('status_badge')!r})",
             failures,
         )
         check(
@@ -2384,10 +2405,10 @@ eval(mockEnv);
         )
         check(fc_en_res.returncode == 0, "forecast.solar EN run exits 0", failures)
         fc_en_card = json.loads(fc_json_path.read_text())
-        check(fc_en_card.get("title") == "SOLAR FORECAST", "forecast EN title is SOLAR FORECAST", failures)
+        check(fc_en_card.get("title") == "SOLAR FORECAST (EXP)", "forecast EN title is SOLAR FORECAST (EXP)", failures)
         check(
-            fc_en_card.get("status_badge") in {"SUNNY", "MODERATE", "CLOUDY"},
-            f"forecast EN badge is localized (got {fc_en_card.get('status_badge')!r})",
+            fc_en_card.get("status_badge") in {"SUNNY [EXP]", "MODERATE [EXP]", "CLOUDY [EXP]"},
+            f"forecast EN badge is localized with [EXP] (got {fc_en_card.get('status_badge')!r})",
             failures,
         )
         check(
@@ -2413,12 +2434,12 @@ eval(mockEnv);
         fc_de_card = json.loads(fc_json_path.read_text())
         fc_de_labels = [m.get("label") for m in fc_de_card.get("secondary_metrics", [])]
         check(
-            fc_de_card.get("title") == "PV-PROGNOSE"
-            and fc_de_card.get("status_badge") in {"SONNIG", "MODERAT", "BEWÖLKT"}
+            fc_de_card.get("title") == "PV-PROGNOSE (EXP)"
+            and fc_de_card.get("status_badge") in {"SONNIG [EXP]", "MODERAT [EXP]", "BEWÖLKT [EXP]"}
             and fc_de_card.get("primary", {}).get("label") == "PROGNOSE HEUTE"
             and fc_de_card.get("delta", {}).get("comparison") == "von gestern"
             and fc_de_labels == ["MORGEN", "SPITZE"],
-            "forecast DE card matches PV-PROGNOSE / PROGNOSE HEUTE / von gestern / MORGEN / SPITZE",
+            "forecast DE card matches PV-PROGNOSE (EXP) / PROGNOSE HEUTE / von gestern / MORGEN / SPITZE",
             failures,
         )
 
@@ -2988,6 +3009,8 @@ if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SON
         )
 
         w_sec_map = {m["label"]: m["value"] for m in w_card.get("secondary_metrics", [])}
+        check(w_card.get("city") == "LOKAL", f"weather card city defaults to LOKAL (got {w_card.get('city')!r})", failures)
+        check(w_sec_map.get("STANDORT") == "LOKAL", f"STANDORT metric defaults to LOKAL (got {w_sec_map.get('STANDORT')!r})", failures)
         check(w_sec_map.get("MIN / MAX") == "8°C / 16°C", f"MIN / MAX matches 8°C / 16°C (got {w_sec_map.get('MIN / MAX')!r})", failures)
         check(w_sec_map.get("FEUCHTE") == "68%", f"FEUCHTE matches 68% (got {w_sec_map.get('FEUCHTE')!r})", failures)
         check(w_sec_map.get("WIND") == "18 km/h", f"WIND matches 18 km/h (got {w_sec_map.get('WIND')!r})", failures)
@@ -3081,8 +3104,9 @@ if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SON
 
         st, pm_get = parse_cgi(run_cgi(pm_addon, "GET", "plugin_manager"))
         check(st == "Content-Type: application/json; charset=utf-8", "plugin_manager GET headers", failures)
-        check(pm_get.get("plugins") == {i: True for i in all_ids},
-              f"all plugins enabled by default (got {pm_get.get('plugins')})", failures)
+        expected_defaults = {i: (i != "30_forecast_solar") for i in all_ids}
+        check(pm_get.get("plugins") == expected_defaults,
+              f"default plugin states have 30_forecast_solar disabled (got {pm_get.get('plugins')})", failures)
 
         (pm_cards / "weather.json").write_text('{"id":"weather"}')
         st, pm_res = parse_cgi(pm_post('{"id":"15_weather","enabled":false}'))
@@ -3152,7 +3176,7 @@ if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SON
         for pid in all_ids:
             check(f'data-plugin-id="{pid}"' in html_text, f"switch row for {pid}", failures)
         for term in ["ERWEITERUNGEN", "CCU3 System-Status", "Wetter (Open-Meteo)",
-                     "PV-Prognose (Forecast.solar)", "Renault E-Tech"]:
+                     "PV-Prognose (Experimentell)", "Renault E-Tech"]:
             check(f'"{term}"' in app_js_text, f"web/app.js i18n contains {term}", failures)
         if shutil.which("node"):
             filter_script = r"""
@@ -3162,11 +3186,14 @@ const m = code.match(/function filterEnabledPlugins\([\s\S]*?\n    \}\n/);
 if (!m) { console.error("filterEnabledPlugins not found"); process.exit(1); }
 const f = new Function(m[0] + "; return filterEnabledPlugins;")();
 const cards = [{id:"ccu_health"},{id:"weather"},{id:"forecast_solar"},{id:"renault_zoe"},null];
-const out = f(cards, {"15_weather": false, "10_ccu_health": true}).map(c => c.id);
+const out = f(cards, {"15_weather": false, "10_ccu_health": true, "30_forecast_solar": true}).map(c => c.id);
 if (JSON.stringify(out) !== JSON.stringify(["ccu_health","forecast_solar","renault_zoe"])) {
     console.error("unexpected " + JSON.stringify(out)); process.exit(1);
 }
-if (f(cards, {}).length !== 4) { console.error("default should show all"); process.exit(1); }
+const defOut = f(cards, {}).map(c => c.id);
+if (JSON.stringify(defOut) !== JSON.stringify(["ccu_health","weather","renault_zoe"])) {
+    console.error("default should hide forecast_solar: " + JSON.stringify(defOut)); process.exit(1);
+}
 """
             fres = subprocess.run(["node", "-e", filter_script, str(ROOT / "web" / "app.js")],
                                   capture_output=True, text=True, timeout=20)
@@ -3440,6 +3467,32 @@ if (f(cards, {}).length !== 4) { console.error("default should show all"); proce
         check("Duty-Cycle-Warnung" in app_js_text, "app.js has German label Duty-Cycle-Warnung", failures)
         check("lib/plugin_notify.sh" in (ROOT / "deploy.sh").read_text(), "deploy.sh stages lib/plugin_notify.sh", failures)
         check("ccu_health.env.example" in (ROOT / "deploy.sh").read_text(), "deploy.sh stages ccu_health.env.example", failures)
+
+        # 30h. Weather & PV Forecast settings persistence via settings.cgi
+        st_wf, cfg_wf = parse_cgi(run_cgi(
+            notif_addon,
+            "POST",
+            "settings",
+            body=json.dumps({
+                "weather_city": "Muenster",
+                "weather_lat": "51.96",
+                "weather_lon": "7.62",
+                "forecast_kwp": "12.5",
+                "forecast_dec": "30",
+                "forecast_az": "-15",
+                "forecast_lat": "51.96",
+                "forecast_lon": "7.62",
+            }, ensure_ascii=False)
+        ))
+        check(st_wf == "200 OK", f"POST weather & forecast settings returns 200 (got {st_wf})", failures)
+        check(cfg_wf.get("weather_city") == "Muenster", f"weather_city persisted (got {cfg_wf.get('weather_city')!r})", failures)
+        check(cfg_wf.get("weather_lat") == "51.96", f"weather_lat persisted (got {cfg_wf.get('weather_lat')!r})", failures)
+        check(cfg_wf.get("weather_lon") == "7.62", f"weather_lon persisted (got {cfg_wf.get('weather_lon')!r})", failures)
+        check(cfg_wf.get("forecast_kwp") == "12.5", f"forecast_kwp persisted (got {cfg_wf.get('forecast_kwp')!r})", failures)
+        check(cfg_wf.get("forecast_dec") == "30", f"forecast_dec persisted (got {cfg_wf.get('forecast_dec')!r})", failures)
+        check(cfg_wf.get("forecast_az") == "-15", f"forecast_az persisted (got {cfg_wf.get('forecast_az')!r})", failures)
+        check(cfg_wf.get("forecast_lat") == "51.96", f"forecast_lat persisted (got {cfg_wf.get('forecast_lat')!r})", failures)
+        check(cfg_wf.get("forecast_lon") == "7.62", f"forecast_lon persisted (got {cfg_wf.get('forecast_lon')!r})", failures)
 
 
     finally:

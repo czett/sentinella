@@ -457,10 +457,77 @@
                     <span class="field-label" data-i18n="pluginNameWeather">Weather (Open-Meteo)</span>
                     <input class="switch plugin-toggle" id="plugin-toggle-15_weather" data-plugin-id="15_weather" type="checkbox" role="switch" checked>
                 </label>
+                <div class="plugin-settings" id="weather-settings">
+                    <label class="field" for="weather-city">
+                        <span class="field-label" data-i18n="weatherCity">Stadtname / Standort</span>
+                        <input class="input" id="weather-city" name="weather_city" type="text"
+                               autocomplete="off" spellcheck="false" maxlength="64"
+                               placeholder="LOKAL" aria-label="Stadtname / Standort" data-i18n-aria="weatherCity">
+                    </label>
+                    <div class="field-row">
+                        <label class="field" for="weather-lat">
+                            <span class="field-label" data-i18n="weatherLat">Breitengrad</span>
+                            <input class="input" id="weather-lat" name="weather_lat" type="number"
+                                   inputmode="decimal" step="any" min="-90" max="90"
+                                   placeholder="51.51" aria-label="Breitengrad" data-i18n-aria="weatherLat">
+                        </label>
+                        <label class="field" for="weather-lon">
+                            <span class="field-label" data-i18n="weatherLon">Längengrad</span>
+                            <input class="input" id="weather-lon" name="weather_lon" type="number"
+                                   inputmode="decimal" step="any" min="-180" max="180"
+                                   placeholder="7.46" aria-label="Längengrad" data-i18n-aria="weatherLon">
+                        </label>
+                    </div>
+                </div>
                 <label class="switch-row" for="plugin-toggle-30_forecast_solar">
-                    <span class="field-label" data-i18n="pluginNameForecastSolar">PV Forecast (Forecast.solar)</span>
-                    <input class="switch plugin-toggle" id="plugin-toggle-30_forecast_solar" data-plugin-id="30_forecast_solar" type="checkbox" role="switch" checked>
+                    <span class="field-label" data-i18n="pluginNameForecastSolar">PV-Prognose (Experimentell)</span>
+                    <input class="switch plugin-toggle" id="plugin-toggle-30_forecast_solar" data-plugin-id="30_forecast_solar" type="checkbox" role="switch">
                 </label>
+                <div class="plugin-settings" id="forecast-solar-settings">
+                    <div class="field-row">
+                        <label class="field" for="forecast-kwp">
+                            <span class="field-label" data-i18n="forecastKwp">Peak-Leistung (kWp)</span>
+                            <span class="input-suffix">
+                                <input class="input" id="forecast-kwp" name="forecast_kwp" type="number"
+                                       inputmode="decimal" step="any" min="0.1" max="10000"
+                                       placeholder="10.0" aria-label="Peak-Leistung (kWp)" data-i18n-aria="forecastKwp">
+                                <span class="suffix" aria-hidden="true">kWp</span>
+                            </span>
+                        </label>
+                        <label class="field" for="forecast-dec">
+                            <span class="field-label" data-i18n="forecastDec">Dachneigung (°)</span>
+                            <span class="input-suffix">
+                                <input class="input" id="forecast-dec" name="forecast_dec" type="number"
+                                       inputmode="numeric" step="1" min="0" max="90" value="35"
+                                       aria-label="Dachneigung (°)" data-i18n-aria="forecastDec">
+                                <span class="suffix" aria-hidden="true">°</span>
+                            </span>
+                        </label>
+                    </div>
+                    <div class="field-row">
+                        <label class="field" for="forecast-az">
+                            <span class="field-label" data-i18n="forecastAz">Ausrichtung (°)</span>
+                            <span class="input-suffix">
+                                <input class="input" id="forecast-az" name="forecast_az" type="number"
+                                       inputmode="numeric" step="1" min="-180" max="180" value="0"
+                                       aria-label="Ausrichtung (°)" data-i18n-aria="forecastAz">
+                                <span class="suffix" aria-hidden="true">°</span>
+                            </span>
+                        </label>
+                        <label class="field" for="forecast-lat">
+                            <span class="field-label" data-i18n="forecastLat">Breitengrad</span>
+                            <input class="input" id="forecast-lat" name="forecast_lat" type="number"
+                                   inputmode="decimal" step="any" min="-90" max="90"
+                                   placeholder="51.43" aria-label="Breitengrad" data-i18n-aria="forecastLat">
+                        </label>
+                    </div>
+                    <label class="field" for="forecast-lon">
+                        <span class="field-label" data-i18n="forecastLon">Längengrad</span>
+                        <input class="input" id="forecast-lon" name="forecast_lon" type="number"
+                               inputmode="decimal" step="any" min="-180" max="180"
+                               placeholder="7.76" aria-label="Längengrad" data-i18n-aria="forecastLon">
+                    </label>
+                </div>
                 <label class="switch-row" for="plugin-toggle-20_renault_zoe">
                     <span class="field-label" data-i18n="pluginNameRenault">Renault E-Tech</span>
                     <input class="switch plugin-toggle" id="plugin-toggle-20_renault_zoe" data-plugin-id="20_renault_zoe" type="checkbox" role="switch" checked>
