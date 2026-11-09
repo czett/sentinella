@@ -160,13 +160,13 @@ load_config() {
     esac
 
     if [ "$UI_LANGUAGE" = "de" ]; then
-        _default_overflow='Sentinella: Batteriespeicher bei {SOC}% (Schwelle: {TRIGGER_SOC}%). Überschuss verfügbar.'
-        _default_reset='Sentinella: Batteriespeicher unter {RESET_SOC}% gefallen ({SOC}%). Normalbetrieb aktiv.'
-        _default_test='Sentinella: Verbindung erfolgreich getestet. Alarmsystem bereit.'
+        _default_overflow='[SMA] Überschuss-Signal: {SOC}%'
+        _default_reset='[SMA] Speicher niedrig: {SOC}%'
+        _default_test='[SMA] Verbindungstest OK'
     else
-        _default_overflow='Sentinella: Battery reached {SOC}% (Trigger: {TRIGGER_SOC}%). Excess energy available.'
-        _default_reset='Sentinella: Battery dropped below {RESET_SOC}% ({SOC}%). Overflow mode inactive.'
-        _default_test='Sentinella: Connection verified. Telemetry and alert channel ready.'
+        _default_overflow='[SMA] Excess signal: {SOC}%'
+        _default_reset='[SMA] Battery low: {SOC}%'
+        _default_test='[SMA] Connection test OK'
     fi
 
     # Explicit templates win, including the legacy SIGNAL_TEXT_* names. Leave
@@ -174,6 +174,28 @@ load_config() {
     SIGNAL_MESSAGE_OVERFLOW=${SIGNAL_MESSAGE_OVERFLOW:-${SIGNAL_TEXT_TRIGGER:-$_default_overflow}}
     SIGNAL_MESSAGE_RESET=${SIGNAL_MESSAGE_RESET:-${SIGNAL_TEXT_RESET:-$_default_reset}}
     SIGNAL_MESSAGE_TEST=${SIGNAL_MESSAGE_TEST:-$_default_test}
+
+    # Development mute guard: NOTIFY_DISABLED=1 in the environment wins,
+    # otherwise the flag is read from config/config.env. Muted runs keep all
+    # local state and cooldowns untouched and never touch the network.
+    if [ -z "${NOTIFY_DISABLED:-}" ]; then
+        for _nd_env in \
+            "$APP_DIR/config/config.env" \
+            /usr/local/addons/sentinella/config/config.env
+        do
+            [ -r "$_nd_env" ] || continue
+            _nd_raw=$(sed -n 's/^[[:space:]]*NOTIFY_DISABLED[[:space:]]*=[[:space:]]*//p' "$_nd_env" 2>/dev/null | tail -n 1)
+            _nd_raw=$(printf '%s' "$_nd_raw" | sed -e "s/^['\"]//" -e "s/['\"][[:space:]]*$//")
+            if [ -n "$_nd_raw" ]; then
+                NOTIFY_DISABLED=$_nd_raw
+                break
+            fi
+        done
+    fi
+    case "${NOTIFY_DISABLED:-0}" in
+        1|true|TRUE|on|ON|yes|YES) NOTIFY_DISABLED=1 ;;
+        *) NOTIFY_DISABLED=0 ;;
+    esac
 
     STATE_DIR=${STATE_DIR:-$APP_DIR/state}
     NOTIFY_LOCK_DIR=$STATE_DIR/.notify.lock
@@ -420,6 +442,11 @@ main() {
     fi
 
     load_config || return $?
+
+    if [ "${NOTIFY_DISABLED:-0}" = "1" ]; then
+        log "NOTIFY_DISABLED=1: dispatch suppressed ($EVENT)"
+        return 0
+    fi
 
     if [ "$TEST" = "1" ]; then
         if [ -z "$SIGNAL_PHONE" ]; then

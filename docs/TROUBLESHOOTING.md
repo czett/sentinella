@@ -341,10 +341,14 @@ ls -l /usr/local/addons/sentinella/lib/notify_signal.sh
 Explicit templates override the built-in text. They use `{SOC}`, `{TRIGGER_SOC}`, `{RESET_SOC}` and `{HOST}`. The legacy spellings `%SOC%`, `%TRIGGER%`, `%RESET%`, `%HOST%` and `%%` are still accepted. Quote templates that contain spaces. Example:
 
 ```sh
-SIGNAL_MESSAGE_OVERFLOW="Speicher voll: {SOC}% (Schwelle {TRIGGER_SOC}%)"
+SIGNAL_MESSAGE_OVERFLOW="[SMA] Überschuss-Signal: {SOC}%"
 ```
 
 Leave `SIGNAL_MESSAGE_OVERFLOW`, `SIGNAL_MESSAGE_RESET` and `SIGNAL_MESSAGE_TEST` unset to follow `UI_LANGUAGE`. Umlauts and `ß` are sent as UTF-8 and percent-encoded by `curl --data-urlencode`; no python or jq is required. After editing `.env`, no service restart is needed; the next run reads the file.
+
+Plugin alerts use the same compact style, for example `[RENAULT] SoC niedrig: 18% (Schwelle: 20%)`, `[RENAULT] Ladeziel erreicht: 85% (Ziel: 80%)` and `[CCU3] Duty Cycle hoch: 85% (Limit: 80%)`. A fresh state file only seeds the current condition; the first push is sent on a real `0 → 1` transition.
+
+To mute every dispatch during development without losing edge state, add `NOTIFY_DISABLED="1"` to `config/config.env`. Remove the line, or set it to `0`, to resume. The state machine keeps running while muted.
 
 ### CallMeBot rate limit
 

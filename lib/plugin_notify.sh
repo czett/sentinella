@@ -16,6 +16,16 @@
 #
 #  State file:
 #    $STATE_DIR/notifications/${plugin_id}_${metric}.state
+#
+#  First run:
+#    A missing state file seeds the current boolean state silently. Only a
+#    strict 0 -> 1 transition dispatches a message, so a fresh install, a
+#    redeploy, a settings save or a re-enabled plugin never emits a stale
+#    "already active" alert.
+#
+#  Dev mute:
+#    NOTIFY_DISABLED=1 (environment or config/config.env) keeps the state
+#    machine running but skips every network dispatch.
 # =============================================================================
 
 notify_plugin_threshold() {
@@ -63,6 +73,33 @@ notify_plugin_threshold() {
     _notif_dir="$_notif_base/notifications"
     _state_file="$_notif_dir/${_clean_plugin}_${_clean_metric}.state"
 
+    # ------------------------------------------------------------------
+    # Development mute guard: NOTIFY_DISABLED=1 in the environment or in
+    # config/config.env keeps the state machine intact but stays off the
+    # network. The explicit environment value always wins.
+    # ------------------------------------------------------------------
+    _notify_disabled=${NOTIFY_DISABLED:-}
+    if [ -z "$_notify_disabled" ]; then
+        for _nd_env in \
+            "${APP_DIR:-}/config/config.env" \
+            "${ADDON_DIR:-}/config/config.env" \
+            "$(dirname "$0")/../config/config.env" \
+            /usr/local/addons/sentinella/config/config.env
+        do
+            [ -n "$_nd_env" ] && [ -r "$_nd_env" ] || continue
+            _nd_raw=$(sed -n 's/^[[:space:]]*NOTIFY_DISABLED[[:space:]]*=[[:space:]]*//p' "$_nd_env" 2>/dev/null | tail -n 1)
+            _nd_raw=$(printf '%s' "$_nd_raw" | sed -e "s/^['\"]//" -e "s/['\"][[:space:]]*$//")
+            if [ -n "$_nd_raw" ]; then
+                _notify_disabled=$_nd_raw
+                break
+            fi
+        done
+    fi
+    case "$_notify_disabled" in
+        1|true|TRUE|on|ON|yes|YES) _notify_disabled=1 ;;
+        *) _notify_disabled=0 ;;
+    esac
+
     # Evaluate transition using awk
     _action=$(awk -v c="$_current_val" -v t="$_threshold_val" -v m="$_margin" -v dir="$_direction" 'BEGIN {
         c_num = c + 0;
@@ -89,20 +126,41 @@ notify_plugin_threshold() {
         }
     }')
 
-    _prev_state=0
+    _prev_state=
     if [ -r "$_state_file" ]; then
         _val=$(head -n 1 "$_state_file" 2>/dev/null | tr -cd '0-9')
-        [ "$_val" = "1" ] && _prev_state=1
+        case "$_val" in
+            0|1) _prev_state=$_val ;;
+        esac
+    fi
+
+    # First run (missing, empty or corrupt state): seed the current boolean
+    # state and return without dispatching. This covers first install,
+    # redeploy, settings saves and plugins re-enabled while a threshold is
+    # already exceeded.
+    if [ -z "$_prev_state" ]; then
+        case "$_action" in
+            trigger) _seed=1 ;;
+            reset|hold) _seed=0 ;;
+            *) return 1 ;;
+        esac
+        mkdir -p "$_notif_dir" 2>/dev/null || true
+        printf '%s\n' "$_seed" > "$_state_file.tmp.$$" 2>/dev/null \
+            && mv -f "$_state_file.tmp.$$" "$_state_file" 2>/dev/null || true
+        chmod 600 "$_state_file" 2>/dev/null || true
+        return 0
     fi
 
     case "$_action" in
         trigger)
             if [ "$_prev_state" = "0" ]; then
-                # Crossing threshold boundary: trigger notification!
+                # Strict 0 -> 1 transition: arm state, then optionally notify.
                 mkdir -p "$_notif_dir" 2>/dev/null || true
                 printf '1\n' > "$_state_file.tmp.$$" 2>/dev/null \
                     && mv -f "$_state_file.tmp.$$" "$_state_file" 2>/dev/null || true
                 chmod 600 "$_state_file" 2>/dev/null || true
+
+                [ "$_notify_disabled" = "1" ] && return 0
 
                 # Dispatch notification via existing Signal gateway
                 _notify_script=

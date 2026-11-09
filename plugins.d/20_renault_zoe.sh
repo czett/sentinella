@@ -773,11 +773,11 @@ BATTERY_LEVEL=$(printf '%s' "$BATTERY_LEVEL" | sed 's/^0*//')
 # ---------------------------------------------------------------------------
 if [ "$TEST_MODE" = "0" ] && [ "$HVAC_MODE" = "0" ] && command -v notify_plugin_threshold >/dev/null 2>&1; then
     if [ "$RENAULT_NOTIFY_LOW_ENABLED" = "1" ]; then
-        _msg_low="Renault E-Tech: Ladestand niedrig ($BATTERY_LEVEL %)! Bitte anstecken."
+        _msg_low="[RENAULT] SoC niedrig: $BATTERY_LEVEL% (Schwelle: $RENAULT_NOTIFY_LOW_SOC%)"
         notify_plugin_threshold "renault_zoe" "soc_low" "$BATTERY_LEVEL" "$RENAULT_NOTIFY_LOW_SOC" "below" "$_msg_low"
     fi
     if [ "$RENAULT_NOTIFY_HIGH_ENABLED" = "1" ]; then
-        _msg_high="Renault E-Tech: Ziel-Ladestand erreicht ($BATTERY_LEVEL %)."
+        _msg_high="[RENAULT] Ladeziel erreicht: $BATTERY_LEVEL% (Ziel: $RENAULT_NOTIFY_HIGH_SOC%)"
         notify_plugin_threshold "renault_zoe" "soc_high" "$BATTERY_LEVEL" "$RENAULT_NOTIFY_HIGH_SOC" "above" "$_msg_high"
     fi
 fi

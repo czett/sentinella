@@ -807,7 +807,7 @@ def main() -> int:
             query = parse_qs(urlparse(signal_state.signal_requests[0]).query)
             text = query.get("text", [""])[0]
             check(
-                text == "Sentinella: Connection verified. Telemetry and alert channel ready.",
+                text == "[SMA] Connection test OK",
                 "test message uses the compact English default",
                 failures,
             )
@@ -885,8 +885,7 @@ def main() -> int:
             query = parse_qs(urlparse(signal_state.signal_requests[0]).query)
             text = query.get("text", [""])[0]
             check(
-                text == "Sentinella: Batteriespeicher bei 96% (Schwelle: 95%). "
-                        "Überschuss verfügbar.",
+                text == "[SMA] Überschuss-Signal: 96%",
                 "German trigger message matches",
                 failures,
             )
@@ -903,7 +902,7 @@ def main() -> int:
             query = parse_qs(urlparse(signal_state.signal_requests[0]).query)
             text = query.get("text", [""])[0]
             check(
-                text == "Sentinella: Verbindung erfolgreich getestet. Alarmsystem bereit.",
+                text == "[SMA] Verbindungstest OK",
                 "German test message matches",
                 failures,
             )
@@ -1157,7 +1156,7 @@ def main() -> int:
             query = parse_qs(urlparse(signal_state.signal_requests[0]).query)
             text = query.get("text", [""])[0]
             check(
-                text == "Sentinella: Connection verified. Telemetry and alert channel ready.",
+                text == "[SMA] Connection test OK",
                 "test message is clearly marked",
                 failures,
             )
@@ -3310,6 +3309,38 @@ if (JSON.stringify(allOn) !== JSON.stringify(["ccu_health","weather","forecast_s
             ]
             return subprocess.run(cmd, env=notif_env, capture_output=True, text=True, timeout=10)
 
+        # 30a0. First run seeds the current state silently (no stale alert)
+        state_file_init = notif_addon / "state" / "notifications" / "renault_zoe_soc_init.state"
+        with signal_state.lock:
+            signal_state.signal_requests = []
+        run_notify_fn("renault_zoe", "soc_init", 10, 20, "below",
+                      "[RENAULT] SoC niedrig: 10% (Schwelle: 20%)")
+        check(state_file_init.is_file() and state_file_init.read_text().strip() == "1",
+              "first run seeds an active state as 1", failures)
+        check(len(signal_state.signal_requests) == 0,
+              "first run dispatches no notification", failures)
+
+        run_notify_fn("renault_zoe", "soc_init", 25, 20, "below",
+                      "[RENAULT] SoC niedrig: 25% (Schwelle: 20%)")
+        check(state_file_init.read_text().strip() == "0",
+              "safe recovery rearms the seeded state", failures)
+        run_notify_fn("renault_zoe", "soc_init", 19, 20, "below",
+                      "[RENAULT] SoC niedrig: 19% (Schwelle: 20%)")
+        check(len(signal_state.signal_requests) == 1,
+              "a real 0 -> 1 transition after seeding dispatches", failures)
+        with signal_state.lock:
+            signal_state.signal_requests = []
+
+        # 30a1. NOTIFY_DISABLED=1 mutes the gateway but keeps the state machine
+        (notif_addon / "config" / "config.env").write_text("NOTIFY_DISABLED='1'\n")
+        run_notify_fn("renault_zoe", "soc_init", 25, 20, "below", "mute reset")
+        run_notify_fn("renault_zoe", "soc_init", 19, 20, "below", "mute trigger")
+        check(state_file_init.read_text().strip() == "1",
+              "muted run still records the edge state", failures)
+        check(len(signal_state.signal_requests) == 0,
+              "NOTIFY_DISABLED suppresses the dispatch", failures)
+        (notif_addon / "config" / "config.env").unlink()
+
         # 30a. Edge-trigger & hysteresis: direction "below" (e.g. low SoC threshold 20, margin 2)
         state_file_low = notif_addon / "state" / "notifications" / "renault_zoe_soc_low.state"
         with signal_state.lock:
@@ -3321,32 +3352,32 @@ if (JSON.stringify(allOn) !== JSON.stringify(["ccu_health","weather","forecast_s
         check(len(signal_state.signal_requests) == 0, "no notification at 25% SoC", failures)
 
         # Run 2: current 20 (crossing boundary <= 20) -> triggers once!
-        run_notify_fn("renault_zoe", "soc_low", 20, 20, "below", "Renault E-Tech: Ladestand niedrig (20 %)! Bitte anstecken.")
+        run_notify_fn("renault_zoe", "soc_low", 20, 20, "below", "[RENAULT] SoC niedrig: 20% (Schwelle: 20%)")
         check(state_file_low.is_file() and state_file_low.read_text().strip() == "1", "state file set to 1 on trigger", failures)
         check(len(signal_state.signal_requests) == 1, "notification sent on crossing below threshold", failures)
         if signal_state.signal_requests:
             q = parse_qs(urlparse(signal_state.signal_requests[0]).query)
-            check("Ladestand niedrig (20 %)" in q.get("text", [""])[0], f"notification text matches ({q.get('text')})", failures)
+            check("[RENAULT] SoC niedrig: 20% (Schwelle: 20%)" in q.get("text", [""])[0], f"notification text matches ({q.get('text')})", failures)
         with signal_state.lock:
             signal_state.signal_requests = []
 
         # Run 3: current 18 (condition remains active <= 20) -> suppressed duplicate!
-        run_notify_fn("renault_zoe", "soc_low", 18, 20, "below", "Renault E-Tech: Ladestand niedrig (18 %)! Bitte anstecken.")
+        run_notify_fn("renault_zoe", "soc_low", 18, 20, "below", "[RENAULT] SoC niedrig: 18% (Schwelle: 20%)")
         check(state_file_low.read_text().strip() == "1", "state file stays 1 on subsequent active run", failures)
         check(len(signal_state.signal_requests) == 0, "no duplicate notification sent while active", failures)
 
         # Run 4: current 21 (inside deadband / hysteresis margin 20-22) -> remains active (1), no duplicate!
-        run_notify_fn("renault_zoe", "soc_low", 21, 20, "below", "Renault E-Tech: Ladestand niedrig (21 %)! Bitte anstecken.")
+        run_notify_fn("renault_zoe", "soc_low", 21, 20, "below", "[RENAULT] SoC niedrig: 21% (Schwelle: 20%)")
         check(state_file_low.read_text().strip() == "1", "state remains 1 inside hysteresis deadband (21%)", failures)
         check(len(signal_state.signal_requests) == 0, "no notification inside hysteresis deadband", failures)
 
         # Run 5: current 22 (safely returns >= 20 + 2 = 22) -> resets/re-arms state to 0!
-        run_notify_fn("renault_zoe", "soc_low", 22, 20, "below", "Renault E-Tech: Ladestand niedrig (22 %)! Bitte anstecken.")
+        run_notify_fn("renault_zoe", "soc_low", 22, 20, "below", "[RENAULT] SoC niedrig: 22% (Schwelle: 20%)")
         check(state_file_low.read_text().strip() == "0", "state file reset to 0 after safe recovery >= 22%", failures)
         check(len(signal_state.signal_requests) == 0, "no notification on recovery", failures)
 
         # Run 6: current 19 (crosses boundary <= 20 again) -> triggers again!
-        run_notify_fn("renault_zoe", "soc_low", 19, 20, "below", "Renault E-Tech: Ladestand niedrig (19 %)! Bitte anstecken.")
+        run_notify_fn("renault_zoe", "soc_low", 19, 20, "below", "[RENAULT] SoC niedrig: 19% (Schwelle: 20%)")
         check(state_file_low.read_text().strip() == "1", "re-armed state triggers again on second crossing", failures)
         check(len(signal_state.signal_requests) == 1, "notification sent on second crossing", failures)
         with signal_state.lock:
@@ -3361,17 +3392,17 @@ if (JSON.stringify(allOn) !== JSON.stringify(["ccu_health","weather","forecast_s
         check(len(signal_state.signal_requests) == 0, "no notification at 75% DC", failures)
 
         # Run 2: current 85 (crosses boundary >= 80) -> triggers!
-        run_notify_fn("ccu_health", "duty_cycle", 85, 80, "above", "Warnung: CCU3 Duty Cycle kritisch hoch (85 %)!")
+        run_notify_fn("ccu_health", "duty_cycle", 85, 80, "above", "[CCU3] Duty Cycle hoch: 85% (Limit: 80%)")
         check(state_file_dc.is_file() and state_file_dc.read_text().strip() == "1", "state file set to 1 on DC trigger", failures)
         check(len(signal_state.signal_requests) == 1, "notification sent on DC threshold crossing", failures)
         if signal_state.signal_requests:
             q = parse_qs(urlparse(signal_state.signal_requests[0]).query)
-            check("Duty Cycle kritisch hoch (85 %)" in q.get("text", [""])[0], f"DC notification text matches ({q.get('text')})", failures)
+            check("[CCU3] Duty Cycle hoch: 85% (Limit: 80%)" in q.get("text", [""])[0], f"DC notification text matches ({q.get('text')})", failures)
         with signal_state.lock:
             signal_state.signal_requests = []
 
         # Run 3: current 88 (subsequent run, condition still active) -> suppressed!
-        run_notify_fn("ccu_health", "duty_cycle", 88, 80, "above", "Warnung: CCU3 Duty Cycle kritisch hoch (88 %)!")
+        run_notify_fn("ccu_health", "duty_cycle", 88, 80, "above", "[CCU3] Duty Cycle hoch: 88% (Limit: 80%)")
         check(state_file_dc.read_text().strip() == "1", "DC state file stays 1 on subsequent run", failures)
         check(len(signal_state.signal_requests) == 0, "no duplicate DC notification sent", failures)
 
@@ -3385,15 +3416,15 @@ if (JSON.stringify(allOn) !== JSON.stringify(["ccu_health","weather","forecast_s
         check(state_file_dc.read_text().strip() == "0", "DC state file reset to 0 after safe recovery <= 78%", failures)
 
         # Run 6: current 81 (crosses boundary >= 80 again) -> triggers again!
-        run_notify_fn("ccu_health", "duty_cycle", 81, 80, "above", "Warnung: CCU3 Duty Cycle kritisch hoch (81 %)!")
+        run_notify_fn("ccu_health", "duty_cycle", 81, 80, "above", "[CCU3] Duty Cycle hoch: 81% (Limit: 80%)")
         check(state_file_dc.read_text().strip() == "1", "re-armed DC state triggers again on second crossing", failures)
         check(len(signal_state.signal_requests) == 1, "DC notification sent on second crossing", failures)
         with signal_state.lock:
             signal_state.signal_requests = []
 
         # 30c. Plugin end-to-end integration: Renault Zoe plugin notifications
-        state_file_low.unlink(missing_ok=True)
-        (notif_addon / "state" / "notifications" / "renault_zoe_soc_high.state").unlink(missing_ok=True)
+        state_file_low.write_text("0\n")
+        (notif_addon / "state" / "notifications" / "renault_zoe_soc_high.state").write_text("0\n")
         renault_notif_env_file = notif_addon / "config" / "plugins" / "renault.env"
         renault_notif_env_file.write_text(
             "RENAULT_USER='zoe@example.com'\n"
@@ -3420,7 +3451,7 @@ if (JSON.stringify(allOn) !== JSON.stringify(["ccu_health","weather","forecast_s
         check(len(signal_state.signal_requests) == 1, "Renault low SoC push notification sent", failures)
         if signal_state.signal_requests:
             q = parse_qs(urlparse(signal_state.signal_requests[0]).query)
-            check("Renault E-Tech: Ladestand niedrig (18 %)! Bitte anstecken." in q.get("text", [""])[0],
+            check("[RENAULT] SoC niedrig: 18% (Schwelle: 20%)" in q.get("text", [""])[0],
                   f"Renault low SoC message matches ({q.get('text')})", failures)
         with signal_state.lock:
             signal_state.signal_requests = []
@@ -3437,13 +3468,13 @@ if (JSON.stringify(allOn) !== JSON.stringify(["ccu_health","weather","forecast_s
         check(len(signal_state.signal_requests) == 1, "Renault target SoC push notification sent", failures)
         if signal_state.signal_requests:
             q = parse_qs(urlparse(signal_state.signal_requests[0]).query)
-            check("Renault E-Tech: Ziel-Ladestand erreicht (85 %)." in q.get("text", [""])[0],
+            check("[RENAULT] Ladeziel erreicht: 85% (Ziel: 80%)" in q.get("text", [""])[0],
                   f"Renault high SoC message matches ({q.get('text')})", failures)
         with signal_state.lock:
             signal_state.signal_requests = []
 
         # 30d. Plugin end-to-end integration: CCU3 Health plugin notifications
-        state_file_dc.unlink(missing_ok=True)
+        state_file_dc.write_text("0\n")
         ccu_notif_env_file = notif_addon / "config" / "plugins" / "ccu_health.env"
         ccu_notif_env_file.write_text(
             "CCU_NOTIFY_DC_ENABLED='1'\n"
@@ -3469,7 +3500,7 @@ if (JSON.stringify(allOn) !== JSON.stringify(["ccu_health","weather","forecast_s
         check(len(signal_state.signal_requests) == 1, "CCU3 Health duty cycle push notification sent", failures)
         if signal_state.signal_requests:
             q = parse_qs(urlparse(signal_state.signal_requests[0]).query)
-            check("Warnung: CCU3 Duty Cycle kritisch hoch (85 %)!" in q.get("text", [""])[0],
+            check("[CCU3] Duty Cycle hoch: 85% (Limit: 80%)" in q.get("text", [""])[0],
                   f"CCU3 Health DC message matches ({q.get('text')})", failures)
         with signal_state.lock:
             signal_state.signal_requests = []

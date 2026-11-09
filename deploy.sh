@@ -220,6 +220,7 @@ Dry run - nothing will be changed.
   Plugins       : sync plugins.d/ (mode 755)
   Forecast cfg  : install forecast_solar.env.example, keep existing .env
   Mock cards    : purge legacy sample cards from state/plugins (never installed)
+  Notify state  : preserve state/notifications/*.state across the sync
   Remote .env   : keep existing credentials, install only when missing
 EOF
     exit 0
@@ -292,12 +293,12 @@ set -e
 umask 077
 
 mkdir -p "$ADDON_DIR/state" "$ADDON_DIR/plugins.d" "$ADDON_DIR/config/plugins" \
-         "$ADDON_DIR/state/plugins"
+         "$ADDON_DIR/state/plugins" "$ADDON_DIR/state/notifications"
 # The add-on root is never a web document root: only the isolated $WEB_DIR is
 # served. Credentials, state and helpers therefore stay root-only.
 chmod 700 "$ADDON_DIR" "$ADDON_DIR/bin" "$ADDON_DIR/lib" "$ADDON_DIR/state" \
     "$ADDON_DIR/plugins.d" "$ADDON_DIR/config" "$ADDON_DIR/config/plugins" \
-    "$ADDON_DIR/state/plugins"
+    "$ADDON_DIR/state/plugins" "$ADDON_DIR/state/notifications"
 chmod 755 "$ADDON_DIR/bin/check_soc.sh" "$ADDON_DIR/lib/notify_signal.sh" "$ADDON_DIR/lib/plugin_notify.sh" "$ADDON_DIR/lib/notify.sh" "$ADDON_DIR/setup_variables.sh"
 
 # Plugins are independently executable. Glob so future plugins inherit 755
@@ -346,6 +347,19 @@ for _fixture_dir in "$ADDON_DIR/fixtures/dev" "$ADDON_DIR/fixtures"; do
     rmdir "$_fixture_dir" 2>/dev/null || true
 done
 printf 'Mock plugin cards purged; state/plugins contains real plugins only.\n'
+
+# Notification edge state is durable operational state, not build output. The
+# tar sync never stages state/, and nothing below may delete or truncate it:
+# a lost edge state would re-arm every alert on the next run. Only ownership
+# and modes are normalised. state/notifications is created above when absent.
+if [ -d "$ADDON_DIR/state/notifications" ]; then
+    for _state_file in "$ADDON_DIR/state/notifications"/*.state; do
+        [ -f "$_state_file" ] || continue
+        chmod 600 "$_state_file" 2>/dev/null || true
+    done
+    printf 'Notification edge state preserved (%s/*.state).\n' \
+        "$ADDON_DIR/state/notifications"
+fi
 
 # Redeployments must never overwrite live credentials. Only the first install
 # (or an intentionally removed .env) receives the workstation copy.

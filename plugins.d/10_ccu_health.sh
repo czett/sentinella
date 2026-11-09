@@ -415,7 +415,7 @@ fi
 # Threshold Notifications (CallMeBot / Signal Gateway)
 # ---------------------------------------------------------------------------
 if [ "$CCU_NOTIFY_DC_ENABLED" = "1" ] && is_uint "$DUTY_CYCLE" && command -v notify_plugin_threshold >/dev/null 2>&1; then
-    _msg_dc="Warnung: CCU3 Duty Cycle kritisch hoch ($DUTY_CYCLE %)!"
+    _msg_dc="[CCU3] Duty Cycle hoch: $DUTY_CYCLE% (Limit: $CCU_NOTIFY_DC_THRESHOLD%)"
     notify_plugin_threshold "ccu_health" "duty_cycle" "$DUTY_CYCLE" "$CCU_NOTIFY_DC_THRESHOLD" "above" "$_msg_dc"
 fi
 

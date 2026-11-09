@@ -1452,6 +1452,12 @@ save_config() {
             || fail "500 Internal Server Error" "$(msg write_forecast)"
     fi
 
+    # Notification edge state belongs to the state machine, not to the
+    # settings UI. A save must never delete, truncate or rewrite it; a lost
+    # state file would re-arm alerts the moment the threshold is exceeded.
+    mkdir -p "$STATE_DIR/notifications" 2>/dev/null || true
+    chmod 700 "$STATE_DIR/notifications" 2>/dev/null || true
+
     release_config_lock
     if [ "$_want_weather" = "1" ] && [ -x "$ADDON_DIR/plugins.d/15_weather.sh" ]; then
         WEATHER_ADDON_DIR="$ADDON_DIR" WEATHER_ENV="$WEATHER_ENV_FILE" \
