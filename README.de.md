@@ -71,8 +71,6 @@ Die Ausführung im Poll-Lauf wird über `SENTINELLA_RUN_PLUGINS=1` in der Cron-U
 
 ### Hardware-Korridor
 
-![Hardware-Korridor: Installation, RAM, Laufzeit und Funk-Duty-Cycle](docs/assets/hardware_footprint.svg)
-
 Gemessen mit `BENCHMARK_RUNS=20 ./tools/benchmark_footprint.sh` auf dem Entwicklungsrechner. Die Laufzeiten gelten für lokale Dry-Run- und Mock-Plugin-Läufe ohne Netzwerk-I/O und ohne Schreibzeit auf dem CCU3-Flash.
 
 | Metrik | Messwert / Grenze | Budget | Status |
@@ -84,7 +82,7 @@ Gemessen mit `BENCHMARK_RUNS=20 ./tools/benchmark_footprint.sh` auf dem Entwickl
 | **Peak-RSS** | **~1,2 MB** auf ash (< 0,25 % von 1 GB) | `<= 2,5 MB` | **PASS** |
 | **Funk-/RF-Duty-Cycle** | **0 %** (nur HTTPS und lokales XML-RPC) | `0 % Hard Cap` | **PASS** |
 
-Der Korridor zeigt Budgets, keine Momentaufnahme. Aktuelle Byte-Zahlen stehen in der Tabelle und werden mit jedem Release neu gemessen. Die `<= 400 KB`-Grenze ist ein selbst auferlegtes Projekt-Budget, das jeglichen Bloat auf der CCU3-Speicherpartition ausschließt.
+Die Tabelle zeigt Budgets, keine Momentaufnahme. Aktuelle Byte-Zahlen werden mit jedem Release neu gemessen. Die `<= 400 KB`-Grenze ist ein selbst auferlegtes Projekt-Budget, das jeglichen Bloat auf der CCU3-Speicherpartition ausschließt.
 
 ## Voraussetzungen
 

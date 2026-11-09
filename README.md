@@ -71,8 +71,6 @@ Poll-time plugin execution is gated by `SENTINELLA_RUN_PLUGINS=1` in the environ
 
 ### Hardware corridor
 
-![Hardware utilization corridor: install, RAM, execution time, and radio duty cycle](docs/assets/hardware_footprint.svg)
-
 Measured with `BENCHMARK_RUNS=20 ./tools/benchmark_footprint.sh` on the development host. Latency figures cover local dry-run and mock-plugin runs; they exclude network I/O and CCU3 flash write time.
 
 | Metric | Measured / bound | Guard | Status |
@@ -84,7 +82,7 @@ Measured with `BENCHMARK_RUNS=20 ./tools/benchmark_footprint.sh` on the developm
 | **Peak process RSS** | **~1.2 MB** on ash (< 0.25% of 1 GB) | `<= 2.5 MB` | **PASS** |
 | **RF duty cycle** | **0%** (HTTPS and local XML-RPC only) | `0% Hard Cap` | **PASS** |
 
-The corridor diagram is deliberately bound-based. Point-in-time byte counts belong in the table above, not in a graphic that outlives the release. The `<= 400 KB` footprint guard is a self-imposed project constraint to guarantee zero bloat on the CCU3 storage partition.
+The figures above are deliberately bound-based. Point-in-time byte counts belong in this table, not in a graphic that outlives the release. The `<= 400 KB` footprint guard is a self-imposed project constraint to guarantee zero bloat on the CCU3 storage partition.
 
 ### Plugin contract and card layouts
 
