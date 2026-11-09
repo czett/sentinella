@@ -168,8 +168,6 @@ Aufbau von `status.json`:
 
 ## Schaltlogik
 
-![Schmitt-Trigger: ein bei hoher Schwelle, aus bei niedriger Schwelle, dazwischen bleibt der letzte Zustand](docs/assets/schmitt_trigger.svg)
-
 ```
 SoC
 100 ┤

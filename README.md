@@ -182,8 +182,6 @@ The dashboard refreshes `status.json` every 30 seconds and shows SoC telemetry, 
 
 ## Switching logic
 
-![Dual-threshold hysteresis: on at the high trigger, off at the low reset, state held in between](docs/assets/schmitt_trigger.svg)
-
 ```
 SoC
 100 ┤
