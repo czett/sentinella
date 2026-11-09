@@ -39,20 +39,20 @@
   </g>
 
   <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-variant-numeric="tabular-nums lining-nums">
-    <text x="80" y="356" fill="#71717a" font-size="10" text-anchor="middle">0</text>
-    <text x="280" y="356" fill="#71717a" font-size="10" text-anchor="middle">25</text>
-    <text x="480" y="356" fill="#71717a" font-size="10" text-anchor="middle">50</text>
-    <text x="680" y="356" fill="#71717a" font-size="10" text-anchor="middle">75</text>
-    <text x="880" y="356" fill="#71717a" font-size="10" text-anchor="middle">100</text>
-    <text x="880" y="382" fill="#71717a" font-size="10" letter-spacing="1.1" text-anchor="end">SOC %</text>
+    <text x="80" y="357" fill="#52525b" font-size="14" text-anchor="middle">0</text>
+    <text x="280" y="357" fill="#52525b" font-size="14" text-anchor="middle">25</text>
+    <text x="480" y="357" fill="#52525b" font-size="14" text-anchor="middle">50</text>
+    <text x="680" y="357" fill="#52525b" font-size="14" text-anchor="middle">75</text>
+    <text x="880" y="357" fill="#52525b" font-size="14" text-anchor="middle">100</text>
+    <text x="880" y="386" fill="#71717a" font-size="12" letter-spacing="1.1" text-anchor="end">SOC %</text>
 
-    <text x="800" y="94" fill="#e1261c" font-size="12" font-weight="700" letter-spacing="1.4" text-anchor="middle">TRIGGER · 90%</text>
-    <text x="360" y="370" fill="#e1261c" font-size="12" font-weight="700" letter-spacing="1.4" text-anchor="middle">RESET · 35%</text>
+    <text x="800" y="92" fill="#e1261c" font-size="14" font-weight="700" letter-spacing="1.2" text-anchor="middle">TRIGGER · 90%</text>
+    <text x="360" y="386" fill="#e1261c" font-size="14" font-weight="700" letter-spacing="1.2" text-anchor="middle">RESET · 35%</text>
 
-    <text x="580" y="207" fill="#183adb" font-size="13" font-weight="700" letter-spacing="2" text-anchor="middle">DEADBAND</text>
-    <text x="580" y="228" fill="#52525b" font-size="12" text-anchor="middle">state holds</text>
+    <text x="580" y="204" fill="#183adb" font-size="16" font-weight="700" letter-spacing="2" text-anchor="middle">DEADBAND</text>
+    <text x="580" y="228" fill="#52525b" font-size="14" text-anchor="middle">state holds</text>
 
-    <text x="788" y="136" fill="#183adb" font-size="12" font-weight="700" letter-spacing="1.4" text-anchor="end">TRUE</text>
-    <text x="92" y="294" fill="#0a0a0c" font-size="12" font-weight="700" letter-spacing="1.4">FALSE</text>
+    <text x="788" y="134" fill="#183adb" font-size="14" font-weight="700" letter-spacing="1.2" text-anchor="end">TRUE</text>
+    <text x="92" y="296" fill="#0a0a0c" font-size="14" font-weight="700" letter-spacing="1.2">FALSE</text>
   </g>
 </svg>
