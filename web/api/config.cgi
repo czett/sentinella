@@ -29,6 +29,9 @@
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 umask 077
+# No pathname expansion: request-derived lists are word-split unquoted, and a
+# value like "*" must never expand to file names.
+set -f
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
 [ -n "$SCRIPT_DIR" ] || SCRIPT_DIR=.
@@ -269,6 +272,55 @@ is_renault_vin() {
         *[![:print:]]*) return 1 ;;
     esac
     printf '%s' "$1" | grep -Eq '^[A-Z0-9]{6,24}$'
+}
+
+# SIGNAL_PHONE may carry inline per-recipient CallMeBot keys ("uuid:key").
+# The key part is a credential: it is replaced by a fixed mask before the list
+# ever leaves the CGI, and a masked key in a POST is restored from the stored
+# list for the same recipient.
+SECRET_MASK='********'
+
+mask_phone_list() {
+    _mpl_out=
+    for _mpl_item in $(printf '%s' "${1:-}" | tr ',;' '  '); do
+        case "$_mpl_item" in
+            *:*) _mpl_item="${_mpl_item%%:*}:$SECRET_MASK" ;;
+        esac
+        _mpl_out="${_mpl_out:+$_mpl_out,}$_mpl_item"
+    done
+    printf '%s' "$_mpl_out"
+}
+
+restore_phone_list() {
+    _rpl_out=
+    for _rpl_item in $(printf '%s' "${1:-}" | tr ',;' '  '); do
+        case "$_rpl_item" in
+            *:*)
+                _rpl_u=${_rpl_item%%:*}
+                if is_masked_secret "${_rpl_item#*:}"; then
+                    _rpl_item=$_rpl_u
+                    for _rpl_old in $(printf '%s' "${2:-}" | tr ',;' '  '); do
+                        case "$_rpl_old" in
+                            "$_rpl_u":?*) _rpl_item=$_rpl_old; break ;;
+                        esac
+                    done
+                fi
+                ;;
+        esac
+        _rpl_out="${_rpl_out:+$_rpl_out,}$_rpl_item"
+    done
+    printf '%s' "$_rpl_out"
+}
+
+# Runtime credential files must never be group/world readable, whoever
+# created them (installer, manual edit, older release).
+harden_env_perms() {
+    for _hp in "$ENV_FILE" "$CONFIG_ENV_FILE" "$RENAULT_ENV_FILE" \
+        "$CCU_HEALTH_ENV_FILE" "$WEATHER_ENV_FILE" "$FORECAST_ENV_FILE" \
+        "$ADDON_DIR/config/plugins.env" "$ADDON_DIR/config.env"; do
+        [ -f "$_hp" ] && [ ! -L "$_hp" ] && chmod 600 "$_hp" 2>/dev/null
+    done
+    return 0
 }
 
 shquote() {
@@ -785,7 +837,7 @@ config_payload() {
     printf ',"reset_soc":%s' "$_reset"
     printf ',"signal_enabled":%s' "$(json_bool_str "$_enabled")"
     printf ',"notify_disabled":%s' "$_notify_disabled"
-    printf ',"signal_phone":%s' "$(json_str "$SIGNAL_PHONE")"
+    printf ',"signal_phone":%s' "$(json_str "$(mask_phone_list "$SIGNAL_PHONE")")"
     printf ',"signal_apikey_set":%s' "$_apikey_set"
     printf ',"sma_ip":%s' "$(json_str "$SMA_IP")"
     printf ',"sma_port":%s' "$_port"
@@ -1318,6 +1370,9 @@ save_config() {
 
     if body_has signal_phone; then
         _phone=$(trim_ws "$(body_str signal_phone)")
+        case "$_phone" in
+            *:*) _phone=$(restore_phone_list "$_phone" "$SIGNAL_PHONE") ;;
+        esac
         if [ -n "$_phone" ] && ! is_signal_phone_list "$_phone"; then
             fail "400 Bad Request" \
                 "$(msg phone_invalid)" \
@@ -1729,6 +1784,7 @@ fi
 # Load the saved language before validating the request, so even early 400
 # responses are rendered in the user's language.
 load_env 2>/dev/null || true
+harden_env_perms
 
 case "$ACTION" in
     config|settings)

@@ -7,8 +7,9 @@
 #  Security (SEN-01 / SEN-06):
 #    - POST only (405 Method Not Allowed otherwise)
 #    - Same-origin & application/json Content-Type enforcement
-#    - 60-second cooldown lock in $STATE_DIR/.zoe_hvac.lock (mode 600)
-#    - Invokes plugins.d/20_renault_zoe.sh --start-hvac
+#    - Remote HVAC control is shelved: every valid request gets 503. The
+#      unreachable dispatch path was removed to shrink the attack surface;
+#      the plugin backend (20_renault_zoe.sh --start-hvac) remains in place.
 # =============================================================================
 
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -43,10 +44,6 @@ resolve_addon_dir() {
 }
 
 ADDON_DIR=$(resolve_addon_dir)
-STATE_DIR=${RENAULT_STATE_DIR:-$ADDON_DIR/state}
-HVAC_LOCK=$STATE_DIR/.zoe_hvac.lock
-RENAULT_PLUGIN=$ADDON_DIR/plugins.d/20_renault_zoe.sh
-COOLDOWN_SEC=${ZOE_HVAC_COOLDOWN:-60}
 
 UI_LANGUAGE=de
 for _env_cand in \
@@ -66,15 +63,6 @@ do
     fi
 done
 
-is_uint() {
-    case "$1" in
-        ''|*[!0-9]*) return 1 ;;
-    esac
-    return 0
-}
-
-is_uint "$COOLDOWN_SEC" || COOLDOWN_SEC=60
-
 json_escape() {
     printf '%s' "$1" | tr -d '\r\n' \
         | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/\\t/g'
@@ -90,24 +78,6 @@ msg() {
         en:method) printf 'Use POST for this endpoint.' ;;
         de:cross_origin) printf 'Anfragen von einer anderen Origin oder ohne JSON Content-Type sind nicht erlaubt.' ;;
         en:cross_origin) printf 'Cross-origin or non-JSON requests are not allowed.' ;;
-        de:body_too_large) printf 'Der Anfrageinhalt ist zu groß.' ;;
-        en:body_too_large) printf 'Request body is too large.' ;;
-        de:rate_limited) printf 'Klimatisierung wurde gerade ausgelöst. Bitte 60 Sekunden warten.' ;;
-        en:rate_limited) printf 'Pre-conditioning was just triggered. Please wait 60 seconds.' ;;
-        de:plugin_missing) printf 'Das Renault-Plugin fehlt oder ist nicht ausführbar.' ;;
-        en:plugin_missing) printf 'The Renault plugin is missing or not executable.' ;;
-        de:credentials_missing) printf 'Speichern Sie zuerst Renault E-Mail, Passwort und VIN in den Einstellungen.' ;;
-        en:credentials_missing) printf 'Configure Renault email, password and VIN in Settings first.' ;;
-        de:hvac_ok) printf 'Renault: Klimatisierung gestartet (21 °C).' ;;
-        en:hvac_ok) printf 'Renault: Pre-conditioning started (21 °C).' ;;
-        de:hvac_stop_ok) printf 'Renault: Klimatisierung beendet.' ;;
-        en:hvac_stop_ok) printf 'Renault: Pre-conditioning stopped.' ;;
-        de:hvac_stop_failed) printf 'Klimatisierung konnte nicht beendet werden. Prüfen Sie die Verbindung zum Fahrzeug.' ;;
-        en:hvac_stop_failed) printf 'Could not stop pre-conditioning. Check vehicle connectivity.' ;;
-        de:bad_action) printf 'Unbekannte Aktion.' ;;
-        en:bad_action) printf 'Unknown action.' ;;
-        de:hvac_failed) printf 'Klimatisierung konnte nicht gestartet werden. Prüfen Sie die Verbindung zum Fahrzeug.' ;;
-        en:hvac_failed) printf 'Could not start pre-conditioning. Check vehicle connectivity.' ;;
         *) printf 'Request failed.' ;;
     esac
 }
@@ -193,80 +163,3 @@ check_origin
 # even though the plugin backend remains present for a future re-enablement.
 emit_json "503 Service Unavailable" \
     '{"ok":false,"error":"HVAC feature temporarily disabled"}'
-
-CONTENT_LENGTH=${CONTENT_LENGTH:-0}
-is_uint "$CONTENT_LENGTH" || fail "400 Bad Request" "$(msg cross_origin)"
-[ "$CONTENT_LENGTH" -le 4096 ] || fail "413 Payload Too Large" "$(msg body_too_large)"
-BODY=
-if [ "$CONTENT_LENGTH" -gt 0 ]; then
-    BODY=$(dd bs=1 count="$CONTENT_LENGTH" 2>/dev/null) || true
-fi
-
-# Accepted: "start" / "stop" (legacy "start_hvac" / "stop_hvac"). Empty body = start.
-ACTION=$(printf '%s' "$BODY" | tr -d '\r\n' \
-    | sed -n 's/.*"action"[[:space:]]*:[[:space:]]*"\([A-Za-z_]*\)".*/\1/p')
-case "$ACTION" in
-    ''|start|start_hvac) ACTION=start ;;
-    stop|stop_hvac) ACTION=stop ;;
-    *) fail "400 Bad Request" "$(msg bad_action)" ;;
-esac
-
-mkdir -p "$STATE_DIR" 2>/dev/null || true
-
-NOW=$(date +%s 2>/dev/null)
-is_uint "$NOW" || NOW=0
-
-if [ "$ACTION" = "start" ] && [ -r "$HVAC_LOCK" ]; then
-    LAST_TS=$(sed -n '1p' "$HVAC_LOCK" 2>/dev/null | tr -cd '0-9')
-    if is_uint "$LAST_TS" && [ "$NOW" -ge "$LAST_TS" ]; then
-        ELAPSED=$((NOW - LAST_TS))
-        if [ "$ELAPSED" -lt "$COOLDOWN_SEC" ]; then
-            RETRY_AFTER=$((COOLDOWN_SEC - ELAPSED))
-            emit_json "429 Too Many Requests" \
-                "{\"ok\":false,\"error\":$(json_str "$(msg rate_limited)"),\"retry_after\":$RETRY_AFTER}"
-        fi
-    fi
-fi
-
-[ -x "$RENAULT_PLUGIN" ] || fail "500 Internal Server Error" "$(msg plugin_missing)"
-
-# Reserve cooldown lock before network call so concurrent requests cannot race
-# (start only; cancelling must always be possible)
-if [ "$ACTION" = "start" ]; then
-(
-    umask 077
-    printf '%s\n' "$NOW" > "$HVAC_LOCK.tmp.$$"
-) 2>/dev/null && {
-    chmod 600 "$HVAC_LOCK.tmp.$$" 2>/dev/null || true
-    mv -f "$HVAC_LOCK.tmp.$$" "$HVAC_LOCK" 2>/dev/null || rm -f "$HVAC_LOCK.tmp.$$" 2>/dev/null
-}
-fi
-
-SMA_MONITOR_ADDON_DIR=$ADDON_DIR \
-RENAULT_ADDON_DIR=$ADDON_DIR \
-    "$RENAULT_PLUGIN" "--${ACTION}-hvac" >/dev/null 2>&1
-RC=$?
-
-if [ "$RC" = "0" ] && [ "$ACTION" = "stop" ]; then
-    # Cancelled: clear the start cooldown so the user can restart right away
-    rm -f "$HVAC_LOCK" 2>/dev/null || true
-    emit_json "200 OK" \
-        "{\"ok\":true,\"action\":\"hvac_stopped\",\"message\":$(json_str "$(msg hvac_stop_ok)")}"
-fi
-
-if [ "$RC" = "0" ]; then
-    emit_json "200 OK" \
-        "{\"ok\":true,\"action\":\"hvac_started\",\"message\":$(json_str "$(msg hvac_ok)")}"
-fi
-
-# Release lock on failed start so the user can retry after fixing credentials/network
-[ "$ACTION" = "start" ] && rm -f "$HVAC_LOCK" 2>/dev/null
-
-if [ "$RC" = "2" ]; then
-    fail "400 Bad Request" "$(msg credentials_missing)"
-fi
-
-if [ "$ACTION" = "stop" ]; then
-    fail "502 Bad Gateway" "$(msg hvac_stop_failed)"
-fi
-fail "502 Bad Gateway" "$(msg hvac_failed)"

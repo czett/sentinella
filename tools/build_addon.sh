@@ -234,7 +234,6 @@ cp -f "$ROOT_DIR/setup_variables.sh" "$PKG_DIR/setup_variables.sh"
 cp -f "$ROOT_DIR/package/uninstall.sh" "$PKG_DIR/uninstall.sh"
 cp -f "$ROOT_DIR/.env.example" "$PKG_DIR/.env.example"
 cp -f "$ROOT_DIR/LICENSE" "$PKG_DIR/LICENSE"
-cp -f "$ROOT_DIR/README.md" "$PKG_DIR/README.md"
 
 for _plugin in "$ROOT_DIR/plugins.d"/*.sh; do
     [ -f "$_plugin" ] || continue

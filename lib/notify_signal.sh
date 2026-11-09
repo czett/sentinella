@@ -313,7 +313,11 @@ send_to_recipient() {
         _attempt=$((_attempt + 1))
     done
 
-    log "ERROR: notification failed for recipient $_phone ($EVENT, SoC ${SOC}%): $(printf '%s' "$_resp" | tr -d '\r\n' | cut -c1-160)"
+    # Never let the API key reach the log, even if curl echoes the request URL.
+    _resp=$(printf '%s' "$_resp" | tr -d '\r\n' | awk -v k="$_apikey" '{
+        if (k != "") while ((i = index($0, k)) > 0) $0 = substr($0, 1, i - 1) "***" substr($0, i + length(k))
+        print }' | cut -c1-160)
+    log "ERROR: notification failed for recipient $_phone ($EVENT, SoC ${SOC}%): $_resp"
     return 1
 }
 
@@ -368,7 +372,7 @@ send_message() {
         esac
 
         if [ -z "$_rec_phone" ] || [ -z "$_rec_key" ]; then
-            log "ERROR: missing UUID or API key for recipient #$_idx ($_p)"
+            log "ERROR: missing UUID or API key for recipient #$_idx (${_rec_phone:-?})"
             _failures=$((_failures + 1))
             continue
         fi

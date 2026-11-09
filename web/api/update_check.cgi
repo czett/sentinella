@@ -110,6 +110,11 @@ if [ "${SENTINELLA_OFFLINE:-0}" != "1" ] && command -v curl >/dev/null 2>&1; the
             sed -n 's/^[[:space:]]*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*$/\1/p' |
             head -n 1)
         TAG=${TAG#v}
+        # Whitelist: a remote tag is untrusted input (semver-ish, <= 32 chars).
+        case "$TAG" in
+            *[!0-9A-Za-z._-]*) TAG= ;;
+        esac
+        [ "${#TAG}" -le 32 ] || TAG=
         case "$TAG" in
             [0-9]*)
                 LATEST_VERSION=$TAG
