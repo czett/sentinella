@@ -1,40 +1,31 @@
 # Sentinella
 
-![Sentinella — SMA battery monitor for CCU3](docs/assets/readme-hero-banner.png)
+![Sentinella — modular CCU3 energy and system monitor](docs/assets/readme-hero-banner.png)
 
-Sentinella runs on a HomeMatic CCU3 or RaspberryMatic and polls an SMA Sunny Boy Storage or Sunny Tripower inverter every two minutes over the local WebConnect API. It writes `SV_Batterie_SoC` and `SV_Batterie_95_Signal`, publishes `status.json`, and serves a dashboard through the CCU3's native `lighttpd`.
+**Sentinella: the resource-efficient energy and system guardian for the HomeMatic CCU3.**
 
-Runtime code is pure POSIX shell. No daemon, Node.js, Python, `jq`, or external CDN is required on the CCU3.
-
-Want to write a plugin? Read [**CONTRIBUTING.md**](CONTRIBUTING.md) for the `/bin/sh` standard, the three card layouts (`stat`, `delta`, `list`), and the security checklist.
+Sentinella is a modular, 100% POSIX-shell monitoring platform for CCU3 and RaspberryMatic. A single cron-driven engine collects telemetry from SMA storage, Renault E-Tech vehicles, the CCU3 host itself, and keyless weather services, then publishes `status.json`, writes CCU3 system variables, and dispatches stateful push alerts. No daemon, Node.js, Python, `jq`, or external CDN runs on the CCU3.
 
 ## Capabilities
 
-### Core monitoring
+1. **SMA solar and home storage** — SoC, charge/discharge power, and the grid-surplus signal over HTTPS WebConnect.
+2. **EV telemetry** — Renault E-Tech (Zoe, Megane, R5): SoC, range, plug status, charging state, odometer.
+3. **CCU3 host telemetry** — zero-impact duty cycle via XML-RPC on ports `2001`/`2010`, load average, RAM, uptime.
+4. **Local intelligence** — keyless Open-Meteo weather and an optional experimental forecast.solar PV outlook.
+5. **Stateful multi-channel push** — Signal / CallMeBot with hysteresis, per-event cooldowns, and first-run silence.
+6. **Native plugin manager** — WebUI toggles with zero-overhead execution bypass for disabled plugins.
 
-- Polls battery SoC (`6100_00295A00`) and optional charge/discharge power over HTTPS WebConnect.
-- Drives `SV_Batterie_SoC` and `SV_Batterie_95_Signal` with configurable trigger and reset thresholds.
-- Keeps the previous CCU3 value when the inverter returns `null`, an out-of-range value, or an HTTP error.
-- Logs out in an `EXIT` trap and on `INT`, `TERM`, and `HUP`.
-- Serialises runs with a PID lock that recovers stale locks.
-
-### Plugins
-
-| Plugin | Default | Data | Source |
+| Module | Default | Data | Source |
 |---|---|---|---|
+| **SMA storage** (core) | active | SoC, charge/discharge power, surplus signal | HTTPS WebConnect |
 | **CCU3 Health** (`10_ccu_health.sh`) | enabled | Duty cycle, load average, RAM, uptime | `tclrpc.so` XML-RPC on `127.0.0.1:2001`, fallback `2010`; `/proc` |
 | **Weather** (`15_weather.sh`) | enabled | Temperature, humidity, WMO condition, wind, daily min/max | Open-Meteo, no API key |
-| **PV Forecast** (`30_forecast_solar.sh`) | enabled | Today and tomorrow yield in `kWh` and `kWh/kWp` | forecast.solar, no API key |
-| **Renault E-Tech** (`20_renault_zoe.sh`) | disabled until configured | SoC, range, plug status, charging state, odometer | MY Renault cloud; Megane, Zoe, R5 |
+| **Renault E-Tech** (`20_renault_zoe.sh`) | disabled until configured | SoC, range, plug status, charging state, odometer | MY Renault cloud |
+| **PV Forecast** (`30_forecast_solar.sh`) | disabled (experimental) | Today and tomorrow yield in `kWh` and `kWh/kWp` | forecast.solar, no API key |
 
 The plugin manager persists enable flags in `config/plugins.env` (`PLUGIN_<NAME>='0|1'`). Toggles in the settings drawer call `api/plugin_manager.cgi`, which accepts whitelisted IDs, writes the file atomically, and removes the card when a plugin is disabled. `web/app.js` filters the current card list immediately, without waiting for the next poll. Each plugin also honours a `.disabled` marker beside its script.
 
-Poll-time plugin execution is gated by `SENTINELLA_RUN_PLUGINS=1` in the environment of the cron job. The installer runs each plugin once after deployment so the dashboard is populated before the next poll.
-
-### Notifications and UI
-
-- **Signal (CallMeBot):** detached alert delivery on threshold transitions, with a 60-minute per-event cooldown and DE/EN templates.
-- **Swiss-Poster dashboard:** zero-dependency CSS grid, light/dark theme, tabular monospace figures, charging animation, and instant DE/EN switching without a page reload or polling delay.
+Poll-time plugin execution is gated by `SENTINELLA_RUN_PLUGINS=1` in the environment of the cron job. The installer runs each plugin once after deployment so the dashboard is populated before the next poll. The dashboard itself is a zero-dependency CSS grid with light/dark themes, tabular monospace figures, and instant DE/EN switching.
 
 ## Architecture
 

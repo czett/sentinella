@@ -1,40 +1,31 @@
 # Sentinella
 
-![Sentinella — SMA-Batteriestatus für CCU3](docs/assets/readme-hero-banner.png)
+![Sentinella — modularer Energie- und Systemwächter für die CCU3](docs/assets/readme-hero-banner.png)
 
-Sentinella läuft auf einer HomeMatic CCU3 oder RaspberryMatic und fragt alle zwei Minuten den Ladezustand eines SMA Sunny Boy Storage oder Sunny Tripower über die lokale WebConnect-API ab. Das Add-on schreibt `SV_Batterie_SoC` und `SV_Batterie_95_Signal`, veröffentlicht `status.json` und liefert das Dashboard über den nativen `lighttpd` der CCU3 aus.
+**Sentinella: Der ressourcenschonende Energie- & Systemwächter für die HomeMatic CCU3.**
 
-Der Laufzeitcode ist reines POSIX-Shell. Auf der CCU3 laufen kein Daemon, kein Node.js, kein Python, kein `jq` und kein externes CDN.
-
-Beiträge: [**CONTRIBUTING.md**](CONTRIBUTING.md) beschreibt den `/bin/sh`-Standard, die drei Karten-Layouts (`stat`, `delta`, `list`) und die Sicherheitsprüfung.
+Sentinella ist eine modulare Monitoring-Plattform auf Basis von 100 % POSIX-Shell für CCU3 und RaspberryMatic. Eine einzige cron-gesteuerte Engine sammelt Telemetrie von SMA-Speichern, Renault E-Tech-Fahrzeugen, dem CCU3-Host selbst und schlüsselfreien Wetterdiensten. Sie veröffentlicht `status.json`, schreibt CCU3-Systemvariablen und versendet zustandsbehaftete Push-Benachrichtigungen. Auf der CCU3 laufen kein Daemon, kein Node.js, kein Python, kein `jq` und kein externes CDN.
 
 ## Funktionsumfang
 
-### Kernüberwachung
+1. **SMA Solar und Heimspeicher** — SoC, Lade-/Entladeleistung und Überschuss-Signal über HTTPS-WebConnect.
+2. **EV-Telemetrie** — Renault E-Tech (Zoe, Megane, R5): SoC, Reichweite, Steckerstatus, Ladestatus, Kilometerstand.
+3. **CCU3-Host-Telemetrie** — nahezu lastfreier Duty Cycle über XML-RPC auf Port `2001`/`2010`, Load, RAM, Uptime.
+4. **Lokale Intelligenz** — schlüsselfreies Open-Meteo-Wetter und eine optionale experimentelle PV-Prognose von forecast.solar.
+5. **Zustandsbehaftete Multi-Channel-Pushes** — Signal / CallMeBot mit Hysterese, Cooldowns und Stille beim Erstlauf.
+6. **Nativer Plugin-Manager** — WebUI-Schalter mit vollständigem Ausführungs-Bypass für deaktivierte Plugins.
 
-- Liest den Batterie-SoC (`6100_00295A00`) und optional Lade-/Entladeleistung über HTTPS-WebConnect.
-- Schreibt `SV_Batterie_SoC` und `SV_Batterie_95_Signal` mit konfigurierbaren Ein- und Ausschaltschwellen.
-- Behält den letzten gültigen CCU3-Wert bei `null`, einem Wert außerhalb `0..100` oder einem HTTP-Fehler.
-- Meldet sich in einem `EXIT`-Trap sowie bei `INT`, `TERM` und `HUP` ab.
-- Serialisiert Läufe über eine PID-Sperre und räumt verwaiste Sperren auf.
-
-### Plugins
-
-| Plugin | Standard | Daten | Quelle |
+| Modul | Standard | Daten | Quelle |
 |---|---|---|---|
+| **SMA-Speicher** (Kern) | aktiv | SoC, Lade-/Entladeleistung, Überschuss-Signal | HTTPS-WebConnect |
 | **CCU3 Health** (`10_ccu_health.sh`) | aktiv | Duty Cycle, Load, RAM, Uptime | `tclrpc.so`-XML-RPC auf `127.0.0.1:2001`, Fallback `2010`; `/proc` |
 | **Wetter** (`15_weather.sh`) | aktiv | Temperatur, Luftfeuchte, WMO-Zustand, Wind, Tages-Min/Max | Open-Meteo, ohne API-Schlüssel |
-| **PV-Prognose** (`30_forecast_solar.sh`) | aktiv | Ertrag heute und morgen in `kWh` und `kWh/kWp` | forecast.solar, ohne API-Schlüssel |
-| **Renault E-Tech** (`20_renault_zoe.sh`) | inaktiv bis zur Konfiguration | SoC, Reichweite, Steckerstatus, Ladestatus, Kilometerstand | MY Renault Cloud; Megane, Zoe, R5 |
+| **Renault E-Tech** (`20_renault_zoe.sh`) | inaktiv bis zur Konfiguration | SoC, Reichweite, Steckerstatus, Ladestatus, Kilometerstand | MY Renault Cloud |
+| **PV-Prognose** (`30_forecast_solar.sh`) | inaktiv (experimentell) | Ertrag heute und morgen in `kWh` und `kWh/kWp` | forecast.solar, ohne API-Schlüssel |
 
 Der Plugin-Manager speichert die Schalter in `config/plugins.env` (`PLUGIN_<NAME>='0|1'`). Die Schalter im Einstellungs-Menü rufen `api/plugin_manager.cgi` auf; der Endpunkt akzeptiert nur bekannte IDs, schreibt die Datei atomar und entfernt die Karte beim Deaktivieren. `web/app.js` filtert die aktuelle Kartenliste sofort, ohne auf den nächsten Lauf zu warten. Zusätzlich beachtet jedes Plugin eine `.disabled`-Datei neben dem Skript.
 
-Die Ausführung im Poll-Lauf wird über `SENTINELLA_RUN_PLUGINS=1` in der Cron-Umgebung freigeschaltet. Der Installer führt jedes Plugin nach der Installation einmal aus, damit das Dashboard vor dem nächsten Lauf gefüllt ist.
-
-### Benachrichtigungen und Oberfläche
-
-- **Signal (CallMeBot):** entkoppelte Zustellung bei Schwellenwechsel, mit 60-Minuten-Sperre pro Ereignis und DE/EN-Vorlagen.
-- **Swiss-Poster-Dashboard:** abhängigkeitsfreies CSS-Grid, helles und dunkles Design, tabellarische Monospace-Ziffern, Ladeanimation und sofortiger DE/EN-Wechsel ohne Neuladen.
+Die Ausführung im Poll-Lauf wird über `SENTINELLA_RUN_PLUGINS=1` in der Cron-Umgebung freigeschaltet. Der Installer führt jedes Plugin nach der Installation einmal aus, damit das Dashboard vor dem nächsten Lauf gefüllt ist. Das Dashboard ist ein abhängigkeitsfreies CSS-Grid mit hellem und dunklem Design, tabellarischen Monospace-Ziffern und sofortigem DE/EN-Wechsel.
 
 ## Architektur
 

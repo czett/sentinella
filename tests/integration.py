@@ -1140,6 +1140,32 @@ def main() -> int:
             failures,
         )
 
+        print("\n15e. notify_disabled persists to .env and config/config.env")
+        for raw, expected in ((True, "1"), (False, "0")):
+            result = run_cgi(addon6, "POST", body=json.dumps({"notify_disabled": raw}))
+            status_code, saved = parse_cgi(result)
+            env_text = env6.read_text()
+            plugin_env = addon6 / "config" / "config.env"
+            plugin_text = plugin_env.read_text() if plugin_env.exists() else ""
+            check(
+                status_code == "200 OK" and saved.get("notify_disabled") is raw,
+                f"notify_disabled={raw} round-trips through the API",
+                failures,
+            )
+            check(
+                f"NOTIFY_DISABLED='{expected}'" in env_text,
+                f"NOTIFY_DISABLED written as {expected} in .env",
+                failures,
+            )
+            check(
+                f"NOTIFY_DISABLED='{expected}'" in plugin_text,
+                f"NOTIFY_DISABLED written as {expected} in config/config.env",
+                failures,
+            )
+        result = run_cgi(addon6, "POST", body=json.dumps({"notify_disabled": "maybe"}))
+        status_code, _ = parse_cgi(result)
+        check(status_code == "400 Bad Request", "invalid notify_disabled is rejected", failures)
+
         print("\n16. test notification is dispatched in the background")
         signal_before = (addon2 / "state" / "signal").read_text()
         signal_state.reset_requests()
@@ -1269,10 +1295,12 @@ const assertEq = (actual, expected, label) => {
         process.exit(1);
     }
 };
-assertEq(I18N.en.pageTitle, "Sentinella", "EN pageTitle");
-assertEq(I18N.de.pageTitle, "Sentinella", "DE pageTitle");
-assertEq(I18N.en.brandSub, "SMA Battery Monitor for CCU3", "EN brandSub");
-assertEq(I18N.de.brandSub, "SMA Batteriestatus für CCU3", "DE brandSub");
+assertEq(I18N.en.pageTitle, "SENTINELLA · CCU3 Energy & System Monitor", "EN pageTitle");
+assertEq(I18N.de.pageTitle, "SENTINELLA · CCU3 Energie- & Systemwächter", "DE pageTitle");
+assertEq(I18N.en.brandSub, "Energy & System Monitor for CCU3", "EN brandSub");
+assertEq(I18N.de.brandSub, "Energie- & Systemstatus für CCU3", "DE brandSub");
+assertEq(I18N.en.notifyMute, "Mute all notifications", "EN notify mute label");
+assertEq(I18N.de.notifyMute, "Benachrichtigungen stummschalten (Mute)", "DE notify mute label");
 assertEq(I18N.en.hysteresisSignal, "Excess Signal", "EN signal box label");
 assertEq(I18N.de.hysteresisSignal, "Überschuss-Signal", "DE signal box label");
 assertEq(I18N.en.thresholdCorridor, "Thresholds", "EN slider title");
@@ -1289,8 +1317,12 @@ assertEq(I18N.de.signalCopyHeld, "Aktiv. Schaltet ab unter {reset}%.", "DE held 
 assertEq(I18N.de.signalCopyInactive, "Inaktiv. Schaltet ein ab {trigger}%.", "DE inactive signal copy");
 assertEq(I18N.en.signalCopyActive, "Active. Turns off below {reset}%.", "EN active signal copy");
 assertEq(I18N.en.signalCopyInactive, "Inactive. Turns on at {trigger}%.", "EN inactive signal copy");
-if (!html.includes("<title>Sentinella</title>")) {
-    console.error("HTML title not simplified to <title>Sentinella</title>");
+if (!html.includes("<title>SENTINELLA · CCU3 Energie- &amp; Systemwächter</title>")) {
+    console.error("HTML title does not carry the CCU3 energy and system monitor branding");
+    process.exit(1);
+}
+if (!/id="notify_disabled"/.test(html) || !/for="notify_disabled"/.test(html)) {
+    console.error("NOTIFY_DISABLED mute toggle missing in HTML");
     process.exit(1);
 }
 if (!html.includes('placeholder="98526357-0cec-4e7f-9d60-d854432414d3"')) {

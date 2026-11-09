@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Sentinella — SMA / CCU3 battery monitor dashboard logic
+   Sentinella — modular CCU3 energy and system monitor dashboard logic
    Vanilla ES6, no dependencies. Reads ./status.json.
    ========================================================================== */
 
@@ -78,10 +78,10 @@
 
     var I18N = {
         en: {
-            pageTitle: "Sentinella",
+            pageTitle: "SENTINELLA · CCU3 Energy & System Monitor",
             skipToContent: "Skip to content",
             retryNow: "Retry now",
-            brandSub: "SMA Battery Monitor for CCU3",
+            brandSub: "Energy & System Monitor for CCU3",
             languageLabel: "Language",
             themeLabel: "Color theme",
             lightTheme: "Light theme",
@@ -126,6 +126,8 @@
             signalAlerts: "Signal alerts",
             sendNotifications: "Signal Notifications",
             sendNotificationsNote: "Calls the CallMeBot Signal gateway when the signal changes.",
+            notifyMute: "Mute all notifications",
+            notifyMuteNote: "Suppresses every push dispatch. Thresholds and edge state keep running.",
             phoneLabel: "Signal Account UUID / Phone",
             phoneAria: "Signal Account UUID or phone number",
             apikeyLabel: "CallMeBot API key",
@@ -268,10 +270,10 @@
             portInvalid: "Inverter port must be a whole number between 1 and 65535."
         },
         de: {
-            pageTitle: "Sentinella",
+            pageTitle: "SENTINELLA · CCU3 Energie- & Systemwächter",
             skipToContent: "Zum Inhalt springen",
             retryNow: "Jetzt erneut versuchen",
-            brandSub: "SMA Batteriestatus für CCU3",
+            brandSub: "Energie- & Systemstatus für CCU3",
             languageLabel: "Sprache",
             themeLabel: "Farbschema",
             lightTheme: "Helles Design",
@@ -316,6 +318,8 @@
             signalAlerts: "Signalbenachrichtigungen",
             sendNotifications: "Signal-Benachrichtigungen",
             sendNotificationsNote: "Sendet eine Signal-Nachricht über CallMeBot, wenn das Signal umschaltet.",
+            notifyMute: "Benachrichtigungen stummschalten (Mute)",
+            notifyMuteNote: "Unterdrückt alle Push-Zustellungen. Schwellen und Zustand laufen weiter.",
             phoneLabel: "Signal Account UUID / Phone",
             phoneAria: "Signal Account UUID oder Telefonnummer",
             apikeyLabel: "CallMeBot-API-Schlüssel",
@@ -526,6 +530,7 @@
         resetSoc: $("reset-soc"),
         resetRange: $("reset-range"),
         signalEnabled: $("signal_enabled"),
+        notifyDisabled: $("notify_disabled"),
         signalGroup: $("signal_credentials_group"),
         signalPhone: $("signal-phone"),
         signalApikey: $("signal-apikey"),
@@ -2442,6 +2447,9 @@
         el.resetRange.value = String(data.reset_soc);
 
         el.signalEnabled.checked = data.signal_enabled === true;
+        if (el.notifyDisabled) {
+            el.notifyDisabled.checked = data.notify_disabled === true;
+        }
         el.signalPhone.value = String(data.signal_phone || "").trim();
         el.signalApikey.value = "";
         el.signalApikey.placeholder = data.signal_apikey_set ? t("unchanged") : t("required");
@@ -2752,6 +2760,7 @@
             reset_soc: Number(el.resetSoc.value.trim()),
             signal_enabled: el.signalEnabled.checked,
             signal_phone: phone,
+            notify_disabled: el.notifyDisabled ? el.notifyDisabled.checked : false,
             sma_ip: el.smaIp.value.trim(),
             sma_port: Number(el.smaPort.value.trim())
         };

@@ -7,8 +7,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="color-scheme" content="light">
     <meta name="theme-color" content="#f8f8f9">
-    <meta name="description" content="Sentinella — SMA battery monitor for Homematic CCU3.">
-    <title>Sentinella</title>
+    <meta name="description" content="Sentinella — modular energy and system monitor for the HomeMatic CCU3.">
+    <title>SENTINELLA · CCU3 Energie- &amp; Systemwächter</title>
     <script>
         (function () {
             var theme = "light";
@@ -46,7 +46,7 @@
             <span class="brand-mark" aria-hidden="true"></span>
             <div class="brand-titles">
                 <span class="brand-name">SENTINELLA</span>
-                <span class="brand-sub" data-i18n="brandSub">SMA Battery Monitor for CCU3</span>
+                <span class="brand-sub" data-i18n="brandSub">Energie- &amp; Systemstatus für CCU3</span>
             </div>
         </div>
 
@@ -366,6 +366,15 @@
                 </label>
                 <p class="field-hint" id="apikey-hint" hidden data-i18n="storedKeepHint">An API key is stored. Leave the field empty to keep it.</p>
                 </div>
+
+                <label class="switch-row" for="notify_disabled">
+                    <span>
+                        <span class="field-label" data-i18n="notifyMute">Benachrichtigungen stummschalten (Mute)</span>
+                        <span class="field-note" data-i18n="notifyMuteNote">Unterdrückt alle Push-Zustellungen. Schwellen und Zustand laufen weiter.</span>
+                    </span>
+                    <input class="switch" id="notify_disabled" name="notify_disabled" type="checkbox" role="switch"
+                           aria-label="Mute all notifications" data-i18n-aria="notifyMute">
+                </label>
             </fieldset>
 
             <fieldset class="field-group">

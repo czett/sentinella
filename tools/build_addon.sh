@@ -1,8 +1,9 @@
 #!/bin/sh
 # =============================================================================
-#  Sentinella - CCU3 / RaspberryMatic Release Tarball Builder
+#  Sentinella - modular CCU3 energy and system monitor packager
 # =============================================================================
-#  Builds a deterministic HomeMatic CCU3 / RaspberryMatic installation package:
+#  Builds a deterministic HomeMatic CCU3 / RaspberryMatic installation package
+#  for SMA storage, Renault E-Tech, CCU3 host telemetry, weather, and alerts:
 #    dist/sentinella-<version>.tar.gz
 #
 #  Archive structure:
@@ -192,7 +193,7 @@ case "${1:-}" in
         ;;
     info)
         _ver=$(get_version)
-        printf 'Info: <b>Sentinella</b><br>SMA Battery &amp; EV Telemetry Add-on for CCU3<br>\n'
+        printf 'Info: <b>Sentinella</b><br>Leichtgewichtiges Dashboard und Benachrichtigungssystem f&uuml;r PV-Speicher (SMA), E-Mobilit&auml;t (Renault E-Tech), Systemgesundheit und Wetter.<br>\n'
         printf 'Name: Sentinella\n'
         printf 'Version: %s\n' "$_ver"
         printf 'Operations: uninstall\n'

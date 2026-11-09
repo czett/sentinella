@@ -99,6 +99,7 @@ RENAULT_TEST_LOCK=$STATE_DIR/.test_renault.lock
 CONFIG_LOCK=$STATE_DIR/.config.lock
 TEST_WRAPPER=
 UI_LANGUAGE=en
+NOTIFY_DISABLED=0
 RENAULT_USER=
 RENAULT_PASS=
 RENAULT_VIN=
@@ -298,6 +299,8 @@ msg() {
         en:trigger_order) printf 'Trigger level must be greater than reset level.' ;;
         de:signal_bool) printf 'Signalbenachrichtigungen müssen aktiviert oder deaktiviert sein.' ;;
         en:signal_bool) printf 'Signal alerts must be either enabled or disabled.' ;;
+        de:notify_disabled_bool) printf 'Ungültiger Wert für die Benachrichtigungs-Stummschaltung.' ;;
+        en:notify_disabled_bool) printf 'Invalid value for the notification mute switch.' ;;
         de:phone_invalid) printf 'Geben Sie eine gültige Signal Account UUID oder Telefonnummer im E.164-Format ein (zum Beispiel 98526357-0cec-4e7f-9d60-d854432414d3 oder +491701234567).' ;;
         en:phone_invalid) printf 'Enter a valid Signal Account UUID or E.164 phone number (for example 98526357-0cec-4e7f-9d60-d854432414d3 or +491701234567).' ;;
         de:apikey_invalid) printf 'Der CallMeBot-API-Schlüssel darf nur Buchstaben, Ziffern, Punkt, Bindestrich, Unterstrich und Doppelpunkt enthalten.' ;;
@@ -326,6 +329,8 @@ msg() {
         en:write_reset) printf 'Cannot write the reset level.' ;;
         de:write_signal) printf 'Der Signal-Schalter kann nicht geschrieben werden.' ;;
         en:write_signal) printf 'Cannot write the Signal switch.' ;;
+        de:write_notify_disabled) printf 'Die Benachrichtigungs-Stummschaltung kann nicht geschrieben werden.' ;;
+        en:write_notify_disabled) printf 'Cannot write the notification mute switch.' ;;
         de:write_phone) printf 'Die Signal Account UUID kann nicht geschrieben werden.' ;;
         en:write_phone) printf 'Cannot write the Signal Account UUID.' ;;
         de:write_apikey) printf 'Der API-Schlüssel kann nicht geschrieben werden.' ;;
@@ -734,6 +739,10 @@ load_env() {
         de|DE|de_DE|de-DE) UI_LANGUAGE=de ;;
         *) UI_LANGUAGE=en ;;
     esac
+    case "${NOTIFY_DISABLED:-}" in
+        1|true|TRUE|on|ON|yes|YES) NOTIFY_DISABLED=1 ;;
+        *) NOTIFY_DISABLED=0 ;;
+    esac
     load_renault_env
     load_ccu_health_env
     load_weather_env
@@ -762,6 +771,8 @@ config_payload() {
     [ "$RENAULT_NOTIFY_HIGH_ENABLED" = "1" ] && _renault_high_en=true
     _ccu_dc_en=false
     [ "$CCU_NOTIFY_DC_ENABLED" = "1" ] && _ccu_dc_en=true
+    _notify_disabled=false
+    [ "$NOTIFY_DISABLED" = "1" ] && _notify_disabled=true
 
     case "$SMA_PORT" in
         ''|*[!0-9]*) _port=443 ;;
@@ -773,6 +784,7 @@ config_payload() {
     printf ',"trigger_soc":%s' "$_trigger"
     printf ',"reset_soc":%s' "$_reset"
     printf ',"signal_enabled":%s' "$(json_bool_str "$_enabled")"
+    printf ',"notify_disabled":%s' "$_notify_disabled"
     printf ',"signal_phone":%s' "$(json_str "$SIGNAL_PHONE")"
     printf ',"signal_apikey_set":%s' "$_apikey_set"
     printf ',"sma_ip":%s' "$(json_str "$SMA_IP")"
@@ -1231,10 +1243,12 @@ save_config() {
     _port=$SMA_PORT
     _password=$SMA_PASS
     _language=$UI_LANGUAGE
+    _notify_disabled=$NOTIFY_DISABLED
 
     _want_trigger=0
     _want_reset=0
     _want_enabled=0
+    _want_notify_disabled=0
     _want_phone=0
     _want_apikey=0
     _want_ip=0
@@ -1289,6 +1303,17 @@ save_config() {
             esac
         fi
         _want_enabled=1
+    fi
+
+    if body_has notify_disabled; then
+        _notify_disabled=$(body_bool notify_disabled)
+        if [ -z "$_notify_disabled" ]; then
+            fail "400 Bad Request" \
+                "$(msg notify_disabled_bool)" \
+                "notify_disabled"
+        fi
+        [ "$_notify_disabled" = "true" ] && _notify_disabled=1 || _notify_disabled=0
+        _want_notify_disabled=1
     fi
 
     if body_has signal_phone; then
@@ -1390,6 +1415,10 @@ save_config() {
         env_set "$TMP_FILE" SIGNAL_ENABLED "$_enabled" || \
             fail "500 Internal Server Error" "$(msg write_signal)"
     fi
+    if [ "$_want_notify_disabled" = "1" ]; then
+        env_set "$TMP_FILE" NOTIFY_DISABLED "$_notify_disabled" || \
+            fail "500 Internal Server Error" "$(msg write_notify_disabled)"
+    fi
     if [ "$_want_phone" = "1" ]; then
         env_set "$TMP_FILE" SIGNAL_PHONE "$_phone" || \
             fail "500 Internal Server Error" "$(msg write_phone)"
@@ -1427,6 +1456,22 @@ save_config() {
                 printf "UI_LANGUAGE='%s'\n" "$_language" > "$CONFIG_ENV_FILE.tmp.$$" 2>/dev/null \
                     && mv -f "$CONFIG_ENV_FILE.tmp.$$" "$CONFIG_ENV_FILE" 2>/dev/null
             ) || true
+        fi
+        chmod 600 "$CONFIG_ENV_FILE" 2>/dev/null || true
+    fi
+
+    if [ "$_want_notify_disabled" = "1" ]; then
+        mkdir -p "$ADDON_DIR/config" 2>/dev/null || true
+        chmod 700 "$ADDON_DIR/config" 2>/dev/null || true
+        if [ -f "$CONFIG_ENV_FILE" ]; then
+            env_set "$CONFIG_ENV_FILE" NOTIFY_DISABLED "$_notify_disabled" 2>/dev/null \
+                || fail "500 Internal Server Error" "$(msg write_notify_disabled)"
+        else
+            _notify_tmp="$CONFIG_ENV_FILE.tmp.$$"
+            (umask 077; printf "NOTIFY_DISABLED='%s'\n" "$_notify_disabled" > "$_notify_tmp") \
+                || fail "500 Internal Server Error" "$(msg write_notify_disabled)"
+            mv -f "$_notify_tmp" "$CONFIG_ENV_FILE" 2>/dev/null \
+                || fail "500 Internal Server Error" "$(msg write_notify_disabled)"
         fi
         chmod 600 "$CONFIG_ENV_FILE" 2>/dev/null || true
     fi

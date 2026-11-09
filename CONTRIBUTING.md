@@ -1,6 +1,8 @@
 # Contributing to Sentinella
 
-Sentinella runs on stock HomeMatic CCU3 and RaspberryMatic firmware with tight flash and RAM budgets. Contributions are reviewed for portability, security, and failure handling before anything else.
+Sentinella is a modular CCU3 energy and system monitor: SMA storage, Renault E-Tech telemetry, CCU3 host health, keyless weather, an experimental PV forecast, and stateful push alerts. It runs on stock HomeMatic CCU3 and RaspberryMatic firmware with tight flash and RAM budgets. Contributions are reviewed for portability, security, and failure handling before anything else.
+
+Keep every module optional and self-contained. A new data source belongs in `plugins.d/`, writes one atomic JSON card, and must never block the core SMA poll or the notification state machine.
 
 ## 1. Runtime constraints
 
