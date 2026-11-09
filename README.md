@@ -1,19 +1,19 @@
 # Sentinella
 
-![Sentinella — modular CCU3 energy and system monitor](docs/assets/readme-hero-banner.png)
+![Sentinella: modular CCU3 energy and system monitor](docs/assets/readme-hero-banner.png)
 
-**Sentinella: the resource-efficient energy and system guardian for the HomeMatic CCU3.**
+**Sentinella: a low-footprint energy and system monitor for the HomeMatic CCU3.**
 
 Sentinella is a modular, 100% POSIX-shell monitoring platform for CCU3 and RaspberryMatic. A single cron-driven engine collects telemetry from SMA storage, Renault E-Tech vehicles, the CCU3 host itself, and keyless weather services, then publishes `status.json`, writes CCU3 system variables, and dispatches stateful push alerts. No daemon, Node.js, Python, `jq`, or external CDN runs on the CCU3.
 
 ## Capabilities
 
-1. **SMA solar and home storage** — SoC, charge/discharge power, and the grid-surplus signal over HTTPS WebConnect.
-2. **EV telemetry** — Renault E-Tech (Zoe, Megane, R5): SoC, range, plug status, charging state, odometer.
-3. **CCU3 host telemetry** — zero-impact duty cycle via XML-RPC on ports `2001`/`2010`, load average, RAM, uptime.
-4. **Local intelligence** — keyless Open-Meteo weather and an optional experimental forecast.solar PV outlook.
-5. **Stateful multi-channel push** — Signal / CallMeBot with hysteresis, per-event cooldowns, and first-run silence.
-6. **Native plugin manager** — WebUI toggles with zero-overhead execution bypass for disabled plugins.
+1. **SMA solar and home storage**: SoC, charge/discharge power, and the grid-surplus signal over HTTPS WebConnect.
+2. **EV telemetry** (Renault E-Tech): SoC, range, plug status, charging state, odometer for Zoe, Megane, and R5.
+3. **CCU3 host telemetry**: duty cycle via XML-RPC on ports `2001`/`2010`, load average, RAM, uptime.
+4. **Weather and PV outlook**: keyless Open-Meteo weather and an optional experimental forecast.solar yield outlook.
+5. **Stateful multi-channel push**: Signal / CallMeBot with hysteresis, per-event cooldowns, and first-run silence.
+6. **Plugin manager**: WebUI toggles; disabled plugins are skipped at execution time.
 
 | Module | Default | Data | Source |
 |---|---|---|---|
@@ -82,7 +82,7 @@ Measured with `BENCHMARK_RUNS=20 ./tools/benchmark_footprint.sh` on the developm
 | **Peak process RSS** | **~1.2 MB** on ash (< 0.25% of 1 GB) | `<= 2.5 MB` | **PASS** |
 | **RF duty cycle** | **0%** (HTTPS and local XML-RPC only) | `0% Hard Cap` | **PASS** |
 
-The figures above are deliberately bound-based. Point-in-time byte counts belong in this table, not in a graphic that outlives the release. The `<= 400 KB` footprint guard is a self-imposed project constraint to guarantee zero bloat on the CCU3 storage partition.
+The figures above are bounds, not point-in-time snapshots. The `<= 400 KB` footprint guard is a self-imposed project constraint that keeps the add-on small on the CCU3 storage partition.
 
 ### Plugin contract and card layouts
 
@@ -206,10 +206,10 @@ If `state/signal` is missing and the first reading lands between `THRESHOLD_RESE
 
 | Key | Default | Description |
 |---|---|---|
-| `SMA_IP` | — | Inverter IPv4 address or hostname |
+| `SMA_IP` | - | Inverter IPv4 address or hostname |
 | `SMA_PORT` | `443` | HTTPS port |
 | `SMA_ROLE` | `usr` | Login role (`usr` or `user`) |
-| `SMA_PASS` | — | Inverter WebUI password |
+| `SMA_PASS` | - | Inverter WebUI password |
 | `BATTERY_SOC_KEY` | `6100_00295A00` | Battery SoC channel key |
 | `BATTERY_CHARGE_POWER_KEY` | `6100_00417800` | Charge power key (empty disables) |
 | `BATTERY_DISCHARGE_POWER_KEY` | `6100_00417900` | Discharge power key (empty disables) |
@@ -252,7 +252,7 @@ Plugins are optional. An unconfigured plugin exits `0` before any network reques
 
 Enabled by default and local-only. Reads the BidCoS duty cycle through `tclrpc.so` XML-RPC on port `2001`, with a fallback to HmIP port `2010`; reads load, RAM, and uptime from `/proc`. If neither XML-RPC endpoint answers, it tries `CCU_SYSINFO_BIN` (default `/bin/hm_sysinfo`) and then `CCU_DUTYCYCLE_FILE` (defaults `/var/status/dutycycle`, `/tmp/dutycycle`, `/var/run/dutycycle`).
 
-The status badge follows the duty cycle: below `50%` OPTIMAL, `50–80%` WARNING, above `80%` CRITICAL.
+The status badge follows the duty cycle: below `50%` OPTIMAL, `50-80%` WARNING, above `80%` CRITICAL.
 
 ### Weather (Open-Meteo)
 
@@ -320,4 +320,4 @@ See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) and [docs/PROTOCOL.md](do
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT (see [LICENSE](LICENSE)).

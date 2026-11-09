@@ -1,19 +1,19 @@
 # Sentinella
 
-![Sentinella — modularer Energie- und Systemwächter für die CCU3](docs/assets/readme-hero-banner.png)
+![Sentinella: modularer Energie- und Systemmonitor für die CCU3](docs/assets/readme-hero-banner.png)
 
-**Sentinella: Der ressourcenschonende Energie- & Systemwächter für die HomeMatic CCU3.**
+**Sentinella: ein schlanker Energie- und Systemmonitor für die HomeMatic CCU3.**
 
 Sentinella ist eine modulare Monitoring-Plattform auf Basis von 100 % POSIX-Shell für CCU3 und RaspberryMatic. Eine einzige cron-gesteuerte Engine sammelt Telemetrie von SMA-Speichern, Renault E-Tech-Fahrzeugen, dem CCU3-Host selbst und schlüsselfreien Wetterdiensten. Sie veröffentlicht `status.json`, schreibt CCU3-Systemvariablen und versendet zustandsbehaftete Push-Benachrichtigungen. Auf der CCU3 laufen kein Daemon, kein Node.js, kein Python, kein `jq` und kein externes CDN.
 
 ## Funktionsumfang
 
-1. **SMA Solar und Heimspeicher** — SoC, Lade-/Entladeleistung und Überschuss-Signal über HTTPS-WebConnect.
-2. **EV-Telemetrie** — Renault E-Tech (Zoe, Megane, R5): SoC, Reichweite, Steckerstatus, Ladestatus, Kilometerstand.
-3. **CCU3-Host-Telemetrie** — nahezu lastfreier Duty Cycle über XML-RPC auf Port `2001`/`2010`, Load, RAM, Uptime.
-4. **Lokale Intelligenz** — schlüsselfreies Open-Meteo-Wetter und eine optionale experimentelle PV-Prognose von forecast.solar.
-5. **Zustandsbehaftete Multi-Channel-Pushes** — Signal / CallMeBot mit Hysterese, Cooldowns und Stille beim Erstlauf.
-6. **Nativer Plugin-Manager** — WebUI-Schalter mit vollständigem Ausführungs-Bypass für deaktivierte Plugins.
+1. **SMA Solar und Heimspeicher**: SoC, Lade-/Entladeleistung und Überschuss-Signal über HTTPS-WebConnect.
+2. **EV-Telemetrie** (Renault E-Tech): SoC, Reichweite, Steckerstatus, Ladestatus und Kilometerstand für Zoe, Megane und R5.
+3. **CCU3-Host-Telemetrie**: nahezu lastfreier Duty Cycle über XML-RPC auf Port `2001`/`2010`, Load, RAM, Uptime.
+4. **Wetter und PV-Prognose**: schlüsselfreies Open-Meteo-Wetter und eine optionale experimentelle Ertragsprognose von forecast.solar.
+5. **Zustandsbehaftete Multi-Channel-Pushes**: Signal / CallMeBot mit Hysterese, Cooldowns und Stille beim Erstlauf.
+6. **Plugin-Manager**: WebUI-Schalter; deaktivierte Plugins werden bei der Ausführung übersprungen.
 
 | Modul | Standard | Daten | Quelle |
 |---|---|---|---|
@@ -82,7 +82,7 @@ Gemessen mit `BENCHMARK_RUNS=20 ./tools/benchmark_footprint.sh` auf dem Entwickl
 | **Peak-RSS** | **~1,2 MB** auf ash (< 0,25 % von 1 GB) | `<= 2,5 MB` | **PASS** |
 | **Funk-/RF-Duty-Cycle** | **0 %** (nur HTTPS und lokales XML-RPC) | `0 % Hard Cap` | **PASS** |
 
-Die Tabelle zeigt Budgets, keine Momentaufnahme. Aktuelle Byte-Zahlen werden mit jedem Release neu gemessen. Die `<= 400 KB`-Grenze ist ein selbst auferlegtes Projekt-Budget, das jeglichen Bloat auf der CCU3-Speicherpartition ausschließt.
+Die Tabelle zeigt Budgets, keine Momentaufnahme. Aktuelle Byte-Zahlen werden mit jedem Release neu gemessen. Die `<= 400 KB`-Grenze ist ein selbst auferlegtes Projekt-Budget, damit das Add-on auf der CCU3-Speicherpartition klein bleibt.
 
 ## Voraussetzungen
 
@@ -192,10 +192,10 @@ Fehlt `state/signal` beim ersten Lauf und liegt der SoC zwischen `THRESHOLD_RESE
 
 | Schlüssel | Standard | Beschreibung |
 |---|---|---|
-| `SMA_IP` | — | IPv4-Adresse oder Hostname des Wechselrichters |
+| `SMA_IP` | - | IPv4-Adresse oder Hostname des Wechselrichters |
 | `SMA_PORT` | `443` | HTTPS-Port |
 | `SMA_ROLE` | `usr` | Benutzerrolle (`usr` oder `user`) |
-| `SMA_PASS` | — | Passwort der Wechselrichter-WebUI |
+| `SMA_PASS` | - | Passwort der Wechselrichter-WebUI |
 | `BATTERY_SOC_KEY` | `6100_00295A00` | Kanalschlüssel für den Batterie-SoC |
 | `BATTERY_CHARGE_POWER_KEY` | `6100_00417800` | Ladeleistung in W (leer deaktiviert) |
 | `BATTERY_DISCHARGE_POWER_KEY` | `6100_00417900` | Entladeleistung in W (leer deaktiviert) |
@@ -238,7 +238,7 @@ Plugins sind optional. Ein nicht konfiguriertes Plugin endet mit `0`, bevor es e
 
 Standardmäßig aktiv und rein lokal. Liest den BidCoS-Duty-Cycle über `tclrpc.so`-XML-RPC auf Port `2001`, mit Fallback auf HmIP-Port `2010`; Load, RAM und Uptime kommen aus `/proc`. Antwortet kein XML-RPC-Endpunkt, folgen `CCU_SYSINFO_BIN` (Standard `/bin/hm_sysinfo`) und `CCU_DUTYCYCLE_FILE` (Standard `/var/status/dutycycle`, `/tmp/dutycycle`, `/var/run/dutycycle`).
 
-Der Status-Badge folgt dem Duty Cycle: unter `50 %` OPTIMAL, `50–80 %` WARNING, über `80 %` KRITISCH.
+Der Status-Badge folgt dem Duty Cycle: unter `50 %` OPTIMAL, `50-80 %` WARNING, über `80 %` KRITISCH.
 
 ### Wetter (Open-Meteo)
 
@@ -256,7 +256,7 @@ Schreibgeschützte Telemetrie für MY-Renault-E-Tech-Modelle, darunter Megane, Z
 /usr/local/addons/sentinella/plugins.d/20_renault_zoe.sh --test; echo "exit=$?"
 ```
 
-Die Karte zeigt Batterie-SoC, Reichweite, Steckerstatus, Ladestatus und – wenn der Cockpit-Endpunkt ihn liefert – den Kilometerstand. Aktive HVAC-Befehle (`--start-hvac`, `--stop-hvac`, `api/action_zoe.cgi`) liefern derzeit `HVAC feature temporarily disabled`; das Plugin ist schreibgeschützt.
+Die Karte zeigt Batterie-SoC, Reichweite, Steckerstatus, Ladestatus und, wenn der Cockpit-Endpunkt ihn liefert, den Kilometerstand. Aktive HVAC-Befehle (`--start-hvac`, `--stop-hvac`, `api/action_zoe.cgi`) liefern derzeit `HVAC feature temporarily disabled`; das Plugin ist schreibgeschützt.
 
 ## Fehlerbehebung
 
@@ -302,4 +302,4 @@ python3 tools/speedwire_sniffer.py --interface 192.168.178.10 --count 5
 
 ## Lizenz
 
-MIT — siehe [LICENSE](LICENSE).
+MIT (siehe [LICENSE](LICENSE)).

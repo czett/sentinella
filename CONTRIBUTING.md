@@ -61,9 +61,9 @@ Plugins live in `plugins.d/` (mode `755`). Each plugin runs independently, reads
 
 ### The three layouts
 
-1. **`stat`** — hero metric plus rows. Requires `primary: {value, unit, label}` and optional `secondary_metrics: [{label, value, unit?}]`. Use for state of charge, live power, or single-device telemetry.
-2. **`delta`** — hero metric plus trend. Requires `primary`, `delta: {direction: "up"|"down"|"neutral", value, comparison}`, and optional `secondary_metrics`. Use for forecasts, day-over-day comparisons, and tariffs.
-3. **`list`** — key-value ledger. Uses `secondary_metrics: [{label, value, unit?}]`. Use for wallboxes, heat pumps, and multi-row device status.
+1. **`stat`**: hero metric plus rows. Requires `primary: {value, unit, label}` and optional `secondary_metrics: [{label, value, unit?}]`. Use for state of charge, live power, or single-device telemetry.
+2. **`delta`**: hero metric plus trend. Requires `primary`, `delta: {direction: "up"|"down"|"neutral", value, comparison}`, and optional `secondary_metrics`. Use for forecasts, day-over-day comparisons, and tariffs.
+3. **`list`**: key-value ledger. Uses `secondary_metrics: [{label, value, unit?}]`. Use for wallboxes, heat pumps, and multi-row device status.
 
 ### i18n (DE / EN)
 
