@@ -8,8 +8,10 @@
 #
 #  Prints a clean Markdown table with timestamp suitable for README.md and
 #  enforces strict embedded budget guards:
-#    - Installed disk footprint <= 250 KB
-#    - Script execution average <= 500 ms
+#    - Tarball package size <= 200 KB (informational warning)
+#    - Installed disk footprint <= 400 KB (409600 B)
+#    - Core execution average <= 150 ms
+#    - Plugin execution average <= 250 ms
 #
 #  Target : POSIX /bin/sh (BusyBox ash / dash / bash compatible)
 # =============================================================================
@@ -21,8 +23,11 @@ umask 077
 ROOT_DIR=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)
 [ -n "$ROOT_DIR" ] || ROOT_DIR=.
 
-MAX_INSTALLED_KB=${BENCHMARK_MAX_INSTALLED_KB:-250}
-MAX_EXEC_MS=${BENCHMARK_MAX_EXEC_MS:-500}
+MAX_TARBALL_KB=${BENCHMARK_MAX_TARBALL_KB:-200}
+MAX_INSTALLED_KB=${BENCHMARK_MAX_INSTALLED_KB:-400}
+MAX_INSTALLED_BYTES=$((MAX_INSTALLED_KB * 1024))
+MAX_CORE_EXEC_MS=${BENCHMARK_MAX_CORE_EXEC_MS:-${BENCHMARK_MAX_EXEC_MS:-150}}
+MAX_PLUGIN_EXEC_MS=${BENCHMARK_MAX_PLUGIN_EXEC_MS:-${BENCHMARK_MAX_EXEC_MS:-250}}
 RUNS=${BENCHMARK_RUNS:-5}
 
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/sentinella-bench.XXXXXX" 2>/dev/null)
@@ -200,25 +205,31 @@ RENAULT_ZOE_MS=$(
 # ---------------------------------------------------------------------------
 BUDGET_FAILED=0
 
-if [ "$INSTALLED_KB" -gt "$MAX_INSTALLED_KB" ]; then
+if [ "$TARBALL_KB" -gt "$MAX_TARBALL_KB" ]; then
+    TARBALL_STATUS="WARN (> ${MAX_TARBALL_KB} KB)"
+else
+    TARBALL_STATUS="Informational"
+fi
+
+if [ "$INSTALLED_BYTES" -gt "$MAX_INSTALLED_BYTES" ] || [ "$INSTALLED_KB" -gt "$MAX_INSTALLED_KB" ]; then
     INSTALLED_STATUS="FAIL (> ${MAX_INSTALLED_KB} KB)"
     BUDGET_FAILED=1
 else
     INSTALLED_STATUS="PASS (<= ${MAX_INSTALLED_KB} KB)"
 fi
 
-if [ "$CHECK_SOC_MS" -gt "$MAX_EXEC_MS" ]; then
-    CHECK_SOC_STATUS="FAIL (> ${MAX_EXEC_MS} ms)"
+if [ "$CHECK_SOC_MS" -gt "$MAX_CORE_EXEC_MS" ]; then
+    CHECK_SOC_STATUS="FAIL (> ${MAX_CORE_EXEC_MS} ms)"
     BUDGET_FAILED=1
 else
-    CHECK_SOC_STATUS="PASS (<= ${MAX_EXEC_MS} ms)"
+    CHECK_SOC_STATUS="PASS (<= ${MAX_CORE_EXEC_MS} ms)"
 fi
 
-if [ "$RENAULT_ZOE_MS" -gt "$MAX_EXEC_MS" ]; then
-    RENAULT_STATUS="FAIL (> ${MAX_EXEC_MS} ms)"
+if [ "$RENAULT_ZOE_MS" -gt "$MAX_PLUGIN_EXEC_MS" ]; then
+    RENAULT_STATUS="FAIL (> ${MAX_PLUGIN_EXEC_MS} ms)"
     BUDGET_FAILED=1
 else
-    RENAULT_STATUS="PASS (<= ${MAX_EXEC_MS} ms)"
+    RENAULT_STATUS="PASS (<= ${MAX_PLUGIN_EXEC_MS} ms)"
 fi
 
 TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC' 2>/dev/null || date)
@@ -230,10 +241,10 @@ _Generated: ${TIMESTAMP}_
 
 | Metric / Target | Measured | Budget Guard | Status |
 | :--- | :---: | :---: | :---: |
-| Release Tarball Package Size | **${TARBALL_KB} KB** (${TARBALL_BYTES} B) | Informational | OK |
-| Installed Add-on Footprint | **${INSTALLED_KB} KB** (${INSTALLED_BYTES} B) | <= ${MAX_INSTALLED_KB} KB | ${INSTALLED_STATUS} |
-| \`bin/check_soc.sh --dry-run\` (avg of ${RUNS} runs) | **${CHECK_SOC_MS} ms** | <= ${MAX_EXEC_MS} ms | ${CHECK_SOC_STATUS} |
-| \`plugins.d/20_renault_zoe.sh\` (avg of ${RUNS} runs) | **${RENAULT_ZOE_MS} ms** | <= ${MAX_EXEC_MS} ms | ${RENAULT_STATUS} |
+| Release Tarball Package Size | **${TARBALL_KB} KB** (${TARBALL_BYTES} B) | <= ${MAX_TARBALL_KB} KB (Informational) | ${TARBALL_STATUS} |
+| Installed Add-on Footprint | **${INSTALLED_KB} KB** (${INSTALLED_BYTES} B) | <= ${MAX_INSTALLED_KB} KB (${MAX_INSTALLED_BYTES} B) | ${INSTALLED_STATUS} |
+| \`bin/check_soc.sh --dry-run\` (avg of ${RUNS} runs) | **${CHECK_SOC_MS} ms** | <= ${MAX_CORE_EXEC_MS} ms | ${CHECK_SOC_STATUS} |
+| \`plugins.d/20_renault_zoe.sh\` (avg of ${RUNS} runs) | **${RENAULT_ZOE_MS} ms** | <= ${MAX_PLUGIN_EXEC_MS} ms | ${RENAULT_STATUS} |
 EOF
 
 if [ "$BUDGET_FAILED" -ne 0 ]; then

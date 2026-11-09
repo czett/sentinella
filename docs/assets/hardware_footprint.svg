@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1000" height="440" viewBox="0 0 1000 440" role="img" aria-labelledby="title desc">
   <title id="title">Sentinella hardware utilization corridor</title>
-  <desc id="desc">Four operating corridors for install footprint, peak RSS, run latency and radio duty cycle. Blue marks the operating range; red marks the hard bound.</desc>
+  <desc id="desc">Four operating corridors for install footprint, peak RSS, run latency and radio duty cycle. Blue marks the operating range; red marks the project budget guards.</desc>
 
   <rect width="1000" height="440" fill="#f8f8f9"/>
 
@@ -15,52 +15,53 @@
     <text x="280" y="90" fill="#71717a" font-size="9.5" letter-spacing="1.2">OPERATING CORRIDOR</text>
     <text x="960" y="90" fill="#71717a" font-size="9.5" letter-spacing="1.2" text-anchor="end">BOUND</text>
 
-    <!-- 01 Install footprint: 0 .. 250 KB, operating range 0 .. 180 KB -->
+    <!-- 01 Install footprint: < 400 KB budget guard -->
     <g>
       <text x="40" y="123" fill="#71717a" font-size="9" font-weight="700" letter-spacing="1.1">01</text>
       <text x="76" y="125" fill="#0a0a0c" font-size="13" font-weight="700" letter-spacing="1.15">FLASH / INSTALL</text>
       <text x="76" y="143" fill="#52525b" font-size="10.5">Add-on tree under /usr/local/addons</text>
 
       <rect x="280" y="124" width="620" height="8" rx="4" fill="#e4e4e7"/>
-      <rect x="280" y="124" width="446.4" height="8" rx="4" fill="#183adb"/>
+      <rect x="280" y="124" width="382" height="8" rx="4" fill="#183adb"/>
       <line x1="900" y1="116" x2="900" y2="140" stroke="#e1261c" stroke-width="2"/>
       <text x="280" y="152" fill="#71717a" font-size="9">0</text>
 
-      <text x="960" y="126" fill="#0a0a0c" font-size="13" font-weight="700" text-anchor="end">~180 KB</text>
-      <text x="960" y="143" fill="#52525b" font-size="10" text-anchor="end">250 KB hard ceiling</text>
+      <text x="960" y="126" fill="#0a0a0c" font-size="13" font-weight="700" text-anchor="end">&lt; 400 KB budget guard</text>
+      <text x="960" y="143" fill="#52525b" font-size="10" text-anchor="end">project storage ceiling</text>
     </g>
 
-    <!-- 02 Peak RSS: 0 .. 1.5 MB, operating range 0 .. 1.2 MB -->
+    <!-- 02 Peak RSS: <= 2.5 MB peak RSS (< 0.25% of 1 GB RAM) -->
     <g>
       <text x="40" y="203" fill="#71717a" font-size="9" font-weight="700" letter-spacing="1.1">02</text>
       <text x="76" y="205" fill="#0a0a0c" font-size="13" font-weight="700" letter-spacing="1.15">PEAK RSS / RUN</text>
       <text x="76" y="223" fill="#52525b" font-size="10.5">Short-lived process, no idle daemon</text>
 
       <rect x="280" y="204" width="620" height="8" rx="4" fill="#e4e4e7"/>
-      <rect x="280" y="204" width="496" height="8" rx="4" fill="#183adb"/>
-      <line x1="776" y1="196" x2="776" y2="220" stroke="#e1261c" stroke-width="2"/>
+      <rect x="280" y="204" width="298" height="8" rx="4" fill="#183adb"/>
+      <line x1="900" y1="196" x2="900" y2="220" stroke="#e1261c" stroke-width="2"/>
       <text x="280" y="232" fill="#71717a" font-size="9">0</text>
 
-      <text x="960" y="206" fill="#0a0a0c" font-size="13" font-weight="700" text-anchor="end">≤ 1.2 MB</text>
-      <text x="960" y="223" fill="#52525b" font-size="10" text-anchor="end">0.12% of 1 GB RAM</text>
+      <text x="960" y="206" fill="#0a0a0c" font-size="13" font-weight="700" text-anchor="end">&lt;= 2.5 MB peak RSS</text>
+      <text x="960" y="223" fill="#52525b" font-size="10" text-anchor="end">(&lt; 0.25% of 1 GB RAM)</text>
     </g>
 
-    <!-- 03 Run latency: 0 .. 50 ms, operating band 15 .. 25 ms -->
+    <!-- 03 Run latency: 15-25 ms (< 0.05% CPU allocation) -->
     <g>
       <text x="40" y="283" fill="#71717a" font-size="9" font-weight="700" letter-spacing="1.1">03</text>
       <text x="76" y="285" fill="#0a0a0c" font-size="13" font-weight="700" letter-spacing="1.15">EXECUTION TIME</text>
       <text x="76" y="303" fill="#52525b" font-size="10.5">Local dry run and mock plugin run</text>
 
       <rect x="280" y="284" width="620" height="8" rx="4" fill="#e4e4e7"/>
-      <rect x="466" y="284" width="124" height="8" rx="4" fill="#183adb"/>
-      <line x1="590" y1="276" x2="590" y2="300" stroke="#e1261c" stroke-width="2"/>
+      <rect x="317" y="284" width="55" height="8" rx="4" fill="#183adb"/>
+      <line x1="652" y1="276" x2="652" y2="300" stroke="#e1261c" stroke-width="2"/>
+      <line x1="900" y1="276" x2="900" y2="300" stroke="#e1261c" stroke-width="2"/>
       <text x="280" y="312" fill="#71717a" font-size="9">0</text>
 
-      <text x="960" y="286" fill="#0a0a0c" font-size="13" font-weight="700" text-anchor="end">15–25 ms</text>
-      <text x="960" y="303" fill="#52525b" font-size="10" text-anchor="end">&lt; 0.05% of one CPU-minute</text>
+      <text x="960" y="286" fill="#0a0a0c" font-size="13" font-weight="700" text-anchor="end">15-25 ms</text>
+      <text x="960" y="303" fill="#52525b" font-size="10" text-anchor="end">(&lt; 0.05% CPU allocation)</text>
     </g>
 
-    <!-- 04 RF duty cycle: 0% -->
+    <!-- 04 RF duty cycle: 0% (query-only, no transmit) -->
     <g>
       <text x="40" y="363" fill="#71717a" font-size="9" font-weight="700" letter-spacing="1.1">04</text>
       <text x="76" y="365" fill="#0a0a0c" font-size="13" font-weight="700" letter-spacing="1.15">RADIO / RF DUTY CYCLE</text>
@@ -72,7 +73,7 @@
       <text x="280" y="392" fill="#71717a" font-size="9">0</text>
 
       <text x="960" y="366" fill="#0a0a0c" font-size="13" font-weight="700" text-anchor="end">0%</text>
-      <text x="960" y="383" fill="#52525b" font-size="10" text-anchor="end">query only · no transmit</text>
+      <text x="960" y="383" fill="#52525b" font-size="10" text-anchor="end">(query-only, no transmit)</text>
     </g>
 
     <line x1="40" y1="408" x2="960" y2="408" stroke="#d4d4d8" stroke-width="1"/>
@@ -80,7 +81,7 @@
     <rect x="40" y="421" width="10" height="5" rx="2.5" fill="#183adb"/>
     <text x="58" y="427" fill="#52525b" font-size="9" letter-spacing="0.8">OPERATING CORRIDOR</text>
     <line x1="196" y1="418" x2="196" y2="430" stroke="#e1261c" stroke-width="2"/>
-    <text x="206" y="427" fill="#52525b" font-size="9" letter-spacing="0.8">HARD BOUND</text>
+    <text x="206" y="427" fill="#52525b" font-size="9" letter-spacing="0.8">PROJECT BUDGET GUARDS</text>
     <text x="960" y="427" fill="#71717a" font-size="9" letter-spacing="0.8" text-anchor="end">BUDGETS, NOT SNAPSHOTS · VERIFY WITH tools/benchmark_footprint.sh</text>
   </g>
 </svg>

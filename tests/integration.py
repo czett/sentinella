@@ -2627,6 +2627,15 @@ if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SON
             "benchmark_footprint.sh prints Markdown table with all required rows",
             failures,
         )
+        check(
+            "<= 200 KB (Informational)" in bench_run.stdout
+            and "<= 400 KB (409600 B)" in bench_run.stdout
+            and "PASS (<= 400 KB)" in bench_run.stdout
+            and "<= 150 ms" in bench_run.stdout
+            and "<= 250 ms" in bench_run.stdout,
+            "benchmark_footprint.sh enforces 200 KB tarball, 400 KB (409600 B) install, 150 ms core, and 250 ms plugin guards",
+            failures,
+        )
 
         # 25e. CONTRIBUTING.md completeness check
         contrib_path = ROOT / "CONTRIBUTING.md"

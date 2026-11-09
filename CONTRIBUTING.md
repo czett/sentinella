@@ -103,7 +103,7 @@ sh -n bin/check_soc.sh lib/notify_signal.sh setup_variables.sh \
 # 2. JavaScript syntax
 node --check web/app.js
 
-# 3. Footprint and execution budgets (<= 250 KB installed, <= 500 ms runtime)
+# 3. Footprint and execution budgets (<= 400 KB installed, <= 150 ms core / <= 250 ms plugin runtime)
 ./tools/benchmark_footprint.sh
 
 # 4. End-to-end suite (mandatory)

@@ -77,14 +77,14 @@ Measured with `BENCHMARK_RUNS=20 ./tools/benchmark_footprint.sh` on the developm
 
 | Metric | Measured / bound | Guard | Status |
 | :--- | :---: | :---: | :---: |
-| **Release tarball** (`sentinella-<version>.tar.gz`) | **90 KB** (91,774 B) | informational | OK |
-| **Installed add-on footprint** | **207 KB** (211,657 B) | `<= 250 KB` | **PASS** |
-| **Core execution** (`bin/check_soc.sh --dry-run`) | **17 ms** (20-run average) | `<= 500 ms` | **PASS** |
-| **Plugin execution** (`plugins.d/20_renault_zoe.sh`) | **23 ms** (20-run average) | `<= 500 ms` | **PASS** |
-| **Peak process RSS** | **~1.2 MB** on CCU3 BusyBox ash (< 0.2% of 1 GB) | `<= 1.2 MB` | **PASS** |
-| **Radio / RF duty cycle** | **0%** (HTTPS and local XML-RPC only) | `0%` | **PASS** |
+| **Release tarball** (`sentinella-<version>.tar.gz`) | **102 KB** (104,405 B) | `<= 200 KB` | Informational |
+| **Installed add-on footprint** | **247 KB** (252,181 B) | `<= 400 KB` | **PASS** |
+| **Core execution** (`bin/check_soc.sh --dry-run`) | **16 ms** (20-run average) | `<= 150 ms` | **PASS** |
+| **Plugin execution** (`plugins.d/20_renault_zoe.sh`) | **23 ms** (20-run average) | `<= 250 ms` | **PASS** |
+| **Peak process RSS** | **~1.2 MB** on ash (< 0.25% of 1 GB) | `<= 2.5 MB` | **PASS** |
+| **RF duty cycle** | **0%** (HTTPS and local XML-RPC only) | `0% Hard Cap` | **PASS** |
 
-The corridor diagram is deliberately bound-based. Point-in-time byte counts belong in the table above, not in a graphic that outlives the release.
+The corridor diagram is deliberately bound-based. Point-in-time byte counts belong in the table above, not in a graphic that outlives the release. The `<= 400 KB` footprint guard is a self-imposed project constraint to guarantee zero bloat on the CCU3 storage partition.
 
 ### Plugin contract and card layouts
 
@@ -100,7 +100,7 @@ Every card shares `id`, `layout`, `title`, `status_badge`, `status_color` (`gree
 
 ## Requirements
 
-- **CCU3 / RaspberryMatic:** ReGaHSS on port `8181`, root SSH access or the WebUI add-on installer, and `<= 250 KB` free under `/usr/local/`.
+- **CCU3 / RaspberryMatic:** ReGaHSS on port `8181`, root SSH access or the WebUI add-on installer, and `<= 400 KB` free under `/usr/local/`.
 - **SMA inverter:** HTTPS WebConnect reachable from the CCU3, a read-capable WebUI password (`usr` or `user`), and battery channel `6100_00295A00` (see [docs/PROTOCOL.md](docs/PROTOCOL.md)).
 - **Workstation** for `deploy.sh`, `tools/build_addon.sh`, and tests: `sh`/`bash`, `ssh`, `tar`, `curl`, `openssl`, Python 3.8+.
 

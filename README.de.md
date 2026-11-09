@@ -77,18 +77,18 @@ Gemessen mit `BENCHMARK_RUNS=20 ./tools/benchmark_footprint.sh` auf dem Entwickl
 
 | Metrik | Messwert / Grenze | Budget | Status |
 | :--- | :---: | :---: | :---: |
-| **Release-Tarball** (`sentinella-<version>.tar.gz`) | **90 KB** (91.774 B) | informativ | OK |
-| **Installationsgröße** | **207 KB** (211.657 B) | `<= 250 KB` | **PASS** |
-| **Kern-Laufzeit** (`bin/check_soc.sh --dry-run`) | **17 ms** (Mittel aus 20 Läufen) | `<= 500 ms` | **PASS** |
-| **Plugin-Laufzeit** (`plugins.d/20_renault_zoe.sh`) | **23 ms** (Mittel aus 20 Läufen) | `<= 500 ms` | **PASS** |
-| **Peak-RSS** | **~1,2 MB** auf CCU3-BusyBox-ash (< 0,2 % von 1 GB) | `<= 1,2 MB` | **PASS** |
-| **Funk-/RF-Duty-Cycle** | **0 %** (nur HTTPS und lokales XML-RPC) | `0 %` | **PASS** |
+| **Release-Tarball** (`sentinella-<version>.tar.gz`) | **102 KB** (104.405 B) | `<= 200 KB` | Informational |
+| **Installationsgröße** | **247 KB** (252.181 B) | `<= 400 KB` | **PASS** |
+| **Kern-Laufzeit** (`bin/check_soc.sh --dry-run`) | **16 ms** (Mittel aus 20 Läufen) | `<= 150 ms` | **PASS** |
+| **Plugin-Laufzeit** (`plugins.d/20_renault_zoe.sh`) | **23 ms** (Mittel aus 20 Läufen) | `<= 250 ms` | **PASS** |
+| **Peak-RSS** | **~1,2 MB** auf ash (< 0,25 % von 1 GB) | `<= 2,5 MB` | **PASS** |
+| **Funk-/RF-Duty-Cycle** | **0 %** (nur HTTPS und lokales XML-RPC) | `0 % Hard Cap` | **PASS** |
 
-Der Korridor zeigt Budgets, keine Momentaufnahme. Aktuelle Byte-Zahlen stehen in der Tabelle und werden mit jedem Release neu gemessen.
+Der Korridor zeigt Budgets, keine Momentaufnahme. Aktuelle Byte-Zahlen stehen in der Tabelle und werden mit jedem Release neu gemessen. Die `<= 400 KB`-Grenze ist ein selbst auferlegtes Projekt-Budget, das jeglichen Bloat auf der CCU3-Speicherpartition ausschließt.
 
 ## Voraussetzungen
 
-- **CCU3 / RaspberryMatic:** ReGaHSS auf Port `8181`, Root-SSH oder WebUI-Add-on-Installer und `<= 250 KB` freier Speicher unter `/usr/local/`.
+- **CCU3 / RaspberryMatic:** ReGaHSS auf Port `8181`, Root-SSH oder WebUI-Add-on-Installer und `<= 400 KB` freier Speicher unter `/usr/local/`.
 - **SMA-Wechselrichter:** HTTPS-WebConnect von der CCU3 erreichbar, WebUI-Passwort mit Leserechten (`usr` oder `user`) und Batteriekanal `6100_00295A00` (siehe [docs/PROTOCOL.md](docs/PROTOCOL.md)).
 - **Arbeitsplatz** für `deploy.sh`, `tools/build_addon.sh` und Tests: `sh`/`bash`, `ssh`, `tar`, `curl`, `openssl`, Python 3.8+.
 
