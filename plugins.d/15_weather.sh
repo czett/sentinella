@@ -112,28 +112,6 @@ if [ -n "$CONFIG_FILE" ] && [ -r "$CONFIG_FILE" ]; then
     . "$CONFIG_FILE"
 fi
 
-# Fallback to forecast_solar.env if WEATHER_LAT / WEATHER_LON not configured
-if [ -z "${WEATHER_LAT:-}" ] || [ -z "${WEATHER_LON:-}" ]; then
-    FC_FILE=${FORECAST_SOLAR_ENV:-}
-    if [ -z "$FC_FILE" ]; then
-        for _fc_cand in \
-            "$ADDON_DIR/config/plugins/forecast_solar.env" \
-            /usr/local/addons/sentinella/config/plugins/forecast_solar.env
-        do
-            if [ -r "$_fc_cand" ]; then
-                FC_FILE=$_fc_cand
-                break
-            fi
-        done
-    fi
-    if [ -n "$FC_FILE" ] && [ -r "$FC_FILE" ]; then
-        _fc_lat=$(sed -n 's/^[[:space:]]*FORECAST_LAT[[:space:]]*=[[:space:]]*//p' "$FC_FILE" 2>/dev/null | tail -n 1 | sed -e "s/^['\"]//" -e "s/['\"][[:space:]]*$//")
-        _fc_lon=$(sed -n 's/^[[:space:]]*FORECAST_LON[[:space:]]*=[[:space:]]*//p' "$FC_FILE" 2>/dev/null | tail -n 1 | sed -e "s/^['\"]//" -e "s/['\"][[:space:]]*$//")
-        [ -z "${WEATHER_LAT:-}" ] && [ -n "$_fc_lat" ] && WEATHER_LAT="$_fc_lat"
-        [ -z "${WEATHER_LON:-}" ] && [ -n "$_fc_lon" ] && WEATHER_LON="$_fc_lon"
-    fi
-fi
-
 case "${UI_LANGUAGE:-}" in
     en|EN|en_US|en-US|en_GB|en-GB) UI_LANGUAGE=en ;;
     *) UI_LANGUAGE=de ;;
@@ -142,7 +120,6 @@ esac
 if [ "$UI_LANGUAGE" = "en" ]; then
     I18N_TITLE="WEATHER"
     I18N_LABEL_PRIMARY="TEMPERATURE"
-    I18N_LOCATION="LOCATION"
     I18N_DEFAULT_CITY="LOCAL"
     I18N_MIN_MAX="MIN / MAX"
     I18N_HUMIDITY="HUMIDITY"
@@ -151,7 +128,6 @@ if [ "$UI_LANGUAGE" = "en" ]; then
 else
     I18N_TITLE="WETTER"
     I18N_LABEL_PRIMARY="TEMPERATUR"
-    I18N_LOCATION="STANDORT"
     I18N_DEFAULT_CITY="LOKAL"
     I18N_MIN_MAX="MIN / MAX"
     I18N_HUMIDITY="FEUCHTE"
@@ -159,8 +135,18 @@ else
     I18N_OFFLINE_MSG="Keine Verbindung zu Open-Meteo"
 fi
 
-WEATHER_CITY=$(printf '%s' "${WEATHER_CITY:-}" | tr -d '\r\n\"\\' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-[ -n "$WEATHER_CITY" ] || WEATHER_CITY="$I18N_DEFAULT_CITY"
+sanitize_city() {
+    printf '%s' "${1:-}" | tr -d '\r\n\t"\\$`' \
+        | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+}
+
+trim_ws() {
+    printf '%s' "${1:-}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+}
+
+WEATHER_CITY=$(sanitize_city "${WEATHER_CITY:-}")
+WEATHER_LAT=$(trim_ws "${WEATHER_LAT:-}")
+WEATHER_LON=$(trim_ws "${WEATHER_LON:-}")
 
 STATE_DIR=${WEATHER_STATE_DIR:-$ADDON_DIR/state/plugins}
 OUT_FILE=$STATE_DIR/weather.json
@@ -197,12 +183,162 @@ is_uint() {
     return 0
 }
 
-is_number "$WEATHER_LAT" || WEATHER_LAT=51.51
-is_number "$WEATHER_LON" || WEATHER_LON=7.46
+is_lat() {
+    is_number "$1" && awk -v v="$1" 'BEGIN { exit !(v >= -90 && v <= 90) }'
+}
+
+is_lon() {
+    is_number "$1" && awk -v v="$1" 'BEGIN { exit !(v >= -180 && v <= 180) }'
+}
+
+# ---------------------------------------------------------------------------
+# Location resolution
+# ---------------------------------------------------------------------------
+# Optional last-resort coordinates shared with the PV forecast, used only when
+# IP geolocation is unavailable (or for --print-coords, which never touches
+# the network).
+load_forecast_fallback() {
+    FC_FILE=${FORECAST_SOLAR_ENV:-}
+    if [ -z "$FC_FILE" ]; then
+        for _fc_cand in \
+            "$ADDON_DIR/config/plugins/forecast_solar.env" \
+            /usr/local/addons/sentinella/config/plugins/forecast_solar.env
+        do
+            if [ -r "$_fc_cand" ]; then
+                FC_FILE=$_fc_cand
+                break
+            fi
+        done
+    fi
+    if [ -n "$FC_FILE" ] && [ -r "$FC_FILE" ]; then
+        _fc_lat=$(sed -n 's/^[[:space:]]*FORECAST_LAT[[:space:]]*=[[:space:]]*//p' "$FC_FILE" 2>/dev/null | tail -n 1 | sed -e "s/^['\"]//" -e "s/['\"][[:space:]]*$//")
+        _fc_lon=$(sed -n 's/^[[:space:]]*FORECAST_LON[[:space:]]*=[[:space:]]*//p' "$FC_FILE" 2>/dev/null | tail -n 1 | sed -e "s/^['\"]//" -e "s/['\"][[:space:]]*$//")
+        [ -z "${WEATHER_LAT:-}" ] && [ -n "$_fc_lat" ] && WEATHER_LAT="$_fc_lat"
+        [ -z "${WEATHER_LON:-}" ] && [ -n "$_fc_lon" ] && WEATHER_LON="$_fc_lon"
+    fi
+}
+
+# Sets key=value in an env-style file while preserving unrelated comments and
+# settings. The key is always one of the fixed WEATHER_* names.
+cache_set() {
+    _cs_file=$1
+    _cs_key=$2
+    _cs_val=$3
+    awk -v key="$_cs_key" -v val="$_cs_val" '
+        BEGIN { done = 0 }
+        $0 ~ "^[[:space:]]*" key "[[:space:]]*=" && !done {
+            print key "=\"" val "\""
+            done = 1
+            next
+        }
+        { print }
+        END { if (!done) print key "=\"" val "\"" }
+    ' "$_cs_file" > "$_cs_file.next" 2>/dev/null || return 1
+    mv -f "$_cs_file.next" "$_cs_file" 2>/dev/null || return 1
+    return 0
+}
+
+# Persists only the values that came from IP geolocation. Existing user
+# overrides stay untouched, so a later settings save always wins.
+cache_location() {
+    _cache_file=$1
+    _got_city=$2
+    _city=$3
+    _got_lat=$4
+    _lat=$5
+    _got_lon=$6
+    _lon=$7
+
+    [ -n "$_cache_file" ] || return 0
+    mkdir -p "$(dirname "$_cache_file")" 2>/dev/null || return 0
+    _cache_tmp=$_cache_file.tmp.$$
+    if [ -f "$_cache_file" ]; then
+        cat "$_cache_file" > "$_cache_tmp" 2>/dev/null || return 0
+    else
+        printf '# Sentinella - Weather plugin configuration (auto-detected location)\n' \
+            > "$_cache_tmp" 2>/dev/null || return 0
+    fi
+
+    [ "$_got_city" = "1" ] && cache_set "$_cache_tmp" WEATHER_CITY "$_city"
+    [ "$_got_lat" = "1" ] && cache_set "$_cache_tmp" WEATHER_LAT "$_lat"
+    [ "$_got_lon" = "1" ] && cache_set "$_cache_tmp" WEATHER_LON "$_lon"
+
+    chmod 600 "$_cache_tmp" 2>/dev/null || true
+    if mv -f "$_cache_tmp" "$_cache_file" 2>/dev/null; then
+        chmod 600 "$_cache_file" 2>/dev/null || true
+    else
+        rm -f "$_cache_tmp" 2>/dev/null || true
+    fi
+    return 0
+}
+
+# Fills only empty fields via https://ipapi.co/json/. A value already present
+# in weather.env (from the settings drawer) is a hard user override.
+resolve_ip_location() {
+    [ "${WEATHER_AUTO_LOCATION:-1}" = "0" ] && return 0
+    _ip_url=${WEATHER_IP_URL:-https://ipapi.co/json/}
+    [ -n "$_ip_url" ] || return 0
+
+    _ip_json=$(curl -s --connect-timeout 4 --max-time 8 "$_ip_url" 2>/dev/null) || return 0
+    [ -n "$_ip_json" ] || return 0
+
+    _ip_city=$(printf '%s' "$_ip_json" | tr -d '\r\n' \
+        | sed -n 's/.*"city"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+    _ip_lat=$(printf '%s' "$_ip_json" | tr -d '\r\n' \
+        | sed -n 's/.*"latitude"[[:space:]]*:[[:space:]]*\(-\{0,1\}[0-9][0-9.]*\).*/\1/p' | head -n 1)
+    _ip_lon=$(printf '%s' "$_ip_json" | tr -d '\r\n' \
+        | sed -n 's/.*"longitude"[[:space:]]*:[[:space:]]*\(-\{0,1\}[0-9][0-9.]*\).*/\1/p' | head -n 1)
+
+    _ip_city=$(sanitize_city "$_ip_city")
+    _got_city=0
+    _got_lat=0
+    _got_lon=0
+
+    if [ -z "$WEATHER_CITY" ] && [ -n "$_ip_city" ]; then
+        WEATHER_CITY=$_ip_city
+        _got_city=1
+    fi
+    if [ -z "$WEATHER_LAT" ] && is_lat "$_ip_lat"; then
+        WEATHER_LAT=$_ip_lat
+        _got_lat=1
+    fi
+    if [ -z "$WEATHER_LON" ] && is_lon "$_ip_lon"; then
+        WEATHER_LON=$_ip_lon
+        _got_lon=1
+    fi
+
+    if [ "$_got_city" = "1" ] || [ "$_got_lat" = "1" ] || [ "$_got_lon" = "1" ]; then
+        cache_location "$WEATHER_CACHE_FILE" \
+            "$_got_city" "$WEATHER_CITY" \
+            "$_got_lat" "$WEATHER_LAT" \
+            "$_got_lon" "$WEATHER_LON"
+        log "location resolved via IP: ${WEATHER_CITY:-?} (${WEATHER_LAT:-?}, ${WEATHER_LON:-?})"
+    fi
+}
+
+WEATHER_CACHE_FILE=${CONFIG_FILE:-}
+[ -n "$WEATHER_CACHE_FILE" ] || WEATHER_CACHE_FILE=$ADDON_DIR/config/plugins/weather.env
+
+WEATHER_PRINT_ONLY=0
+if [ "${1:-}" = "--print-coords" ] || [ "${WEATHER_PRINT_COORDS:-0}" = "1" ]; then
+    WEATHER_PRINT_ONLY=1
+fi
+
+if [ "$WEATHER_PRINT_ONLY" = "0" ] &&
+        { [ -z "$WEATHER_CITY" ] || [ -z "$WEATHER_LAT" ] || [ -z "$WEATHER_LON" ]; }; then
+    resolve_ip_location
+fi
+
+if [ -z "$WEATHER_LAT" ] || [ -z "$WEATHER_LON" ]; then
+    load_forecast_fallback
+fi
+is_lat "$WEATHER_LAT" || WEATHER_LAT=51.51
+is_lon "$WEATHER_LON" || WEATHER_LON=7.46
+[ -n "$WEATHER_CITY" ] || WEATHER_CITY="$I18N_DEFAULT_CITY"
 is_uint "$WEATHER_CONNECT_TIMEOUT" || WEATHER_CONNECT_TIMEOUT=5
 is_uint "$WEATHER_MAX_TIME" || WEATHER_MAX_TIME=15
 
-if [ "${1:-}" = "--print-coords" ] || [ "${WEATHER_PRINT_COORDS:-0}" = "1" ]; then
+if [ "$WEATHER_PRINT_ONLY" = "1" ]; then
     printf '%s,%s\n' "$WEATHER_LAT" "$WEATHER_LON"
     exit 0
 fi
@@ -225,7 +361,6 @@ write_neutral() {
   "timestamp": "$_ts",
   "primary": { "value": "--", "unit": "°C", "label": "$I18N_LABEL_PRIMARY" },
   "secondary_metrics": [
-    { "label": "$I18N_LOCATION", "value": "$WEATHER_CITY" },
     { "label": "$I18N_MIN_MAX", "value": "--" },
     { "label": "$I18N_HUMIDITY", "value": "--" },
     { "label": "$I18N_WIND", "value": "--" }
@@ -433,7 +568,6 @@ cat > "$OUT_FILE.tmp.$$" <<EOF
   "timestamp": "$NOW_ISO",
   "primary": { "value": "$FINAL_TEMP", "unit": "°C", "label": "$I18N_LABEL_PRIMARY" },
   "secondary_metrics": [
-    { "label": "$I18N_LOCATION", "value": "$WEATHER_CITY" },
     { "label": "$I18N_MIN_MAX", "value": "$FINAL_MINMAX" },
     { "label": "$I18N_HUMIDITY", "value": "$FINAL_RH" },
     { "label": "$I18N_WIND", "value": "$FINAL_WIND" }

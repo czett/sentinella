@@ -68,7 +68,9 @@ fail() {
     exit 0
 }
 
-# Prints 1 or 0 for the given variable. PLUGIN_FORECAST_SOLAR defaults to 0 (disabled).
+# Prints 1 or 0 for the given variable. Optional plugins (PV forecast and
+# Renault E-Tech) default to 0 (disabled) on a clean install; the core CCU3
+# health and weather plugins default to 1 (enabled).
 flag_value() {
     _v=""
     if [ -f "$PLUGINS_ENV" ] && [ ! -L "$PLUGINS_ENV" ]; then
@@ -79,7 +81,7 @@ flag_value() {
         1|true|TRUE|on|ON|yes|YES) printf '1' ;;
         0|false|FALSE|off|OFF|no|NO) printf '0' ;;
         *)
-            if [ "$1" = "PLUGIN_FORECAST_SOLAR" ]; then
+            if [ "$1" = "PLUGIN_FORECAST_SOLAR" ] || [ "$1" = "PLUGIN_RENAULT_ZOE" ]; then
                 printf '0'
             else
                 printf '1'

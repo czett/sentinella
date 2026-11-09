@@ -47,7 +47,7 @@ OUT_FILE=${RENAULT_OUT_FILE:-$STATE_DIR/renault_zoe.json}
 # Plugin Manager Execution Guard (config/plugins.env or .disabled marker)
 # ---------------------------------------------------------------------------
 if [ "$TEST_MODE" = "0" ] && [ "$HVAC_MODE" = "0" ]; then
-    PLUGIN_RENAULT_ZOE=1
+    PLUGIN_RENAULT_ZOE=0
     for _pm_env in \
         "${SENTINELLA_PLUGINS_ENV:-}" \
         "$ADDON_DIR/config/plugins.env" \
@@ -59,7 +59,7 @@ if [ "$TEST_MODE" = "0" ] && [ "$HVAC_MODE" = "0" ]; then
             break
         fi
     done
-    case "${PLUGIN_RENAULT_ZOE:-1}" in
+    case "${PLUGIN_RENAULT_ZOE:-0}" in
         0|false|FALSE|off|OFF|no|NO)
             rm -f "$OUT_FILE" 2>/dev/null || true
             exit 0

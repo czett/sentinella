@@ -161,6 +161,12 @@ cat > "$RENAULT_MOCK_JSON" <<'EOF'
 {"data":{"type":"Car","id":"VF1AG000012345678","attributes":{"timestamp":"2026-11-08T12:00:00Z","batteryLevel":78,"batteryAutonomy":214,"plugStatus":1,"chargingStatus":1.0}}}
 EOF
 
+# Renault is an optional plugin and disabled on clean installs. The benchmark
+# enables it explicitly so the measurement covers the full telemetry path.
+BENCH_PLUGINS_ENV="$WORK_DIR/bench-plugins.env"
+printf "PLUGIN_RENAULT_ZOE='1'\n" > "$BENCH_PLUGINS_ENV"
+chmod 600 "$BENCH_PLUGINS_ENV" 2>/dev/null || true
+
 benchmark_cmd() {
     _total=0
     _i=1
@@ -185,6 +191,7 @@ RENAULT_ZOE_MS=$(
     RENAULT_ADDON_DIR="$STAGE_DIR" \
     RENAULT_ENV="$RENAULT_BENCH_ENV" \
     RENAULT_MOCK_BATTERY_JSON="$RENAULT_MOCK_JSON" \
+    SENTINELLA_PLUGINS_ENV="$WORK_DIR/bench-plugins.env" \
     benchmark_cmd "$STAGE_DIR/plugins.d/20_renault_zoe.sh"
 )
 

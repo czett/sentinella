@@ -257,15 +257,15 @@ Der Status-Badge folgt dem Duty Cycle: unter `50 %` OPTIMAL, `50–80 %` WARNING
 
 ### Wetter (Open-Meteo)
 
-Kein API-Schlüssel. `WEATHER_LAT` und `WEATHER_LON` in `config/plugins/weather.env` setzen. Ohne Datei nutzt das Plugin die Prognose-Koordinaten oder `51.51, 7.46`.
+Standardmäßig aktiv. Kein API-Schlüssel. `WEATHER_CITY`, `WEATHER_LAT` und `WEATHER_LON` in `config/plugins/weather.env` setzen, um den Standort zu überschreiben. Fehlt einer der Werte, löst das Plugin ihn einmalig über `https://ipapi.co/json/` auf und speichert das Ergebnis in `weather.env`; explizite Werte aus dem Einstellungs-Menü werden nie ersetzt.
 
 ### PV-Prognose (forecast.solar)
 
-Kein API-Schlüssel. `FORECAST_LAT`, `FORECAST_LON`, `FORECAST_DEC`, `FORECAST_AZ` und `FORECAST_KWP` in `config/plugins/forecast_solar.env` überschreiben.
+Kein API-Schlüssel. Standardmäßig deaktiviert; im Einstellungs-Menü aktivieren. `FORECAST_LAT`, `FORECAST_LON`, `FORECAST_DEC`, `FORECAST_AZ` und `FORECAST_KWP` in `config/plugins/forecast_solar.env` überschreiben.
 
 ### Renault E-Tech
 
-Schreibgeschützte Telemetrie für MY-Renault-E-Tech-Modelle, darunter Megane, Zoe und R5. `RENAULT_USER`, `RENAULT_PASS` und `RENAULT_VIN` im Einstellungs-Menü oder in `config/plugins/renault.env` (Modus `600`) setzen. Das Plugin speichert Gigya-`id_token` und Kamereon-`accountId` für sechs Stunden in `state/plugins/.renault_session` und erneuert sie bei `401`/`403`.
+Schreibgeschützte Telemetrie für MY-Renault-E-Tech-Modelle, darunter Megane, Zoe und R5. Standardmäßig deaktiviert; im Einstellungs-Menü aktivieren. `RENAULT_USER`, `RENAULT_PASS` und `RENAULT_VIN` im Einstellungs-Menü oder in `config/plugins/renault.env` (Modus `600`) setzen. Das Plugin speichert Gigya-`id_token` und Kamereon-`accountId` für sechs Stunden in `state/plugins/.renault_session` und erneuert sie bei `401`/`403`.
 
 ```sh
 /usr/local/addons/sentinella/plugins.d/20_renault_zoe.sh --test; echo "exit=$?"

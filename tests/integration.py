@@ -1526,6 +1526,9 @@ eval(mockEnv);
         fc_script = fc_addon / "plugins.d" / "30_forecast_solar.sh"
         shutil.copy2(plugin_path, fc_script)
         fc_script.chmod(0o755)
+        # Optional plugin, disabled on clean installs: enable explicitly for the
+        # functional forecast tests.
+        (fc_addon / "config" / "plugins.env").write_text("PLUGIN_FORECAST_SOLAR='1'\n")
         fc_json_path = fc_addon / "state" / "plugins" / "forecast_solar.json"
 
         fc_env = os.environ.copy()
@@ -1696,6 +1699,9 @@ eval(mockEnv);
         zoe_script = zoe_addon / "plugins.d" / "20_renault_zoe.sh"
         shutil.copy2(zoe_plugin_path, zoe_script)
         zoe_script.chmod(0o755)
+        # Optional plugin, disabled on clean installs: enable explicitly for the
+        # functional Renault tests.
+        (zoe_addon / "config" / "plugins.env").write_text("PLUGIN_RENAULT_ZOE='1'\n")
         check(
             (zoe_script.stat().st_mode & 0o777) == 0o755,
             "20_renault_zoe.sh has mode 755",
@@ -1988,6 +1994,7 @@ eval(mockEnv);
         (rl_addon / "state" / "plugins").mkdir(parents=True)
         shutil.copy2(zoe_plugin_path, rl_addon / "plugins.d" / "20_renault_zoe.sh")
         (rl_addon / "plugins.d" / "20_renault_zoe.sh").chmod(0o755)
+        (rl_addon / "config" / "plugins.env").write_text("PLUGIN_RENAULT_ZOE='1'\n")
         rl_env_file = rl_addon / "config" / "plugins" / "renault.env"
         rl_env_file.write_text(
             "RENAULT_USER='zoe@example.com'\n"
@@ -2263,6 +2270,7 @@ eval(mockEnv);
             "RENAULT_VIN='../../etc/passwd'\n"
         )
         trav_env_file.chmod(0o600)
+        (trav_addon / "config" / "plugins.env").write_text("PLUGIN_RENAULT_ZOE='1'\n")
         trav_env = os.environ.copy()
         trav_env["RENAULT_GIGYA_URL"] = f"http://127.0.0.1:{renault_port}"
         trav_env["RENAULT_KAMEREON_URL"] = f"http://127.0.0.1:{renault_port}"
@@ -2990,6 +2998,7 @@ if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SON
         weather_env["WEATHER_ADDON_DIR"] = str(weather_test_dir)
         weather_env["WEATHER_STATE_DIR"] = str(weather_state_dir)
         weather_env["WEATHER_MOCK_JSON"] = str(mock_weather_json)
+        weather_env["WEATHER_AUTO_LOCATION"] = "0"
         weather_env["UI_LANGUAGE"] = "de"
 
         w_res = subprocess.run([str(weather_plugin)], env=weather_env, capture_output=True, text=True, timeout=10)
@@ -3010,7 +3019,10 @@ if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SON
 
         w_sec_map = {m["label"]: m["value"] for m in w_card.get("secondary_metrics", [])}
         check(w_card.get("city") == "LOKAL", f"weather card city defaults to LOKAL (got {w_card.get('city')!r})", failures)
-        check(w_sec_map.get("STANDORT") == "LOKAL", f"STANDORT metric defaults to LOKAL (got {w_sec_map.get('STANDORT')!r})", failures)
+        check("STANDORT" not in w_sec_map,
+              f"location is not duplicated as a secondary metric (got {list(w_sec_map)})", failures)
+        check(len(w_card.get("secondary_metrics", [])) == 3,
+              "weather card has 3 secondary metrics (MIN/MAX, FEUCHTE, WIND)", failures)
         check(w_sec_map.get("MIN / MAX") == "8°C / 16°C", f"MIN / MAX matches 8°C / 16°C (got {w_sec_map.get('MIN / MAX')!r})", failures)
         check(w_sec_map.get("FEUCHTE") == "68%", f"FEUCHTE matches 68% (got {w_sec_map.get('FEUCHTE')!r})", failures)
         check(w_sec_map.get("WIND") == "18 km/h", f"WIND matches 18 km/h (got {w_sec_map.get('WIND')!r})", failures)
@@ -3078,6 +3090,58 @@ if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SON
         )
         check("52.20,8.10" in sh_check.stdout, f"fell back to forecast_solar.env coords (got {sh_check.stdout.strip()!r})", failures)
 
+        # 28h. IP auto-location: resolve once, cache in weather.env, keep overrides
+        auto_dir = tmp / "weather_auto"
+        auto_state_dir = auto_dir / "state" / "plugins"
+        auto_state_dir.mkdir(parents=True, exist_ok=True)
+        auto_card_path = auto_state_dir / "weather.json"
+        auto_cache_path = auto_dir / "config" / "plugins" / "weather.env"
+        auto_mock = auto_dir / "mock_weather.json"
+        auto_mock.write_text(mock_weather_json.read_text())
+        auto_ip = auto_dir / "ip.json"
+        auto_ip.write_text(json.dumps({
+            "city": "Musterstadt",
+            "latitude": 48.12,
+            "longitude": 11.55,
+        }))
+
+        auto_env = dict(os.environ)
+        auto_env["WEATHER_ADDON_DIR"] = str(auto_dir)
+        auto_env["WEATHER_STATE_DIR"] = str(auto_state_dir)
+        auto_env["WEATHER_MOCK_JSON"] = str(auto_mock)
+        auto_env["WEATHER_IP_URL"] = auto_ip.as_uri()
+        auto_env["WEATHER_AUTO_LOCATION"] = "1"
+        auto_env["UI_LANGUAGE"] = "de"
+
+        subprocess.run([str(weather_plugin)], env=auto_env, capture_output=True, text=True, timeout=10)
+        auto_card = json.loads(auto_card_path.read_text())
+        check(auto_card.get("city") == "Musterstadt",
+              f"IP city is used when weather.env is missing (got {auto_card.get('city')!r})", failures)
+        check(auto_cache_path.is_file(), "auto-detected location is cached in weather.env", failures)
+        cached_env = auto_cache_path.read_text()
+        for expected in ('WEATHER_CITY="Musterstadt"', 'WEATHER_LAT="48.12"', 'WEATHER_LON="11.55"'):
+            check(expected in cached_env, f"weather.env caches {expected} (got {cached_env!r})", failures)
+        check((auto_cache_path.stat().st_mode & 0o777) == 0o600, "weather.env mode is 600", failures)
+
+        # A second run must reuse the cache instead of querying IP again.
+        auto_ip.write_text(json.dumps({"city": "Other", "latitude": 1.0, "longitude": 2.0}))
+        subprocess.run([str(weather_plugin)], env=auto_env, capture_output=True, text=True, timeout=10)
+        auto_card = json.loads(auto_card_path.read_text())
+        check(auto_card.get("city") == "Musterstadt", "cached location is reused on the next run", failures)
+
+        # Explicit settings-drawer values are hard overrides.
+        auto_cache_path.write_text(
+            'WEATHER_CITY="Eigene Stadt"\nWEATHER_LAT=50.0\nWEATHER_LON=8.0\n'
+        )
+        subprocess.run([str(weather_plugin)], env=auto_env, capture_output=True, text=True, timeout=10)
+        auto_card = json.loads(auto_card_path.read_text())
+        check(auto_card.get("city") == "Eigene Stadt",
+              f"user city override wins over IP lookup (got {auto_card.get('city')!r})", failures)
+        check('WEATHER_CITY="Eigene Stadt"' in auto_cache_path.read_text(),
+              "user override is not overwritten in weather.env", failures)
+        auto_sec_map = {m["label"]: m["value"] for m in auto_card.get("secondary_metrics", [])}
+        check("STANDORT" not in auto_sec_map, "auto-located card keeps location out of secondary metrics", failures)
+
         # 28g. WebUI I18N dictionary coverage
         app_js_text = (ROOT / "web" / "app.js").read_text()
         for term in ["WETTER", "WEATHER", "TEMPERATUR", "FEUCHTE", "HUMIDITY", "WIND", "MIN / MAX", "KLAR", "CLEAR", "REGEN", "RAIN", "SCHNEE", "SNOW"]:
@@ -3104,9 +3168,14 @@ if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SON
 
         st, pm_get = parse_cgi(run_cgi(pm_addon, "GET", "plugin_manager"))
         check(st == "Content-Type: application/json; charset=utf-8", "plugin_manager GET headers", failures)
-        expected_defaults = {i: (i != "30_forecast_solar") for i in all_ids}
+        expected_defaults = {
+            "10_ccu_health": True,
+            "15_weather": True,
+            "20_renault_zoe": False,
+            "30_forecast_solar": False,
+        }
         check(pm_get.get("plugins") == expected_defaults,
-              f"default plugin states have 30_forecast_solar disabled (got {pm_get.get('plugins')})", failures)
+              f"clean defaults enable only CCU3 Health and Weather (got {pm_get.get('plugins')})", failures)
 
         (pm_cards / "weather.json").write_text('{"id":"weather"}')
         st, pm_res = parse_cgi(pm_post('{"id":"15_weather","enabled":false}'))
@@ -3187,12 +3256,16 @@ if (!m) { console.error("filterEnabledPlugins not found"); process.exit(1); }
 const f = new Function(m[0] + "; return filterEnabledPlugins;")();
 const cards = [{id:"ccu_health"},{id:"weather"},{id:"forecast_solar"},{id:"renault_zoe"},null];
 const out = f(cards, {"15_weather": false, "10_ccu_health": true, "30_forecast_solar": true}).map(c => c.id);
-if (JSON.stringify(out) !== JSON.stringify(["ccu_health","forecast_solar","renault_zoe"])) {
+if (JSON.stringify(out) !== JSON.stringify(["ccu_health","forecast_solar"])) {
     console.error("unexpected " + JSON.stringify(out)); process.exit(1);
 }
 const defOut = f(cards, {}).map(c => c.id);
-if (JSON.stringify(defOut) !== JSON.stringify(["ccu_health","weather","renault_zoe"])) {
-    console.error("default should hide forecast_solar: " + JSON.stringify(defOut)); process.exit(1);
+if (JSON.stringify(defOut) !== JSON.stringify(["ccu_health","weather"])) {
+    console.error("default should hide forecast_solar and renault_zoe: " + JSON.stringify(defOut)); process.exit(1);
+}
+const allOn = f(cards, {"10_ccu_health": true, "15_weather": true, "20_renault_zoe": true, "30_forecast_solar": true}).map(c => c.id);
+if (JSON.stringify(allOn) !== JSON.stringify(["ccu_health","weather","forecast_solar","renault_zoe"])) {
+    console.error("explicitly enabled plugins should render: " + JSON.stringify(allOn)); process.exit(1);
 }
 """
             fres = subprocess.run(["node", "-e", filter_script, str(ROOT / "web" / "app.js")],
@@ -3217,6 +3290,9 @@ if (JSON.stringify(defOut) !== JSON.stringify(["ccu_health","weather","renault_z
         (notif_addon / "plugins.d" / "20_renault_zoe.sh").chmod(0o755)
         shutil.copy2(ROOT / "plugins.d" / "10_ccu_health.sh", notif_addon / "plugins.d" / "10_ccu_health.sh")
         (notif_addon / "plugins.d" / "10_ccu_health.sh").chmod(0o755)
+        (notif_addon / "config" / "plugins.env").write_text(
+            "PLUGIN_CCU_HEALTH='1'\nPLUGIN_RENAULT_ZOE='1'\n"
+        )
 
         notif_env = {
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),

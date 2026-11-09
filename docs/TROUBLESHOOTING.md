@@ -246,7 +246,7 @@ The page was opened with `?demo=1`, or via `file://`. Open the normal CCU URL wi
    ```sh
    /usr/local/addons/sentinella/plugins.d/15_weather.sh; echo "exit=$?"
    ```
-4. For Weather and PV Forecast, confirm the coordinates in `config/plugins/weather.env` and `config/plugins/forecast_solar.env`.
+4. For Weather, check `config/plugins/weather.env`. Missing location values are auto-detected once via `ipapi.co` and cached there; explicit values always win. For PV Forecast, confirm the coordinates in `config/plugins/forecast_solar.env`.
 5. For CCU3 Health, confirm that `tclsh` and `tclrpc.so` are present. Without XML-RPC access the plugin falls back to `hm_sysinfo` and the duty-cycle files, and reports `N/A` when no source answers.
 
 ### Plugin cards do not refresh after a cron run

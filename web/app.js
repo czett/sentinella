@@ -1992,15 +1992,17 @@
 
     /* Drops cards whose plugin is disabled. Card ids ("weather") map to
        script ids ("15_weather") by stripping the numeric order prefix.
-       PV Forecast ("30_forecast_solar" / "forecast_solar") is experimental and
-       disabled by default unless explicitly enabled. */
+       Clean installs enable only CCU3 Health and Weather. PV Forecast
+       ("30_forecast_solar" / "forecast_solar") and Renault E-Tech
+       ("20_renault_zoe" / "renault_zoe") stay hidden until explicitly enabled. */
     function isPluginDefaultEnabled(id) {
-        return id !== "30_forecast_solar" && id !== "forecast_solar";
+        return id !== "30_forecast_solar" && id !== "forecast_solar" &&
+            id !== "20_renault_zoe" && id !== "renault_zoe";
     }
 
     function filterEnabledPlugins(plugins, states) {
         var st = states || {};
-        var disabled = { forecast_solar: true };
+        var disabled = { forecast_solar: true, renault_zoe: true };
         Object.keys(st).forEach(function (key) {
             var cardId = String(key).replace(/^[0-9]+_/, "");
             if (st[key] === false) {

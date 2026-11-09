@@ -271,15 +271,15 @@ The status badge follows the duty cycle: below `50%` OPTIMAL, `50–80%` WARNING
 
 ### Weather (Open-Meteo)
 
-No API key. Set `WEATHER_LAT` and `WEATHER_LON` in `config/plugins/weather.env`. Without that file, the plugin falls back to the forecast coordinates or `51.51, 7.46`.
+Enabled by default. No API key. Set `WEATHER_CITY`, `WEATHER_LAT`, and `WEATHER_LON` in `config/plugins/weather.env` to override the location. When any of them is missing, the plugin resolves it once via `https://ipapi.co/json/` and caches the result back into `weather.env`; explicit values from the settings drawer are never replaced.
 
 ### PV forecast (forecast.solar)
 
-No API key. Override `FORECAST_LAT`, `FORECAST_LON`, `FORECAST_DEC`, `FORECAST_AZ`, and `FORECAST_KWP` in `config/plugins/forecast_solar.env`.
+No API key. Disabled by default; enable it in the settings drawer. Override `FORECAST_LAT`, `FORECAST_LON`, `FORECAST_DEC`, `FORECAST_AZ`, and `FORECAST_KWP` in `config/plugins/forecast_solar.env`.
 
 ### Renault E-Tech
 
-Read-only telemetry for MY Renault E-Tech models, including Megane, Zoe, and R5. Set `RENAULT_USER`, `RENAULT_PASS`, and `RENAULT_VIN` in the settings drawer or in `config/plugins/renault.env` (mode `600`). The plugin caches the Gigya `id_token` and Kamereon `accountId` in `state/plugins/.renault_session` for six hours and refreshes them on `401`/`403`.
+Read-only telemetry for MY Renault E-Tech models, including Megane, Zoe, and R5. Disabled by default; enable it in the settings drawer. Set `RENAULT_USER`, `RENAULT_PASS`, and `RENAULT_VIN` in the settings drawer or in `config/plugins/renault.env` (mode `600`). The plugin caches the Gigya `id_token` and Kamereon `accountId` in `state/plugins/.renault_session` for six hours and refreshes them on `401`/`403`.
 
 ```sh
 /usr/local/addons/sentinella/plugins.d/20_renault_zoe.sh --test; echo "exit=$?"

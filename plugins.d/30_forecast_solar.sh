@@ -34,7 +34,7 @@ OUT_FILE=$STATE_DIR/forecast_solar.json
 # ---------------------------------------------------------------------------
 # Plugin Manager Execution Guard (config/plugins.env or .disabled marker)
 # ---------------------------------------------------------------------------
-PLUGIN_FORECAST_SOLAR=1
+PLUGIN_FORECAST_SOLAR=0
 for _pm_env in \
     "${SENTINELLA_PLUGINS_ENV:-}" \
     "$ADDON_DIR/config/plugins.env" \
