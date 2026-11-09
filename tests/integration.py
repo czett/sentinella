@@ -3093,8 +3093,18 @@ if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SON
         check(not (pm_cards / "weather.json").exists(), "disabling removes the stale weather card", failures)
         _, pm_get2 = parse_cgi(run_cgi(pm_addon, "GET", "plugin_manager"))
         check(pm_get2["plugins"]["15_weather"] is False, "GET reflects persisted disabled state", failures)
+
+        # Enabling immediately triggers the plugin script in the background
+        fake_plugins_d = pm_addon / "plugins.d"
+        fake_plugins_d.mkdir(parents=True, exist_ok=True)
+        fake_script = fake_plugins_d / "15_weather.sh"
+        fake_script.write_text('#!/bin/sh\necho \'{"id":"weather","regenerated":true}\' > "$SMA_MONITOR_ADDON_DIR/state/plugins/weather.json"\n')
+        fake_script.chmod(0o755)
+
         _, pm_res = parse_cgi(pm_post('{"id":"15_weather","enabled":true}'))
         check(pm_res["plugins"]["15_weather"] is True, "POST re-enables 15_weather", failures)
+        time.sleep(0.2)
+        check((pm_cards / "weather.json").exists(), "re-enabling immediately regenerates state card via plugin script", failures)
 
         for bad_body, label in [
             ('{"id":"../../etc/passwd","enabled":false}', "path traversal id"),

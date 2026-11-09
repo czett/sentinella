@@ -182,6 +182,12 @@ sync 2>/dev/null || true
 # Disabling hides the card immediately instead of waiting for the next run.
 if [ "$NEW" = "0" ] && [ -f "$STATE_DIR/$TARGET_CARD" ]; then
     rm -f "$STATE_DIR/$TARGET_CARD" 2>/dev/null || true
+elif [ "$NEW" = "1" ]; then
+    SCRIPT="${ADDON_DIR}/plugins.d/${REQ_ID}.sh"
+    if [ -x "$SCRIPT" ]; then
+        # Run once to immediately re-generate the state JSON card
+        "$SCRIPT" >/dev/null 2>&1 &
+    fi
 fi
 
 emit_state

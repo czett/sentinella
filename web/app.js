@@ -1966,6 +1966,9 @@
             applyPluginStates(data);
             if (enabled) {
                 fetchAndRenderPlugins();
+                setTimeout(function () {
+                    fetchAndRenderPlugins();
+                }, 600);
             }
         }).catch(function () {
             pluginStates[id] = previous;
