@@ -189,6 +189,8 @@ SoC
   0 ┤
 ```
 
+*(Default: 95/90 %, thresholds fully configurable via the settings drawer or `.env`, e.g. 90/35 % for surplus automation.)*
+
 If `state/signal` is missing and the first reading lands between `THRESHOLD_RESET` and `THRESHOLD_TRIGGER`, `SV_Batterie_95_Signal` is left untouched until a threshold is crossed.
 
 | Condition | `SV_Batterie_SoC` | `SV_Batterie_95_Signal` | Exit code |

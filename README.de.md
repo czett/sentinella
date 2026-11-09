@@ -175,6 +175,8 @@ SoC
   0 ┤
 ```
 
+*(Standard: 95/90 %, Schwellen frei über WebUI oder `.env` wählbar, z. B. 90/35 % für PV-Überschussladung).*
+
 Fehlt `state/signal` beim ersten Lauf und liegt der SoC zwischen `THRESHOLD_RESET` und `THRESHOLD_TRIGGER`, bleibt `SV_Batterie_95_Signal` unverändert, bis eine Schwelle erreicht wird.
 
 | Situation | `SV_Batterie_SoC` | `SV_Batterie_95_Signal` | Exit-Code |
@@ -283,9 +285,12 @@ sh -n bin/check_soc.sh lib/notify_signal.sh setup_variables.sh \
       plugins.d/10_ccu_health.sh plugins.d/15_weather.sh \
       plugins.d/20_renault_zoe.sh plugins.d/30_forecast_solar.sh \
       web/api/config.cgi web/api/plugin_manager.cgi web/api/plugins.cgi \
-      tools/benchmark_footprint.sh
+      web/api/action_zoe.cgi web/api/update_check.cgi \
+      tools/benchmark_footprint.sh tools/build_addon.sh
 node --check web/app.js
 ./tools/benchmark_footprint.sh
+# CCU3-Release-Archiv (dist/sentinella-<version>.tar.gz)
+./tools/build_addon.sh
 python3 tests/integration.py
 ```
 
