@@ -34,8 +34,6 @@ Poll-time plugin execution is gated by `SENTINELLA_RUN_PLUGINS=1` in the environ
 - Root-only backend (`$ADDON_DIR`, mode `700`) and a separate `lighttpd` document root (`$WEB_DIR`, mode `755`).
 - CGI endpoints run on demand; there is no long-running process between polls.
 
-![SMA inverter over HTTPS, two-minute cron job, CCU3 system variables, and Signal alert](docs/assets/feature-diagram-telemetry.png)
-
 ### Directory separation
 
 ```
@@ -70,8 +68,6 @@ Poll-time plugin execution is gated by `SENTINELLA_RUN_PLUGINS=1` in the environ
 4. `SV_Batterie_95_Signal` turns `true` at `THRESHOLD_TRIGGER` (default `95`), turns `false` at `THRESHOLD_RESET` (default `90`), and keeps its previous state inside the dead band.
 5. Both variables are written in one `tclrega.exe` call. `status.json` is published atomically, and a threshold edge dispatches `lib/notify_signal.sh` in the background.
 6. When `SENTINELLA_RUN_PLUGINS=1`, enabled plugins run after the status write. Each plugin writes one JSON card to `state/plugins/`.
-
-![BusyBox ash, no external CDNs, served by lighttpd](docs/assets/feature-card-native-ccu.png)
 
 ### Hardware corridor
 
@@ -186,7 +182,7 @@ The dashboard refreshes `status.json` every 30 seconds and shows SoC telemetry, 
 
 ## Switching logic
 
-![Thresholds: off at 90 %, on at 95 %, previous state kept in between](docs/assets/feature-diagram-hysteresis.png)
+![Dual-threshold hysteresis: on at the high trigger, off at the low reset, state held in between](docs/assets/schmitt_trigger.svg)
 
 ```
 SoC

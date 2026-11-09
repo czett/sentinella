@@ -191,6 +191,7 @@ for file in VERSION .env package/uninstall.sh bin/check_soc.sh lib/notify_signal
             config/plugins/forecast_solar.env.example \
             config/plugins/ccu_health.env.example \
             web/index.html web/style.css web/app.js \
+            web/favicon.svg web/favicon.ico \
             web/api/config.cgi web/api/settings.cgi \
             web/api/test_signal.cgi web/api/test_renault.cgi \
             web/api/action_zoe.cgi web/api/update_check.cgi \
@@ -268,6 +269,8 @@ install -m 600 "$ROOT/.env"                  "$STAGE/.env.new"
 install -m 644 "$ROOT/web/index.html"        "$STAGE/web/index.html"
 install -m 644 "$ROOT/web/style.css"         "$STAGE/web/style.css"
 install -m 644 "$ROOT/web/app.js"            "$STAGE/web/app.js"
+install -m 644 "$ROOT/web/favicon.svg"       "$STAGE/web/favicon.svg"
+install -m 644 "$ROOT/web/favicon.ico"       "$STAGE/web/favicon.ico"
 install -m 755 "$ROOT/web/api/config.cgi"       "$STAGE/web/api/config.cgi"
 install -m 755 "$ROOT/web/api/settings.cgi"     "$STAGE/web/api/settings.cgi"
 install -m 755 "$ROOT/web/api/test_signal.cgi"  "$STAGE/web/api/test_signal.cgi"
@@ -489,12 +492,100 @@ if [ "$SKIP_WEB" != "1" ]; then
                 "$_cgi_conf" >&2
         fi
     }
+    # lighttpd only sends image/svg+xml when .svg is present in its MIME map.
+    # Older CCU3 firmware ships a table without it; add both icon types to the
+    # existing table and leave every other mapping untouched.
+    patch_lighttpd_mime() {
+        _mime_conf=/etc/lighttpd/lighttpd.conf
+        [ -f "$_mime_conf" ] || return 0
+
+        for _mime_scan in "$_mime_conf" /etc/lighttpd/conf.d/*.conf; do
+            [ -f "$_mime_scan" ] || continue
+            grep -q '"[.]svg"[[:space:]]*=>[[:space:]]*"image/svg+xml"' \
+                "$_mime_scan" 2>/dev/null && return 0
+        done
+
+        if ! grep -q 'mimetype[.]assign' "$_mime_conf" 2>/dev/null; then
+            _mime_target=
+            for _mime_scan in /etc/lighttpd/conf.d/*.conf; do
+                [ -f "$_mime_scan" ] || continue
+                if grep -q 'mimetype[.]assign' "$_mime_scan" 2>/dev/null; then
+                    _mime_target=$_mime_scan
+                    break
+                fi
+            done
+        else
+            _mime_target=$_mime_conf
+        fi
+
+        if [ -z "${_mime_target:-}" ]; then
+            printf 'WARNING: no mimetype.assign found; relying on lighttpd defaults for .svg\n' >&2
+            return 0
+        fi
+
+        _mime_root_was_ro=0
+        case "$(mount 2>/dev/null | grep ' on / type ' | head -n 1)" in
+            *'(ro,'*|*'(ro)'*) _mime_root_was_ro=1 ;;
+        esac
+
+        if ! mount -o remount,rw / 2>/dev/null; then
+            printf 'WARNING: cannot remount / writable; .svg MIME mapping unchanged.\n' >&2
+            return 0
+        fi
+
+        _mime_tmp="${_mime_target}.sentinella.$$"
+        awk '
+            { line[NR] = $0 }
+            END {
+                inserted = 0
+                in_table = 0
+                for (i = 1; i <= NR; i++) {
+                    if (!inserted && line[i] ~ /mimetype[.]assign[[:space:]]*=/) in_table = 1
+                    if (in_table && line[i] ~ /^[[:space:]]*\)/) {
+                        # The last entry before the closing parenthesis may
+                        # omit its comma; add it before appending new entries.
+                        j = i - 1
+                        while (j > 1 && line[j] ~ /^[[:space:]]*$/) j--
+                        if (line[j] ~ /=>/ && line[j] !~ /,[[:space:]]*$/) line[j] = line[j] ","
+                        for (k = 1; k < i; k++) print line[k]
+                        print "  \".svg\" => \"image/svg+xml\","
+                        print "  \".ico\" => \"image/x-icon\","
+                        print line[i]
+                        for (k = i + 1; k <= NR; k++) print line[k]
+                        inserted = 1
+                        exit
+                    }
+                }
+                if (!inserted) for (k = 1; k <= NR; k++) print line[k]
+            }
+        ' "$_mime_target" > "$_mime_tmp" 2>/dev/null || true
+
+        _mime_changed=0
+        if grep -q '"[.]svg"[[:space:]]*=>[[:space:]]*"image/svg+xml"' "$_mime_tmp" 2>/dev/null; then
+            cat "$_mime_tmp" > "$_mime_target"
+            _mime_changed=1
+            printf 'Added SVG and ICO MIME mappings to %s\n' "$_mime_target"
+        else
+            printf 'WARNING: could not add .svg MIME mapping to %s\n' "$_mime_target" >&2
+        fi
+        rm -f "$_mime_tmp"
+
+        if [ "$_mime_root_was_ro" -eq 1 ]; then
+            mount -o remount,ro / 2>/dev/null \
+                || printf 'WARNING: could not remount / read-only again.\n' >&2
+        fi
+        if [ "$_mime_changed" -eq 1 ]; then
+            /etc/init.d/S50lighttpd restart >/dev/null 2>&1 || true
+        fi
+    }
+    patch_lighttpd_mime
+
     patch_lighttpd_cgi
 
     mkdir -p "$WEB_DIR/api"
     chown -R root:root "$WEB_DIR"
     chmod 755 "$WEB_DIR" "$WEB_DIR/api"
-    for file in index.html style.css app.js; do
+    for file in index.html style.css app.js favicon.svg favicon.ico; do
         cp -f "$ADDON_DIR/web/$file" "$WEB_DIR/$file"
         chmod 644 "$WEB_DIR/$file"
     done
@@ -516,7 +607,7 @@ if [ "$SKIP_WEB" != "1" ]; then
     # the dashboard, status.json and CGI endpoints without 404s.
     mkdir -p "$ADDON_DIR/api"
     chmod 755 "$ADDON_DIR/api"
-    for file in index.html style.css app.js; do
+    for file in index.html style.css app.js favicon.svg favicon.ico; do
         cp -f "$ADDON_DIR/web/$file" "$ADDON_DIR/$file"
         chmod 644 "$ADDON_DIR/$file"
     done

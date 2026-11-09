@@ -34,8 +34,6 @@ Die Ausführung im Poll-Lauf wird über `SENTINELLA_RUN_PLUGINS=1` in der Cron-U
 - Getrennte Bereiche: Root-Backend (`$ADDON_DIR`, Modus `700`) und eigener `lighttpd`-Dokumentenroot (`$WEB_DIR`, Modus `755`).
 - CGI-Endpunkte laufen bei Bedarf; zwischen den Abfragen existiert kein dauerhafter Prozess.
 
-![SMA-Wechselrichter über HTTPS, Cron-Job im Zwei-Minuten-Takt, CCU3-Systemvariablen und Signal-Benachrichtigung](docs/assets/feature-diagram-telemetry.png)
-
 ### Verzeichnisse
 
 ```
@@ -70,8 +68,6 @@ Die Ausführung im Poll-Lauf wird über `SENTINELLA_RUN_PLUGINS=1` in der Cron-U
 4. `SV_Batterie_95_Signal` schaltet ab `THRESHOLD_TRIGGER` (Standard `95`) auf `true`, ab `THRESHOLD_RESET` (Standard `90`) auf `false` und behält dazwischen den vorherigen Zustand.
 5. Beide Variablen werden in einem `tclrega.exe`-Aufruf geschrieben. `status.json` wird atomar veröffentlicht; bei einem Schwellenwechsel startet `lib/notify_signal.sh` im Hintergrund.
 6. Bei `SENTINELLA_RUN_PLUGINS=1` laufen aktivierte Plugins nach dem Status-Schreibvorgang. Jedes Plugin schreibt eine JSON-Karte nach `state/plugins/`.
-
-![BusyBox ash, keine externen CDNs, Auslieferung über lighttpd](docs/assets/feature-card-native-ccu.png)
 
 ### Hardware-Korridor
 
@@ -172,7 +168,7 @@ Aufbau von `status.json`:
 
 ## Schaltlogik
 
-![Schaltschwellen: aus bei 90 %, ein bei 95 %, dazwischen bleibt der letzte Zustand](docs/assets/feature-diagram-hysteresis.png)
+![Schmitt-Trigger: ein bei hoher Schwelle, aus bei niedriger Schwelle, dazwischen bleibt der letzte Zustand](docs/assets/schmitt_trigger.svg)
 
 ```
 SoC

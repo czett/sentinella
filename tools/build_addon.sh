@@ -18,6 +18,7 @@
 #    - config/plugins/*.example  (mode 644)
 #    - .env.example              (mode 644)
 #    - web/index.html, style.css, app.js, status.example.json (mode 644)
+#    - web/favicon.svg, favicon.ico (mode 644)
 #    - web/api/*.cgi             (mode 755)
 # =============================================================================
 
@@ -126,7 +127,7 @@ if [ ! -f "$ADDON_DIR/.env" ]; then
 fi
 chmod 600 "$ADDON_DIR/.env" 2>/dev/null || true
 
-for _w in index.html style.css app.js status.example.json; do
+for _w in index.html style.css app.js favicon.svg favicon.ico status.example.json; do
     [ -f "$SRC_DIR/web/$_w" ] || continue
     cp -f "$SRC_DIR/web/$_w" "$ADDON_DIR/web/$_w"
     cp -f "$SRC_DIR/web/$_w" "$WEB_DIR/$_w"
@@ -245,7 +246,7 @@ for _cfg in "$ROOT_DIR/config/plugins"/*.example; do
     cp -f "$_cfg" "$PKG_DIR/config/plugins/$(basename "$_cfg")"
 done
 
-for _web in index.html style.css app.js status.example.json; do
+for _web in index.html style.css app.js favicon.svg favicon.ico status.example.json; do
     [ -f "$ROOT_DIR/web/$_web" ] || continue
     cp -f "$ROOT_DIR/web/$_web" "$PKG_DIR/web/$_web"
 done
