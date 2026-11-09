@@ -8,6 +8,7 @@
 #
 #  Archive structure:
 #    - update_script             (mode 755, CCU3 standard installer hook)
+#    - uninstall.sh              (mode 755, idempotent lifecycle remover)
 #    - rc.d/sentinella           (mode 755, CCU3 startup/info rc.d script)
 #    - VERSION                   (mode 644)
 #    - bin/check_soc.sh          (mode 755)
@@ -148,6 +149,11 @@ if [ -f "$SRC_DIR/rc.d/sentinella" ]; then
     chmod 755 "$RCD_DIR/sentinella"
 fi
 
+if [ -f "$SRC_DIR/uninstall.sh" ]; then
+    cp -f "$SRC_DIR/uninstall.sh" "$ADDON_DIR/uninstall.sh"
+    chmod 755 "$ADDON_DIR/uninstall.sh"
+fi
+
 chmod 700 "$ADDON_DIR" "$ADDON_DIR/bin" "$ADDON_DIR/lib" "$ADDON_DIR/state" \
     "$ADDON_DIR/plugins.d" "$ADDON_DIR/config" "$ADDON_DIR/config/plugins" \
     "$ADDON_DIR/state/plugins" 2>/dev/null || true
@@ -201,7 +207,12 @@ case "${1:-}" in
         printf 'Update: /addons/sentinella/api/update_check.cgi\n'
         ;;
     uninstall)
-        rm -rf "$ADDON_DIR" "$WEB_DIR" /www/addons/sentinella /usr/local/etc/config/rc.d/sentinella 2>/dev/null || true
+        if [ -x "$ADDON_DIR/uninstall.sh" ]; then
+            "$ADDON_DIR/uninstall.sh"
+        else
+            rm -rf "$ADDON_DIR" "$WEB_DIR" /www/addons/sentinella \
+                /usr/local/etc/config/rc.d/sentinella 2>/dev/null || true
+        fi
         ;;
     *)
         printf 'Usage: %s {start|stop|restart|info|uninstall}\n' "$0" >&2
@@ -219,6 +230,7 @@ for _lib in "$ROOT_DIR/lib"/*.sh; do
     chmod 755 "$PKG_DIR/lib/$(basename "$_lib")"
 done
 cp -f "$ROOT_DIR/setup_variables.sh" "$PKG_DIR/setup_variables.sh"
+cp -f "$ROOT_DIR/package/uninstall.sh" "$PKG_DIR/uninstall.sh"
 cp -f "$ROOT_DIR/.env.example" "$PKG_DIR/.env.example"
 cp -f "$ROOT_DIR/LICENSE" "$PKG_DIR/LICENSE"
 cp -f "$ROOT_DIR/README.md" "$PKG_DIR/README.md"
@@ -252,6 +264,7 @@ find "$PKG_DIR" -type f -exec chmod 644 {} +
 
 chmod 755 \
     "$PKG_DIR/update_script" \
+    "$PKG_DIR/uninstall.sh" \
     "$PKG_DIR/rc.d/sentinella" \
     "$PKG_DIR/bin/check_soc.sh" \
     "$PKG_DIR/lib/notify_signal.sh" \

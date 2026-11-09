@@ -36,6 +36,7 @@ SKIP_VARS=0
 SKIP_WEB=0
 SKIP_TEST=0
 DRY_RUN=0
+WIPE=0
 
 usage() {
     cat <<'EOF'
@@ -53,6 +54,7 @@ Options:
       --skip-vars        Do not create the ReGa system variables
       --skip-web         Do not install the dashboard files
       --skip-test        Do not run a first check after deployment
+      --wipe             Uninstall Sentinella remotely and exit
       --demo             Deprecated: mock plugin cards are no longer shipped
   -h, --help             Show this help
 
@@ -119,6 +121,10 @@ while [ "$#" -gt 0 ]; do
             SKIP_TEST=1
             shift
             ;;
+        --wipe)
+            WIPE=1
+            shift
+            ;;
         --demo)
             printf 'WARNING: --demo is deprecated; mock plugin cards are no longer deployed.\n' >&2
             shift
@@ -175,7 +181,7 @@ for tool in ssh tar; do
     command -v "$tool" >/dev/null 2>&1 || die "required tool not found: $tool"
 done
 
-for file in VERSION .env bin/check_soc.sh lib/notify_signal.sh lib/plugin_notify.sh lib/notify.sh setup_variables.sh \
+for file in VERSION .env package/uninstall.sh bin/check_soc.sh lib/notify_signal.sh lib/plugin_notify.sh lib/notify.sh setup_variables.sh \
             plugins.d/10_ccu_health.sh \
             plugins.d/15_weather.sh \
             plugins.d/20_renault_zoe.sh \
@@ -240,6 +246,7 @@ install -m 755 "$ROOT/lib/notify_signal.sh"  "$STAGE/lib/notify_signal.sh"
 install -m 755 "$ROOT/lib/plugin_notify.sh"  "$STAGE/lib/plugin_notify.sh"
 install -m 755 "$ROOT/lib/notify.sh"         "$STAGE/lib/notify.sh"
 install -m 700 "$ROOT/setup_variables.sh"    "$STAGE/setup_variables.sh"
+install -m 755 "$ROOT/package/uninstall.sh"  "$STAGE/uninstall.sh"
 install -m 755 "$ROOT/plugins.d/10_ccu_health.sh" \
     "$STAGE/plugins.d/10_ccu_health.sh"
 install -m 755 "$ROOT/plugins.d/15_weather.sh" \
@@ -274,6 +281,48 @@ ssh_ccu() {
     ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
         -p "$SSH_PORT" "$@"
 }
+
+if [ "$WIPE" -eq 1 ]; then
+    info "checking SSH connection to $REMOTE"
+    ssh_ccu "$REMOTE" 'true' \
+        || die "cannot connect to $REMOTE (check host, key and root login)"
+
+    info "wiping Sentinella from $REMOTE:$ADDON_DIR"
+    # shellcheck disable=SC2029  # the paths are intentionally expanded locally
+    ssh_ccu "$REMOTE" \
+        "ADDON_DIR='$ADDON_DIR' WEB_DIR='$WEB_DIR' sh -s" <<'WIPE_SCRIPT'
+set -e
+if [ -x "$ADDON_DIR/uninstall.sh" ]; then
+    "$ADDON_DIR/uninstall.sh"
+    exit 0
+fi
+
+# Fallback for installations that predate uninstall.sh.
+for _worker in check_soc.sh notify_signal.sh plugin_notify.sh \
+              10_ccu_health.sh 15_weather.sh 20_renault_zoe.sh 30_forecast_solar.sh; do
+    killall "$_worker" 2>/dev/null || true
+done
+for _cron in /usr/local/crontabs/root /etc/crontabs/root; do
+    [ -f "$_cron" ] || continue
+    grep -v -E 'sentinella|sma_battery|check_soc\.sh' "$_cron" > "$_cron.tmp" 2>/dev/null || true
+    cat "$_cron.tmp" > "$_cron"
+    rm -f "$_cron.tmp"
+done
+killall -HUP crond 2>/dev/null || true
+rm -rf "$ADDON_DIR" "$WEB_DIR" /www/addons/sentinella /www/addons/sma_battery \
+    /usr/local/etc/config/rc.d/sentinella /etc/config/rc.d/sentinella 2>/dev/null || true
+rm -f /usr/local/addons/sma_battery 2>/dev/null || true
+for _cfg in /usr/local/etc/config/addons.cfg /etc/config/addons.cfg; do
+    [ -f "$_cfg" ] || continue
+    grep -v -i -E 'sentinella|sma_battery' "$_cfg" > "$_cfg.tmp" 2>/dev/null || true
+    cat "$_cfg.tmp" > "$_cfg"
+    rm -f "$_cfg.tmp"
+done
+sync
+WIPE_SCRIPT
+    info "remote wipe complete"
+    exit 0
+fi
 
 info "checking SSH connection to $REMOTE"
 ssh_ccu "$REMOTE" 'true' \

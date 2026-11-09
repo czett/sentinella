@@ -2834,6 +2834,120 @@ if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SON
             failures,
         )
 
+        # 26d2. Lifecycle: idempotent uninstaller and remote wipe helper.
+        uninstall_script = ROOT / "package" / "uninstall.sh"
+        check(
+            uninstall_script.is_file() and os.access(uninstall_script, os.X_OK),
+            "package/uninstall.sh exists and is executable",
+            failures,
+        )
+        uninstall_syntax = subprocess.run(
+            ["sh", "-n", str(uninstall_script)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        check(uninstall_syntax.returncode == 0, "package/uninstall.sh passes sh -n", failures)
+        check(
+            (unpack_dir / "uninstall.sh").is_file()
+            and ((unpack_dir / "uninstall.sh").stat().st_mode & 0o777) == 0o755,
+            "uninstall.sh is packaged in the archive root with mode 755",
+            failures,
+        )
+        check(
+            "uninstall.sh" in (unpack_dir / "update_script").read_text(),
+            "update_script installs uninstall.sh into the add-on",
+            failures,
+        )
+        check("--wipe" in (ROOT / "deploy.sh").read_text(), "deploy.sh exposes --wipe", failures)
+        check(
+            (ROOT / "tools" / "remote_wipe.sh").is_file()
+            and os.access(ROOT / "tools" / "remote_wipe.sh", os.X_OK),
+            "tools/remote_wipe.sh helper exists and is executable",
+            failures,
+        )
+
+        wipe_root = tmp / "uninstall-root"
+        wipe_addon = wipe_root / "usr/local/addons/sentinella"
+        (wipe_addon / "bin").mkdir(parents=True)
+        (wipe_addon / "state" / "notifications").mkdir(parents=True)
+        (wipe_addon / "bin" / "check_soc.sh").write_text("#!/bin/sh\n")
+        (wipe_addon / "uninstall.sh").write_text("#!/bin/sh\n")
+        wipe_rcd = wipe_root / "usr/local/etc/config/rc.d"
+        wipe_rcd_legacy = wipe_root / "etc/config/rc.d"
+        wipe_web = wipe_root / "usr/local/etc/config/addons/www/sentinella"
+        wipe_www = wipe_root / "www/addons"
+        for directory in (wipe_rcd, wipe_rcd_legacy, wipe_web, wipe_www):
+            directory.mkdir(parents=True, exist_ok=True)
+        (wipe_rcd / "sentinella").write_text("#!/bin/sh\n")
+        (wipe_rcd_legacy / "sentinella").write_text("#!/bin/sh\n")
+        (wipe_web / "index.html").write_text("dashboard\n")
+        (wipe_www / "sentinella").symlink_to(wipe_web)
+        wipe_cron_user = wipe_root / "usr/local/crontabs/root"
+        wipe_cron_system = wipe_root / "etc/crontabs/root"
+        wipe_cron_user.parent.mkdir(parents=True)
+        wipe_cron_system.parent.mkdir(parents=True)
+        wipe_cron_user.write_text(
+            "*/2 * * * * /usr/local/addons/sentinella/bin/check_soc.sh\nkeep-me\n"
+        )
+        wipe_cron_system.write_text("keep-system\n")
+        wipe_cfg = wipe_root / "usr/local/etc/config/addons.cfg"
+        wipe_cfg_legacy = wipe_root / "etc/config/addons.cfg"
+        wipe_cfg.write_text("sentinella;Sentinella;1.1.0\nother;Other;1.0\n")
+        wipe_cfg_legacy.write_text("other;Other;1.0\n")
+
+        wipe_env = os.environ.copy()
+        wipe_env["SENTINELLA_ROOT"] = str(wipe_root)
+        wipe_run = subprocess.run(
+            ["sh", str(uninstall_script)],
+            env=wipe_env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        check(wipe_run.returncode == 0, f"uninstaller exits 0 (got {wipe_run.returncode})", failures)
+        check("uninstall complete" in wipe_run.stdout.lower(), "uninstaller prints a completion message", failures)
+        check(not wipe_addon.exists(), "uninstaller removes the add-on directory", failures)
+        check(
+            not (wipe_rcd / "sentinella").exists()
+            and not (wipe_rcd_legacy / "sentinella").exists(),
+            "uninstaller removes both rc.d init scripts",
+            failures,
+        )
+        check(
+            not os.path.lexists(wipe_www / "sentinella") and not wipe_web.exists(),
+            "uninstaller removes WebUI link and dashboard",
+            failures,
+        )
+        check(
+            "keep-me" in wipe_cron_user.read_text()
+            and "sentinella" not in wipe_cron_user.read_text()
+            and "keep-system" in wipe_cron_system.read_text(),
+            "uninstaller strips only Sentinella cron lines",
+            failures,
+        )
+        check(
+            "other;Other;1.0" in wipe_cfg.read_text()
+            and "sentinella" not in wipe_cfg.read_text()
+            and "other;Other;1.0" in wipe_cfg_legacy.read_text(),
+            "uninstaller keeps unrelated add-on registry entries",
+            failures,
+        )
+
+        wipe_again = subprocess.run(
+            ["sh", str(uninstall_script)],
+            env=wipe_env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        check(
+            wipe_again.returncode == 0
+            and "uninstall complete" in wipe_again.stdout.lower(),
+            "uninstaller is idempotent on an already removed installation",
+            failures,
+        )
+
         # Verify update_check.cgi returns installed version
         upd_env = os.environ.copy()
         upd_env.update(
