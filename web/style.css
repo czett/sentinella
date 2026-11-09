@@ -2065,6 +2065,12 @@ body.drawer-open {
     cursor: not-allowed;
 }
 
+.plugin-settings {
+    margin: 4px 0 14px 16px;
+    padding-left: 12px;
+    border-left: 2px solid var(--paper-hover, #e0e0e0);
+}
+
 .switch:disabled,
 .button:disabled {
     opacity: 0.45;

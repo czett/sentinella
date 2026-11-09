@@ -128,6 +128,28 @@ if [ -n "$CONFIG_FILE" ] && [ -r "$CONFIG_FILE" ]; then
     . "$CONFIG_FILE"
 fi
 
+RENAULT_NOTIFY_LOW_ENABLED=${RENAULT_NOTIFY_LOW_ENABLED:-0}
+RENAULT_NOTIFY_LOW_SOC=${RENAULT_NOTIFY_LOW_SOC:-20}
+RENAULT_NOTIFY_HIGH_ENABLED=${RENAULT_NOTIFY_HIGH_ENABLED:-0}
+RENAULT_NOTIFY_HIGH_SOC=${RENAULT_NOTIFY_HIGH_SOC:-80}
+
+case "$RENAULT_NOTIFY_LOW_ENABLED" in 1|true|TRUE|on|ON|yes|YES) RENAULT_NOTIFY_LOW_ENABLED=1 ;; *) RENAULT_NOTIFY_LOW_ENABLED=0 ;; esac
+case "$RENAULT_NOTIFY_HIGH_ENABLED" in 1|true|TRUE|on|ON|yes|YES) RENAULT_NOTIFY_HIGH_ENABLED=1 ;; *) RENAULT_NOTIFY_HIGH_ENABLED=0 ;; esac
+is_uint "$RENAULT_NOTIFY_LOW_SOC" || RENAULT_NOTIFY_LOW_SOC=20
+is_uint "$RENAULT_NOTIFY_HIGH_SOC" || RENAULT_NOTIFY_HIGH_SOC=80
+
+for _pnotify in \
+    "$ADDON_DIR/lib/plugin_notify.sh" \
+    "$APP_DIR/lib/plugin_notify.sh" \
+    /usr/local/addons/sentinella/lib/plugin_notify.sh
+do
+    if [ -r "$_pnotify" ]; then
+        # shellcheck source=/dev/null
+        . "$_pnotify"
+        break
+    fi
+done
+
 case "${UI_LANGUAGE:-}" in
     en|EN|en_US|en-US|en_GB|en-GB) UI_LANGUAGE=en ;;
     *) UI_LANGUAGE=de ;;
@@ -745,6 +767,20 @@ if ! is_uint "$BATTERY_LEVEL" || [ "$BATTERY_LEVEL" -gt 100 ]; then
 fi
 BATTERY_LEVEL=$(printf '%s' "$BATTERY_LEVEL" | sed 's/^0*//')
 [ -n "$BATTERY_LEVEL" ] || BATTERY_LEVEL=0
+
+# ---------------------------------------------------------------------------
+# Threshold Notifications (CallMeBot / Signal Gateway)
+# ---------------------------------------------------------------------------
+if [ "$TEST_MODE" = "0" ] && [ "$HVAC_MODE" = "0" ] && command -v notify_plugin_threshold >/dev/null 2>&1; then
+    if [ "$RENAULT_NOTIFY_LOW_ENABLED" = "1" ]; then
+        _msg_low="Renault E-Tech: Ladestand niedrig ($BATTERY_LEVEL %)! Bitte anstecken."
+        notify_plugin_threshold "renault_zoe" "soc_low" "$BATTERY_LEVEL" "$RENAULT_NOTIFY_LOW_SOC" "below" "$_msg_low"
+    fi
+    if [ "$RENAULT_NOTIFY_HIGH_ENABLED" = "1" ]; then
+        _msg_high="Renault E-Tech: Ziel-Ladestand erreicht ($BATTERY_LEVEL %)."
+        notify_plugin_threshold "renault_zoe" "soc_high" "$BATTERY_LEVEL" "$RENAULT_NOTIFY_HIGH_SOC" "above" "$_msg_high"
+    fi
+fi
 
 if is_number "$BATTERY_AUTONOMY"; then
     BATTERY_AUTONOMY=$(awk -v a="$BATTERY_AUTONOMY" 'BEGIN { printf "%d", a + 0 }')

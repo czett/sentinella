@@ -3162,6 +3162,275 @@ if (f(cards, {}).length !== 4) { console.error("default should show all"); proce
                                   capture_output=True, text=True, timeout=20)
             check(fres.returncode == 0, f"disabled plugin cards are omitted from grid ({fres.stderr.strip() or 'ok'})", failures)
 
+        print("\n30. Modular stateful plugin threshold notifications (Renault E-Tech & CCU3 Health)")
+        notif_addon = make_addon(tmp, sma_port, rega_port, signal_port, True, name="notif-addon")
+        (notif_addon / "lib").mkdir(parents=True, exist_ok=True)
+        (notif_addon / "config" / "plugins").mkdir(parents=True, exist_ok=True)
+        (notif_addon / "state" / "plugins").mkdir(parents=True, exist_ok=True)
+        (notif_addon / "state" / "notifications").mkdir(parents=True, exist_ok=True)
+        (notif_addon / "plugins.d").mkdir(parents=True, exist_ok=True)
+
+        shutil.copy2(ROOT / "lib" / "notify_signal.sh", notif_addon / "lib" / "notify_signal.sh")
+        (notif_addon / "lib" / "notify_signal.sh").chmod(0o755)
+        shutil.copy2(ROOT / "lib" / "plugin_notify.sh", notif_addon / "lib" / "plugin_notify.sh")
+        (notif_addon / "lib" / "plugin_notify.sh").chmod(0o755)
+        shutil.copy2(ROOT / "lib" / "notify.sh", notif_addon / "lib" / "notify.sh")
+        (notif_addon / "lib" / "notify.sh").chmod(0o755)
+        shutil.copy2(ROOT / "plugins.d" / "20_renault_zoe.sh", notif_addon / "plugins.d" / "20_renault_zoe.sh")
+        (notif_addon / "plugins.d" / "20_renault_zoe.sh").chmod(0o755)
+        shutil.copy2(ROOT / "plugins.d" / "10_ccu_health.sh", notif_addon / "plugins.d" / "10_ccu_health.sh")
+        (notif_addon / "plugins.d" / "10_ccu_health.sh").chmod(0o755)
+
+        notif_env = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "APP_DIR": str(notif_addon),
+            "SMA_MONITOR_ADDON_DIR": str(notif_addon),
+            "SMA_MONITOR_ENV": str(notif_addon / ".env"),
+            "STATE_DIR": str(notif_addon / "state"),
+            "NOTIFY_ASYNC": "0",
+        }
+
+        def run_notify_fn(plugin_id, metric, cur, thresh, direction, msg, margin="2"):
+            cmd = [
+                "sh", str(notif_addon / "lib" / "plugin_notify.sh"),
+                plugin_id, metric, str(cur), str(thresh), direction, msg, str(margin)
+            ]
+            return subprocess.run(cmd, env=notif_env, capture_output=True, text=True, timeout=10)
+
+        # 30a. Edge-trigger & hysteresis: direction "below" (e.g. low SoC threshold 20, margin 2)
+        state_file_low = notif_addon / "state" / "notifications" / "renault_zoe_soc_low.state"
+        with signal_state.lock:
+            signal_state.signal_requests = []
+
+        # Run 1: current 25 (above threshold 20) -> untriggered, no request
+        run_notify_fn("renault_zoe", "soc_low", 25, 20, "below", "Low SoC 25%")
+        check(not state_file_low.exists() or state_file_low.read_text().strip() == "0", "initial 25% untriggered", failures)
+        check(len(signal_state.signal_requests) == 0, "no notification at 25% SoC", failures)
+
+        # Run 2: current 20 (crossing boundary <= 20) -> triggers once!
+        run_notify_fn("renault_zoe", "soc_low", 20, 20, "below", "Renault E-Tech: Ladestand niedrig (20 %)! Bitte anstecken.")
+        check(state_file_low.is_file() and state_file_low.read_text().strip() == "1", "state file set to 1 on trigger", failures)
+        check(len(signal_state.signal_requests) == 1, "notification sent on crossing below threshold", failures)
+        if signal_state.signal_requests:
+            q = parse_qs(urlparse(signal_state.signal_requests[0]).query)
+            check("Ladestand niedrig (20 %)" in q.get("text", [""])[0], f"notification text matches ({q.get('text')})", failures)
+        with signal_state.lock:
+            signal_state.signal_requests = []
+
+        # Run 3: current 18 (condition remains active <= 20) -> suppressed duplicate!
+        run_notify_fn("renault_zoe", "soc_low", 18, 20, "below", "Renault E-Tech: Ladestand niedrig (18 %)! Bitte anstecken.")
+        check(state_file_low.read_text().strip() == "1", "state file stays 1 on subsequent active run", failures)
+        check(len(signal_state.signal_requests) == 0, "no duplicate notification sent while active", failures)
+
+        # Run 4: current 21 (inside deadband / hysteresis margin 20-22) -> remains active (1), no duplicate!
+        run_notify_fn("renault_zoe", "soc_low", 21, 20, "below", "Renault E-Tech: Ladestand niedrig (21 %)! Bitte anstecken.")
+        check(state_file_low.read_text().strip() == "1", "state remains 1 inside hysteresis deadband (21%)", failures)
+        check(len(signal_state.signal_requests) == 0, "no notification inside hysteresis deadband", failures)
+
+        # Run 5: current 22 (safely returns >= 20 + 2 = 22) -> resets/re-arms state to 0!
+        run_notify_fn("renault_zoe", "soc_low", 22, 20, "below", "Renault E-Tech: Ladestand niedrig (22 %)! Bitte anstecken.")
+        check(state_file_low.read_text().strip() == "0", "state file reset to 0 after safe recovery >= 22%", failures)
+        check(len(signal_state.signal_requests) == 0, "no notification on recovery", failures)
+
+        # Run 6: current 19 (crosses boundary <= 20 again) -> triggers again!
+        run_notify_fn("renault_zoe", "soc_low", 19, 20, "below", "Renault E-Tech: Ladestand niedrig (19 %)! Bitte anstecken.")
+        check(state_file_low.read_text().strip() == "1", "re-armed state triggers again on second crossing", failures)
+        check(len(signal_state.signal_requests) == 1, "notification sent on second crossing", failures)
+        with signal_state.lock:
+            signal_state.signal_requests = []
+
+        # 30b. Edge-trigger & hysteresis: direction "above" (e.g. Duty Cycle threshold 80, margin 2)
+        state_file_dc = notif_addon / "state" / "notifications" / "ccu_health_duty_cycle.state"
+
+        # Run 1: current 75 (below threshold 80) -> untriggered
+        run_notify_fn("ccu_health", "duty_cycle", 75, 80, "above", "DC 75%")
+        check(not state_file_dc.exists() or state_file_dc.read_text().strip() == "0", "initial DC 75% untriggered", failures)
+        check(len(signal_state.signal_requests) == 0, "no notification at 75% DC", failures)
+
+        # Run 2: current 85 (crosses boundary >= 80) -> triggers!
+        run_notify_fn("ccu_health", "duty_cycle", 85, 80, "above", "Warnung: CCU3 Duty Cycle kritisch hoch (85 %)!")
+        check(state_file_dc.is_file() and state_file_dc.read_text().strip() == "1", "state file set to 1 on DC trigger", failures)
+        check(len(signal_state.signal_requests) == 1, "notification sent on DC threshold crossing", failures)
+        if signal_state.signal_requests:
+            q = parse_qs(urlparse(signal_state.signal_requests[0]).query)
+            check("Duty Cycle kritisch hoch (85 %)" in q.get("text", [""])[0], f"DC notification text matches ({q.get('text')})", failures)
+        with signal_state.lock:
+            signal_state.signal_requests = []
+
+        # Run 3: current 88 (subsequent run, condition still active) -> suppressed!
+        run_notify_fn("ccu_health", "duty_cycle", 88, 80, "above", "Warnung: CCU3 Duty Cycle kritisch hoch (88 %)!")
+        check(state_file_dc.read_text().strip() == "1", "DC state file stays 1 on subsequent run", failures)
+        check(len(signal_state.signal_requests) == 0, "no duplicate DC notification sent", failures)
+
+        # Run 4: current 79 (inside deadband, 78-80) -> remains 1, no duplicate
+        run_notify_fn("ccu_health", "duty_cycle", 79, 80, "above", "DC 79%")
+        check(state_file_dc.read_text().strip() == "1", "DC state remains 1 inside hysteresis deadband (79%)", failures)
+        check(len(signal_state.signal_requests) == 0, "no notification inside DC deadband", failures)
+
+        # Run 5: current 78 (safely returns <= 80 - 2 = 78) -> resets to 0!
+        run_notify_fn("ccu_health", "duty_cycle", 78, 80, "above", "DC 78%")
+        check(state_file_dc.read_text().strip() == "0", "DC state file reset to 0 after safe recovery <= 78%", failures)
+
+        # Run 6: current 81 (crosses boundary >= 80 again) -> triggers again!
+        run_notify_fn("ccu_health", "duty_cycle", 81, 80, "above", "Warnung: CCU3 Duty Cycle kritisch hoch (81 %)!")
+        check(state_file_dc.read_text().strip() == "1", "re-armed DC state triggers again on second crossing", failures)
+        check(len(signal_state.signal_requests) == 1, "DC notification sent on second crossing", failures)
+        with signal_state.lock:
+            signal_state.signal_requests = []
+
+        # 30c. Plugin end-to-end integration: Renault Zoe plugin notifications
+        state_file_low.unlink(missing_ok=True)
+        (notif_addon / "state" / "notifications" / "renault_zoe_soc_high.state").unlink(missing_ok=True)
+        renault_notif_env_file = notif_addon / "config" / "plugins" / "renault.env"
+        renault_notif_env_file.write_text(
+            "RENAULT_USER='zoe@example.com'\n"
+            "RENAULT_PASS='secret'\n"
+            "RENAULT_VIN='VF1AG000012345678'\n"
+            "RENAULT_NOTIFY_LOW_ENABLED='1'\n"
+            "RENAULT_NOTIFY_LOW_SOC='20'\n"
+            "RENAULT_NOTIFY_HIGH_ENABLED='1'\n"
+            "RENAULT_NOTIFY_HIGH_SOC='80'\n"
+        )
+        renault_notif_env_file.chmod(0o600)
+
+        # Low SoC trigger (18%)
+        mock_low_battery = notif_addon / "state" / "mock_low.json"
+        mock_low_battery.write_text(
+            '{"data":{"type":"Car","id":"VF1AG000012345678","attributes":{"timestamp":"2026-11-09T10:00:00Z","batteryLevel":18,"batteryAutonomy":50,"plugStatus":0,"chargingStatus":0.0}}}'
+        )
+        r_env = dict(notif_env)
+        r_env["RENAULT_MOCK_BATTERY_JSON"] = str(mock_low_battery)
+        r_env["RENAULT_ENV"] = str(renault_notif_env_file)
+        subprocess.run(["sh", str(notif_addon / "plugins.d" / "20_renault_zoe.sh")],
+                       env=r_env, capture_output=True, text=True, timeout=10)
+        wait_until(lambda: bool(signal_state.signal_requests))
+        check(len(signal_state.signal_requests) == 1, "Renault low SoC push notification sent", failures)
+        if signal_state.signal_requests:
+            q = parse_qs(urlparse(signal_state.signal_requests[0]).query)
+            check("Renault E-Tech: Ladestand niedrig (18 %)! Bitte anstecken." in q.get("text", [""])[0],
+                  f"Renault low SoC message matches ({q.get('text')})", failures)
+        with signal_state.lock:
+            signal_state.signal_requests = []
+
+        # High SoC trigger (85%)
+        mock_high_battery = notif_addon / "state" / "mock_high.json"
+        mock_high_battery.write_text(
+            '{"data":{"type":"Car","id":"VF1AG000012345678","attributes":{"timestamp":"2026-11-09T10:00:00Z","batteryLevel":85,"batteryAutonomy":250,"plugStatus":1,"chargingStatus":1.0}}}'
+        )
+        r_env["RENAULT_MOCK_BATTERY_JSON"] = str(mock_high_battery)
+        subprocess.run(["sh", str(notif_addon / "plugins.d" / "20_renault_zoe.sh")],
+                       env=r_env, capture_output=True, text=True, timeout=10)
+        wait_until(lambda: bool(signal_state.signal_requests))
+        check(len(signal_state.signal_requests) == 1, "Renault target SoC push notification sent", failures)
+        if signal_state.signal_requests:
+            q = parse_qs(urlparse(signal_state.signal_requests[0]).query)
+            check("Renault E-Tech: Ziel-Ladestand erreicht (85 %)." in q.get("text", [""])[0],
+                  f"Renault high SoC message matches ({q.get('text')})", failures)
+        with signal_state.lock:
+            signal_state.signal_requests = []
+
+        # 30d. Plugin end-to-end integration: CCU3 Health plugin notifications
+        state_file_dc.unlink(missing_ok=True)
+        ccu_notif_env_file = notif_addon / "config" / "plugins" / "ccu_health.env"
+        ccu_notif_env_file.write_text(
+            "CCU_NOTIFY_DC_ENABLED='1'\n"
+            "CCU_NOTIFY_DC_THRESHOLD='80'\n"
+        )
+        ccu_notif_env_file.chmod(0o600)
+
+        # Mock /proc sysinfo with Duty Cycle 85%
+        mock_proc_dir = notif_addon / "proc"
+        mock_proc_dir.mkdir(parents=True, exist_ok=True)
+        (mock_proc_dir / "loadavg").write_text("0.10 0.15 0.20 1/100 12345\n")
+        (mock_proc_dir / "meminfo").write_text("MemTotal: 1000000 kB\nMemFree: 500000 kB\nBuffers: 50000 kB\nCached: 200000 kB\n")
+        (mock_proc_dir / "uptime").write_text("86400.00 80000.00\n")
+        (mock_proc_dir / "dutycycle").write_text("dutycycle=85\n")
+
+        c_env = dict(notif_env)
+        c_env["CCU_HEALTH_PROC_DIR"] = str(mock_proc_dir)
+        c_env["CCU_DUTYCYCLE_FILE"] = str(mock_proc_dir / "dutycycle")
+        c_env["CCU_HEALTH_ENV"] = str(ccu_notif_env_file)
+        subprocess.run(["sh", str(notif_addon / "plugins.d" / "10_ccu_health.sh")],
+                       env=c_env, capture_output=True, text=True, timeout=10)
+        wait_until(lambda: bool(signal_state.signal_requests))
+        check(len(signal_state.signal_requests) == 1, "CCU3 Health duty cycle push notification sent", failures)
+        if signal_state.signal_requests:
+            q = parse_qs(urlparse(signal_state.signal_requests[0]).query)
+            check("Warnung: CCU3 Duty Cycle kritisch hoch (85 %)!" in q.get("text", [""])[0],
+                  f"CCU3 Health DC message matches ({q.get('text')})", failures)
+        with signal_state.lock:
+            signal_state.signal_requests = []
+
+        # 30e. Settings API persistence and atomic file writes
+        st_get, cfg_get = parse_cgi(run_cgi(notif_addon, "GET", "config"))
+        check(st_get == "200 OK", f"GET config returns 200 (got {st_get})", failures)
+        check(cfg_get.get("renault_notify_low_enabled") is True, "GET reflects renault_notify_low_enabled", failures)
+        check(cfg_get.get("renault_notify_low_soc") == 20, "GET reflects renault_notify_low_soc", failures)
+        check(cfg_get.get("renault_notify_high_enabled") is True, "GET reflects renault_notify_high_enabled", failures)
+        check(cfg_get.get("renault_notify_high_soc") == 80, "GET reflects renault_notify_high_soc", failures)
+        check(cfg_get.get("ccu_notify_dc_enabled") is True, "GET reflects ccu_notify_dc_enabled", failures)
+        check(cfg_get.get("ccu_notify_dc_threshold") == 80, "GET reflects ccu_notify_dc_threshold", failures)
+
+        # POST update new values via settings.cgi
+        st_post, cfg_post = parse_cgi(run_cgi(
+            notif_addon,
+            "POST",
+            "settings",
+            body=json.dumps({
+                "renault_notify_low_enabled": True,
+                "renault_notify_low_soc": 15,
+                "renault_notify_high_enabled": True,
+                "renault_notify_high_soc": 85,
+                "ccu_notify_dc_enabled": True,
+                "ccu_notify_dc_threshold": 75,
+            })
+        ))
+        check(st_post == "200 OK", f"POST settings returns 200 (got {st_post})", failures)
+        check(cfg_post.get("renault_notify_low_soc") == 15, "POST response returns new renault_notify_low_soc", failures)
+        check(cfg_post.get("renault_notify_high_soc") == 85, "POST response returns new renault_notify_high_soc", failures)
+        check(cfg_post.get("ccu_notify_dc_threshold") == 75, "POST response returns new ccu_notify_dc_threshold", failures)
+
+        check("RENAULT_NOTIFY_LOW_SOC='15'" in renault_notif_env_file.read_text(), "renault.env persisted low_soc=15", failures)
+        check("RENAULT_NOTIFY_HIGH_SOC='85'" in renault_notif_env_file.read_text(), "renault.env persisted high_soc=85", failures)
+        check((renault_notif_env_file.stat().st_mode & 0o777) == 0o600, "renault.env mode stays 600", failures)
+
+        check("CCU_NOTIFY_DC_THRESHOLD='75'" in ccu_notif_env_file.read_text(), "ccu_health.env persisted dc_threshold=75", failures)
+        check((ccu_notif_env_file.stat().st_mode & 0o777) == 0o600, "ccu_health.env mode stays 600", failures)
+
+        # 30f. Validation guards: non-numeric and out-of-range thresholds rejected
+        for bad_body, label in [
+            ('{"renault_notify_low_soc": "abc"}', "non-numeric renault_notify_low_soc"),
+            ('{"renault_notify_low_soc": 150}', "out-of-range renault_notify_low_soc > 100"),
+            ('{"renault_notify_low_soc": -5}', "negative renault_notify_low_soc"),
+            ('{"renault_notify_high_soc": "not-a-number"}', "non-numeric renault_notify_high_soc"),
+            ('{"renault_notify_high_soc": 105}', "out-of-range renault_notify_high_soc > 100"),
+            ('{"ccu_notify_dc_threshold": "bad"}', "non-numeric ccu_notify_dc_threshold"),
+            ('{"ccu_notify_dc_threshold": -1}', "negative ccu_notify_dc_threshold"),
+            ('{"ccu_notify_dc_threshold": 120}', "out-of-range ccu_notify_dc_threshold > 100"),
+            ('{"ccu_notify_dc_enabled": "maybe"}', "non-boolean ccu_notify_dc_enabled"),
+            ('{"renault_notify_low_enabled": "invalid"}', "non-boolean renault_notify_low_enabled"),
+        ]:
+            st_err, res_err = parse_cgi(run_cgi(notif_addon, "POST", "settings", body=bad_body))
+            check(st_err == "400 Bad Request" and res_err.get("ok") is False, f"settings API rejects {label} (got {st_err})", failures)
+
+        # Stored values must remain completely unchanged after rejected payloads
+        check("RENAULT_NOTIFY_LOW_SOC='15'" in renault_notif_env_file.read_text(), "rejected payloads leave renault.env unchanged", failures)
+        check("CCU_NOTIFY_DC_THRESHOLD='75'" in ccu_notif_env_file.read_text(), "rejected payloads leave ccu_health.env unchanged", failures)
+
+        # 30g. UI & deployment coverage
+        html_text = (ROOT / "web" / "index.html").read_text()
+        app_js_text = (ROOT / "web" / "app.js").read_text()
+        check('id="ccu-notify-settings"' in html_text, "index.html has CCU notify controls", failures)
+        check('id="renault-notify-settings"' in html_text, "index.html has Renault notify controls", failures)
+        check('id="ccu-notify-dc-enabled"' in html_text, "index.html has ccu-notify-dc-enabled switch", failures)
+        check('id="renault-notify-low-enabled"' in html_text, "index.html has renault-notify-low-enabled switch", failures)
+        check('id="renault-notify-high-enabled"' in html_text, "index.html has renault-notify-high-enabled switch", failures)
+        check("Warnung bei niedrigem SoC" in app_js_text, "app.js has German label Warnung bei niedrigem SoC", failures)
+        check("Benachrichtigung bei Ladeziel" in app_js_text, "app.js has German label Benachrichtigung bei Ladeziel", failures)
+        check("Duty-Cycle-Warnung" in app_js_text, "app.js has German label Duty-Cycle-Warnung", failures)
+        check("lib/plugin_notify.sh" in (ROOT / "deploy.sh").read_text(), "deploy.sh stages lib/plugin_notify.sh", failures)
+        check("ccu_health.env.example" in (ROOT / "deploy.sh").read_text(), "deploy.sh stages ccu_health.env.example", failures)
+
 
     finally:
         sma.shutdown()

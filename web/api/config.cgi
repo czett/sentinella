@@ -82,6 +82,9 @@ RENAULT_PLUGIN=$ADDON_DIR/plugins.d/20_renault_zoe.sh
 RENAULT_SESSION_FILE=$STATE_DIR/plugins/.renault_session
 RENAULT_CARD_FILE=$STATE_DIR/plugins/renault_zoe.json
 RENAULT_TMP_FILE=
+CCU_HEALTH_CONFIG_DIR=$ADDON_DIR/config/plugins
+CCU_HEALTH_ENV_FILE=${CCU_HEALTH_ENV:-$CCU_HEALTH_CONFIG_DIR/ccu_health.env}
+CCU_HEALTH_TMP_FILE=
 NOTIFY_SCRIPT=$ADDON_DIR/lib/notify_signal.sh
 TEST_RESULT=$STATE_DIR/notify_test.result
 TEST_LOG=$STATE_DIR/notify_test.log
@@ -93,6 +96,12 @@ UI_LANGUAGE=en
 RENAULT_USER=
 RENAULT_PASS=
 RENAULT_VIN=
+RENAULT_NOTIFY_LOW_ENABLED=0
+RENAULT_NOTIFY_LOW_SOC=20
+RENAULT_NOTIFY_HIGH_ENABLED=0
+RENAULT_NOTIFY_HIGH_SOC=80
+CCU_NOTIFY_DC_ENABLED=0
+CCU_NOTIFY_DC_THRESHOLD=80
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -331,6 +340,20 @@ msg() {
         en:renault_test_ok) printf 'Renault: Connection verified.' ;;
         de:renault_test_failed) printf 'Renault-Verbindung fehlgeschlagen. Prüfen Sie E-Mail, Passwort und VIN.' ;;
         en:renault_test_failed) printf 'Renault connection failed. Check email, password and VIN.' ;;
+        de:renault_low_soc_invalid) printf 'Geben Sie einen Schwellenwert für niedrigen SoC zwischen 0 und 100 ein.' ;;
+        en:renault_low_soc_invalid) printf 'Enter a low SoC threshold between 0 and 100.' ;;
+        de:renault_low_en_bool) printf 'Ungültiger Wert für Warnung bei niedrigem SoC.' ;;
+        en:renault_low_en_bool) printf 'Invalid boolean for low battery warning.' ;;
+        de:renault_high_soc_invalid) printf 'Geben Sie ein Ladeziel zwischen 0 und 100 ein.' ;;
+        en:renault_high_soc_invalid) printf 'Enter a target SoC between 0 and 100.' ;;
+        de:renault_high_en_bool) printf 'Ungültiger Wert für Benachrichtigung bei Ladeziel.' ;;
+        en:renault_high_en_bool) printf 'Invalid boolean for target charge notification.' ;;
+        de:ccu_dc_threshold_invalid) printf 'Geben Sie einen Duty-Cycle-Schwellenwert zwischen 0 und 100 ein.' ;;
+        en:ccu_dc_threshold_invalid) printf 'Enter a Duty Cycle threshold between 0 and 100.' ;;
+        de:ccu_dc_en_bool) printf 'Ungültiger Wert für Duty-Cycle-Warnung.' ;;
+        en:ccu_dc_en_bool) printf 'Invalid boolean for Duty Cycle warning.' ;;
+        de:write_ccu_health) printf 'Die CCU3-System-Konfiguration kann nicht geschrieben werden.' ;;
+        en:write_ccu_health) printf 'Cannot write the CCU3 system configuration.' ;;
         *) printf 'Request failed.' ;;
     esac
 }
@@ -551,6 +574,10 @@ load_renault_env() {
     RENAULT_USER=
     RENAULT_PASS=
     RENAULT_VIN=
+    RENAULT_NOTIFY_LOW_ENABLED=0
+    RENAULT_NOTIFY_LOW_SOC=20
+    RENAULT_NOTIFY_HIGH_ENABLED=0
+    RENAULT_NOTIFY_HIGH_SOC=80
     if [ -r "$RENAULT_ENV_FILE" ]; then
         # shellcheck source=/dev/null
         . "$RENAULT_ENV_FILE" 2>/dev/null || true
@@ -558,11 +585,28 @@ load_renault_env() {
     RENAULT_USER=$(trim_ws "${RENAULT_USER:-}")
     RENAULT_PASS=${RENAULT_PASS:-}
     RENAULT_VIN=$(trim_ws "${RENAULT_VIN:-}" | tr '[:lower:]' '[:upper:]')
+    case "$RENAULT_NOTIFY_LOW_ENABLED" in 1|true|TRUE|on|ON|yes|YES) RENAULT_NOTIFY_LOW_ENABLED=1 ;; *) RENAULT_NOTIFY_LOW_ENABLED=0 ;; esac
+    case "$RENAULT_NOTIFY_HIGH_ENABLED" in 1|true|TRUE|on|ON|yes|YES) RENAULT_NOTIFY_HIGH_ENABLED=1 ;; *) RENAULT_NOTIFY_HIGH_ENABLED=0 ;; esac
+    is_uint "$RENAULT_NOTIFY_LOW_SOC" || RENAULT_NOTIFY_LOW_SOC=20
+    is_uint "$RENAULT_NOTIFY_HIGH_SOC" || RENAULT_NOTIFY_HIGH_SOC=80
+    return 0
+}
+
+load_ccu_health_env() {
+    CCU_NOTIFY_DC_ENABLED=0
+    CCU_NOTIFY_DC_THRESHOLD=80
+    if [ -r "$CCU_HEALTH_ENV_FILE" ]; then
+        # shellcheck source=/dev/null
+        . "$CCU_HEALTH_ENV_FILE" 2>/dev/null || true
+    fi
+    case "$CCU_NOTIFY_DC_ENABLED" in 1|true|TRUE|on|ON|yes|YES) CCU_NOTIFY_DC_ENABLED=1 ;; *) CCU_NOTIFY_DC_ENABLED=0 ;; esac
+    is_uint "$CCU_NOTIFY_DC_THRESHOLD" || CCU_NOTIFY_DC_THRESHOLD=80
     return 0
 }
 
 load_env() {
     load_renault_env
+    load_ccu_health_env
     [ -r "$ENV_FILE" ] || return 1
     # shellcheck source=/dev/null
     . "$ENV_FILE" || return 1
@@ -580,6 +624,7 @@ load_env() {
         *) UI_LANGUAGE=en ;;
     esac
     load_renault_env
+    load_ccu_health_env
     return 0
 }
 
@@ -597,6 +642,13 @@ config_payload() {
 
     _writable=false
     [ -w "$ENV_FILE" ] && _writable=true
+
+    _renault_low_en=false
+    [ "$RENAULT_NOTIFY_LOW_ENABLED" = "1" ] && _renault_low_en=true
+    _renault_high_en=false
+    [ "$RENAULT_NOTIFY_HIGH_ENABLED" = "1" ] && _renault_high_en=true
+    _ccu_dc_en=false
+    [ "$CCU_NOTIFY_DC_ENABLED" = "1" ] && _ccu_dc_en=true
 
     case "$SMA_PORT" in
         ''|*[!0-9]*) _port=443 ;;
@@ -617,6 +669,12 @@ config_payload() {
     printf ',"renault_vin":%s' "$(json_str "$RENAULT_VIN")"
     printf ',"renault_pass_set":%s' "$_renault_pass_set"
     printf ',"renault_password_set":%s' "$_renault_pass_set"
+    printf ',"renault_notify_low_enabled":%s' "$_renault_low_en"
+    printf ',"renault_notify_low_soc":%s' "$RENAULT_NOTIFY_LOW_SOC"
+    printf ',"renault_notify_high_enabled":%s' "$_renault_high_en"
+    printf ',"renault_notify_high_soc":%s' "$RENAULT_NOTIFY_HIGH_SOC"
+    printf ',"ccu_notify_dc_enabled":%s' "$_ccu_dc_en"
+    printf ',"ccu_notify_dc_threshold":%s' "$CCU_NOTIFY_DC_THRESHOLD"
     printf ',"writable":%s' "$_writable"
     printf '}\n'
 }
@@ -681,6 +739,10 @@ save_renault_env() {
     _r_user=$1
     _r_pass=$2
     _r_vin=$3
+    _r_low_en=${4:-$RENAULT_NOTIFY_LOW_ENABLED}
+    _r_low_soc=${5:-$RENAULT_NOTIFY_LOW_SOC}
+    _r_high_en=${6:-$RENAULT_NOTIFY_HIGH_ENABLED}
+    _r_high_soc=${7:-$RENAULT_NOTIFY_HIGH_SOC}
 
     mkdir -p "$RENAULT_CONFIG_DIR" 2>/dev/null || return 1
     chmod 700 "$ADDON_DIR/config" "$RENAULT_CONFIG_DIR" 2>/dev/null || true
@@ -696,6 +758,10 @@ save_renault_env() {
 RENAULT_USER=''
 RENAULT_PASS=''
 RENAULT_VIN=''
+RENAULT_NOTIFY_LOW_ENABLED='0'
+RENAULT_NOTIFY_LOW_SOC='20'
+RENAULT_NOTIFY_HIGH_ENABLED='0'
+RENAULT_NOTIFY_HIGH_SOC='80'
 EOF
         fi
     ) || return 1
@@ -704,6 +770,10 @@ EOF
     env_set "$RENAULT_TMP_FILE" RENAULT_USER "$_r_user" || return 1
     env_set "$RENAULT_TMP_FILE" RENAULT_PASS "$_r_pass" || return 1
     env_set "$RENAULT_TMP_FILE" RENAULT_VIN "$_r_vin" || return 1
+    env_set "$RENAULT_TMP_FILE" RENAULT_NOTIFY_LOW_ENABLED "$_r_low_en" || return 1
+    env_set "$RENAULT_TMP_FILE" RENAULT_NOTIFY_LOW_SOC "$_r_low_soc" || return 1
+    env_set "$RENAULT_TMP_FILE" RENAULT_NOTIFY_HIGH_ENABLED "$_r_high_en" || return 1
+    env_set "$RENAULT_TMP_FILE" RENAULT_NOTIFY_HIGH_SOC "$_r_high_soc" || return 1
     chmod 600 "$RENAULT_TMP_FILE" 2>/dev/null || true
 
     mv -f "$RENAULT_TMP_FILE" "$RENAULT_ENV_FILE" 2>/dev/null || return 1
@@ -718,10 +788,46 @@ EOF
     return 0
 }
 
+save_ccu_health_env() {
+    _c_dc_en=${1:-$CCU_NOTIFY_DC_ENABLED}
+    _c_dc_thresh=${2:-$CCU_NOTIFY_DC_THRESHOLD}
+
+    mkdir -p "$CCU_HEALTH_CONFIG_DIR" 2>/dev/null || return 1
+    chmod 700 "$ADDON_DIR/config" "$CCU_HEALTH_CONFIG_DIR" 2>/dev/null || true
+
+    CCU_HEALTH_TMP_FILE="$CCU_HEALTH_ENV_FILE.tmp.$$"
+    (
+        umask 077
+        if [ -f "$CCU_HEALTH_ENV_FILE" ]; then
+            cp -p "$CCU_HEALTH_ENV_FILE" "$CCU_HEALTH_TMP_FILE" 2>/dev/null
+        else
+            cat > "$CCU_HEALTH_TMP_FILE" <<'EOF'
+# Sentinella - CCU3 Health plugin configuration (mode 600)
+CCU_NOTIFY_DC_ENABLED='0'
+CCU_NOTIFY_DC_THRESHOLD='80'
+EOF
+        fi
+    ) || return 1
+
+    chmod 600 "$CCU_HEALTH_TMP_FILE" 2>/dev/null || true
+    env_set "$CCU_HEALTH_TMP_FILE" CCU_NOTIFY_DC_ENABLED "$_c_dc_en" || return 1
+    env_set "$CCU_HEALTH_TMP_FILE" CCU_NOTIFY_DC_THRESHOLD "$_c_dc_thresh" || return 1
+    chmod 600 "$CCU_HEALTH_TMP_FILE" 2>/dev/null || true
+
+    mv -f "$CCU_HEALTH_TMP_FILE" "$CCU_HEALTH_ENV_FILE" 2>/dev/null || return 1
+    chmod 600 "$CCU_HEALTH_ENV_FILE" 2>/dev/null || true
+    CCU_HEALTH_TMP_FILE=
+    return 0
+}
+
 parse_and_validate_renault() {
     _ruser=$RENAULT_USER
     _rpass=$RENAULT_PASS
     _rvin=$RENAULT_VIN
+    _r_low_en_val=$RENAULT_NOTIFY_LOW_ENABLED
+    _r_low_soc_val=$RENAULT_NOTIFY_LOW_SOC
+    _r_high_en_val=$RENAULT_NOTIFY_HIGH_ENABLED
+    _r_high_soc_val=$RENAULT_NOTIFY_HIGH_SOC
     _want_renault=0
 
     _ruser_field=
@@ -760,6 +866,66 @@ parse_and_validate_renault() {
             _rpass=$_new_rpass
             _want_renault=1
         fi
+    fi
+
+    if body_has renault_notify_low_enabled; then
+        _r_low_en=$(body_bool renault_notify_low_enabled)
+        if [ -z "$_r_low_en" ]; then
+            fail "400 Bad Request" "$(msg renault_low_en_bool)" "renault_notify_low_enabled"
+        fi
+        [ "$_r_low_en" = "true" ] && _r_low_en_val=1 || _r_low_en_val=0
+        _want_renault=1
+    fi
+
+    if body_has renault_notify_low_soc; then
+        _r_low_soc=$(body_num renault_notify_low_soc)
+        if ! is_uint "$_r_low_soc" || [ "$_r_low_soc" -lt 0 ] || [ "$_r_low_soc" -gt 100 ]; then
+            fail "400 Bad Request" "$(msg renault_low_soc_invalid)" "renault_notify_low_soc"
+        fi
+        _r_low_soc_val=$_r_low_soc
+        _want_renault=1
+    fi
+
+    if body_has renault_notify_high_enabled; then
+        _r_high_en=$(body_bool renault_notify_high_enabled)
+        if [ -z "$_r_high_en" ]; then
+            fail "400 Bad Request" "$(msg renault_high_en_bool)" "renault_notify_high_enabled"
+        fi
+        [ "$_r_high_en" = "true" ] && _r_high_en_val=1 || _r_high_en_val=0
+        _want_renault=1
+    fi
+
+    if body_has renault_notify_high_soc; then
+        _r_high_soc=$(body_num renault_notify_high_soc)
+        if ! is_uint "$_r_high_soc" || [ "$_r_high_soc" -lt 0 ] || [ "$_r_high_soc" -gt 100 ]; then
+            fail "400 Bad Request" "$(msg renault_high_soc_invalid)" "renault_notify_high_soc"
+        fi
+        _r_high_soc_val=$_r_high_soc
+        _want_renault=1
+    fi
+}
+
+parse_and_validate_ccu_health() {
+    _c_dc_en_val=$CCU_NOTIFY_DC_ENABLED
+    _c_dc_thresh_val=$CCU_NOTIFY_DC_THRESHOLD
+    _want_ccu_health=0
+
+    if body_has ccu_notify_dc_enabled; then
+        _c_dc_en=$(body_bool ccu_notify_dc_enabled)
+        if [ -z "$_c_dc_en" ]; then
+            fail "400 Bad Request" "$(msg ccu_dc_en_bool)" "ccu_notify_dc_enabled"
+        fi
+        [ "$_c_dc_en" = "true" ] && _c_dc_en_val=1 || _c_dc_en_val=0
+        _want_ccu_health=1
+    fi
+
+    if body_has ccu_notify_dc_threshold; then
+        _c_dc_thresh=$(body_num ccu_notify_dc_threshold)
+        if ! is_uint "$_c_dc_thresh" || [ "$_c_dc_thresh" -lt 0 ] || [ "$_c_dc_thresh" -gt 100 ]; then
+            fail "400 Bad Request" "$(msg ccu_dc_threshold_invalid)" "ccu_notify_dc_threshold"
+        fi
+        _c_dc_thresh_val=$_c_dc_thresh
+        _want_ccu_health=1
     fi
 }
 
@@ -910,6 +1076,7 @@ save_config() {
     fi
 
     parse_and_validate_renault
+    parse_and_validate_ccu_health
 
     acquire_config_lock || fail "409 Conflict" \
         "$(msg config_busy)"
@@ -978,7 +1145,13 @@ save_config() {
 
     if [ "$_want_renault" = "1" ]; then
         save_renault_env "$_ruser" "$_rpass" "$_rvin" \
+            "$_r_low_en_val" "$_r_low_soc_val" "$_r_high_en_val" "$_r_high_soc_val" \
             || fail "500 Internal Server Error" "$(msg write_renault)"
+    fi
+
+    if [ "$_want_ccu_health" = "1" ]; then
+        save_ccu_health_env "$_c_dc_en_val" "$_c_dc_thresh_val" \
+            || fail "500 Internal Server Error" "$(msg write_ccu_health)"
     fi
 
     release_config_lock

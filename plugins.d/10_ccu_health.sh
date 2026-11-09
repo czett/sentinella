@@ -109,6 +109,31 @@ if [ -n "$CONFIG_FILE" ] && [ -r "$CONFIG_FILE" ]; then
     . "$CONFIG_FILE"
 fi
 
+is_uint() {
+    case "$1" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    return 0
+}
+
+CCU_NOTIFY_DC_ENABLED=${CCU_NOTIFY_DC_ENABLED:-0}
+CCU_NOTIFY_DC_THRESHOLD=${CCU_NOTIFY_DC_THRESHOLD:-80}
+
+case "$CCU_NOTIFY_DC_ENABLED" in 1|true|TRUE|on|ON|yes|YES) CCU_NOTIFY_DC_ENABLED=1 ;; *) CCU_NOTIFY_DC_ENABLED=0 ;; esac
+is_uint "$CCU_NOTIFY_DC_THRESHOLD" || CCU_NOTIFY_DC_THRESHOLD=80
+
+for _pnotify in \
+    "$ADDON_DIR/lib/plugin_notify.sh" \
+    "$APP_DIR/lib/plugin_notify.sh" \
+    /usr/local/addons/sentinella/lib/plugin_notify.sh
+do
+    if [ -r "$_pnotify" ]; then
+        # shellcheck source=/dev/null
+        . "$_pnotify"
+        break
+    fi
+done
+
 case "${UI_LANGUAGE:-}" in
     en|EN|en_US|en-US|en_GB|en-GB) UI_LANGUAGE=en ;;
     *) UI_LANGUAGE=de ;;
@@ -384,6 +409,14 @@ else
     rm -f "$OUT_FILE.tmp.$$" 2>/dev/null || true
     log "WARNING: could not publish $OUT_FILE"
     exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Threshold Notifications (CallMeBot / Signal Gateway)
+# ---------------------------------------------------------------------------
+if [ "$CCU_NOTIFY_DC_ENABLED" = "1" ] && is_uint "$DUTY_CYCLE" && command -v notify_plugin_threshold >/dev/null 2>&1; then
+    _msg_dc="Warnung: CCU3 Duty Cycle kritisch hoch ($DUTY_CYCLE %)!"
+    notify_plugin_threshold "ccu_health" "duty_cycle" "$DUTY_CYCLE" "$CCU_NOTIFY_DC_THRESHOLD" "above" "$_msg_dc"
 fi
 
 exit 0

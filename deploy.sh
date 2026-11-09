@@ -175,7 +175,7 @@ for tool in ssh tar; do
     command -v "$tool" >/dev/null 2>&1 || die "required tool not found: $tool"
 done
 
-for file in VERSION .env bin/check_soc.sh lib/notify_signal.sh setup_variables.sh \
+for file in VERSION .env bin/check_soc.sh lib/notify_signal.sh lib/plugin_notify.sh lib/notify.sh setup_variables.sh \
             plugins.d/10_ccu_health.sh \
             plugins.d/15_weather.sh \
             plugins.d/20_renault_zoe.sh \
@@ -183,6 +183,7 @@ for file in VERSION .env bin/check_soc.sh lib/notify_signal.sh setup_variables.s
             config/plugins/weather.env.example \
             config/plugins/renault.env.example \
             config/plugins/forecast_solar.env.example \
+            config/plugins/ccu_health.env.example \
             web/index.html web/style.css web/app.js \
             web/api/config.cgi web/api/settings.cgi \
             web/api/test_signal.cgi web/api/test_renault.cgi \
@@ -234,7 +235,9 @@ mkdir -p "$STAGE/bin" "$STAGE/lib" "$STAGE/web/api" \
          "$STAGE/plugins.d" "$STAGE/config/plugins"
 install -m 644 "$ROOT/VERSION"               "$STAGE/VERSION"
 install -m 700 "$ROOT/bin/check_soc.sh"      "$STAGE/bin/check_soc.sh"
-install -m 700 "$ROOT/lib/notify_signal.sh"  "$STAGE/lib/notify_signal.sh"
+install -m 755 "$ROOT/lib/notify_signal.sh"  "$STAGE/lib/notify_signal.sh"
+install -m 755 "$ROOT/lib/plugin_notify.sh"  "$STAGE/lib/plugin_notify.sh"
+install -m 755 "$ROOT/lib/notify.sh"         "$STAGE/lib/notify.sh"
 install -m 700 "$ROOT/setup_variables.sh"    "$STAGE/setup_variables.sh"
 install -m 755 "$ROOT/plugins.d/10_ccu_health.sh" \
     "$STAGE/plugins.d/10_ccu_health.sh"
@@ -248,6 +251,8 @@ install -m 644 "$ROOT/config/plugins/weather.env.example" \
     "$STAGE/config/plugins/weather.env.example"
 install -m 644 "$ROOT/config/plugins/renault.env.example" \
     "$STAGE/config/plugins/renault.env.example"
+install -m 644 "$ROOT/config/plugins/ccu_health.env.example" \
+    "$STAGE/config/plugins/ccu_health.env.example"
 install -m 644 "$ROOT/config/plugins/forecast_solar.env.example" \
     "$STAGE/config/plugins/forecast_solar.env.example"
 # Staged separately: an existing remote .env keeps its credentials.
@@ -293,7 +298,7 @@ mkdir -p "$ADDON_DIR/state" "$ADDON_DIR/plugins.d" "$ADDON_DIR/config/plugins" \
 chmod 700 "$ADDON_DIR" "$ADDON_DIR/bin" "$ADDON_DIR/lib" "$ADDON_DIR/state" \
     "$ADDON_DIR/plugins.d" "$ADDON_DIR/config" "$ADDON_DIR/config/plugins" \
     "$ADDON_DIR/state/plugins"
-chmod 755 "$ADDON_DIR/bin/check_soc.sh" "$ADDON_DIR/lib/notify_signal.sh" "$ADDON_DIR/setup_variables.sh"
+chmod 755 "$ADDON_DIR/bin/check_soc.sh" "$ADDON_DIR/lib/notify_signal.sh" "$ADDON_DIR/lib/plugin_notify.sh" "$ADDON_DIR/lib/notify.sh" "$ADDON_DIR/setup_variables.sh"
 
 # Plugins are independently executable. Glob so future plugins inherit 755
 # without another deploy.sh edit.

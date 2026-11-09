@@ -171,6 +171,13 @@
             pluginNameForecastSolar: "PV Forecast (Forecast.solar)",
             pluginNameRenault: "Renault E-Tech",
             pluginToggleFailed: "Plugin state could not be saved.",
+            renaultNotifyLow: "Low battery warning",
+            renaultNotifyLowSoc: "Low SoC threshold",
+            renaultNotifyHigh: "Target charge notification",
+            renaultNotifyHighSoc: "Target SoC",
+            ccuNotifyDc: "Duty cycle warning",
+            ccuNotifyDcThreshold: "Duty cycle threshold",
+            thresholdPercentInvalid: "Enter a valid percentage between 0 and 100.",
             animations: "ANIMATIONS",
             animationsLabel: "ANIMATIONS",
             animationsDesc: "(On / Off)",
@@ -340,6 +347,13 @@
             pluginNameForecastSolar: "PV-Prognose (Forecast.solar)",
             pluginNameRenault: "Renault E-Tech",
             pluginToggleFailed: "Plugin-Status konnte nicht gespeichert werden.",
+            renaultNotifyLow: "Warnung bei niedrigem SoC",
+            renaultNotifyLowSoc: "Schwellenwert niedriger SoC",
+            renaultNotifyHigh: "Benachrichtigung bei Ladeziel",
+            renaultNotifyHighSoc: "Ladeziel",
+            ccuNotifyDc: "Duty-Cycle-Warnung",
+            ccuNotifyDcThreshold: "Duty-Cycle-Schwellenwert",
+            thresholdPercentInvalid: "Geben Sie einen gültigen Prozentwert zwischen 0 und 100 ein.",
             animations: "ANIMATIONEN",
             animationsLabel: "ANIMATIONEN",
             animationsDesc: "(Ein / Aus)",
@@ -503,6 +517,12 @@
         renaultVin: $("renault-vin"),
         renaultTest: $("renault-test"),
         renaultTestStatus: $("renault-test-status"),
+        ccuNotifyDc: $("ccu-notify-dc-enabled"),
+        ccuNotifyDcThreshold: $("ccu-notify-dc-threshold"),
+        renaultNotifyLow: $("renault-notify-low-enabled"),
+        renaultNotifyLowSoc: $("renault-notify-low-soc"),
+        renaultNotifyHigh: $("renault-notify-high-enabled"),
+        renaultNotifyHighSoc: $("renault-notify-high-soc"),
         animationsToggle: $("animations-toggle"),
 
         toast: $("toast")
@@ -2350,6 +2370,25 @@
                 el.renaultPassHint.hidden = !renaultPassSet;
             }
         }
+
+        if (el.ccuNotifyDc) {
+            el.ccuNotifyDc.checked = data.ccu_notify_dc_enabled === true;
+        }
+        if (el.ccuNotifyDcThreshold) {
+            el.ccuNotifyDcThreshold.value = String(data.ccu_notify_dc_threshold !== undefined ? data.ccu_notify_dc_threshold : 80);
+        }
+        if (el.renaultNotifyLow) {
+            el.renaultNotifyLow.checked = data.renault_notify_low_enabled === true;
+        }
+        if (el.renaultNotifyLowSoc) {
+            el.renaultNotifyLowSoc.value = String(data.renault_notify_low_soc !== undefined ? data.renault_notify_low_soc : 20);
+        }
+        if (el.renaultNotifyHigh) {
+            el.renaultNotifyHigh.checked = data.renault_notify_high_enabled === true;
+        }
+        if (el.renaultNotifyHighSoc) {
+            el.renaultNotifyHighSoc.value = String(data.renault_notify_high_soc !== undefined ? data.renault_notify_high_soc : 80);
+        }
     }
 
     function adoptConfig(data) {
@@ -2473,6 +2512,39 @@
             }
         }
 
+        if (el.ccuNotifyDc && el.ccuNotifyDc.checked && el.ccuNotifyDcThreshold) {
+            var cDcRaw = el.ccuNotifyDcThreshold.value.trim();
+            var cDc = Number(cDcRaw);
+            if (!cDcRaw || !Number.isInteger(cDc) || cDc < 0 || cDc > 100) {
+                return {
+                    field: "ccu-notify-dc-threshold",
+                    text: t("thresholdPercentInvalid")
+                };
+            }
+        }
+
+        if (el.renaultNotifyLow && el.renaultNotifyLow.checked && el.renaultNotifyLowSoc) {
+            var rLowRaw = el.renaultNotifyLowSoc.value.trim();
+            var rLow = Number(rLowRaw);
+            if (!rLowRaw || !Number.isInteger(rLow) || rLow < 0 || rLow > 100) {
+                return {
+                    field: "renault-notify-low-soc",
+                    text: t("thresholdPercentInvalid")
+                };
+            }
+        }
+
+        if (el.renaultNotifyHigh && el.renaultNotifyHigh.checked && el.renaultNotifyHighSoc) {
+            var rHighRaw = el.renaultNotifyHighSoc.value.trim();
+            var rHigh = Number(rHighRaw);
+            if (!rHighRaw || !Number.isInteger(rHigh) || rHigh < 0 || rHigh > 100) {
+                return {
+                    field: "renault-notify-high-soc",
+                    text: t("thresholdPercentInvalid")
+                };
+            }
+        }
+
         return null;
     }
 
@@ -2509,6 +2581,24 @@
             if (rPass && !isMaskedApiKey(rPass)) {
                 payload.renault_pass = rPass;
             }
+        }
+        if (el.ccuNotifyDc) {
+            payload.ccu_notify_dc_enabled = el.ccuNotifyDc.checked;
+        }
+        if (el.ccuNotifyDcThreshold) {
+            payload.ccu_notify_dc_threshold = Number(el.ccuNotifyDcThreshold.value.trim() || 80);
+        }
+        if (el.renaultNotifyLow) {
+            payload.renault_notify_low_enabled = el.renaultNotifyLow.checked;
+        }
+        if (el.renaultNotifyLowSoc) {
+            payload.renault_notify_low_soc = Number(el.renaultNotifyLowSoc.value.trim() || 20);
+        }
+        if (el.renaultNotifyHigh) {
+            payload.renault_notify_high_enabled = el.renaultNotifyHigh.checked;
+        }
+        if (el.renaultNotifyHighSoc) {
+            payload.renault_notify_high_soc = Number(el.renaultNotifyHighSoc.value.trim() || 80);
         }
         return payload;
     }

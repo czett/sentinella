@@ -99,7 +99,11 @@ mkdir -p \
 
 cp -f "$SRC_DIR/VERSION" "$ADDON_DIR/VERSION" 2>/dev/null || true
 cp -f "$SRC_DIR/bin/check_soc.sh" "$ADDON_DIR/bin/check_soc.sh"
-cp -f "$SRC_DIR/lib/notify_signal.sh" "$ADDON_DIR/lib/notify_signal.sh"
+for _lib in "$SRC_DIR/lib"/*.sh; do
+    [ -f "$_lib" ] || continue
+    cp -f "$_lib" "$ADDON_DIR/lib/$(basename "$_lib")"
+    chmod 755 "$ADDON_DIR/lib/$(basename "$_lib")"
+done
 cp -f "$SRC_DIR/setup_variables.sh" "$ADDON_DIR/setup_variables.sh"
 cp -f "$SRC_DIR/.env.example" "$ADDON_DIR/.env.example"
 
@@ -208,7 +212,11 @@ EOF
 
 # 3. Copy add-on scripts, plugins, config templates, and web assets
 cp -f "$ROOT_DIR/bin/check_soc.sh" "$PKG_DIR/bin/check_soc.sh"
-cp -f "$ROOT_DIR/lib/notify_signal.sh" "$PKG_DIR/lib/notify_signal.sh"
+for _lib in "$ROOT_DIR/lib"/*.sh; do
+    [ -f "$_lib" ] || continue
+    cp -f "$_lib" "$PKG_DIR/lib/$(basename "$_lib")"
+    chmod 755 "$PKG_DIR/lib/$(basename "$_lib")"
+done
 cp -f "$ROOT_DIR/setup_variables.sh" "$PKG_DIR/setup_variables.sh"
 cp -f "$ROOT_DIR/.env.example" "$PKG_DIR/.env.example"
 cp -f "$ROOT_DIR/LICENSE" "$PKG_DIR/LICENSE"

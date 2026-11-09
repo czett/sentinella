@@ -52,6 +52,8 @@ mkdir -p \
 
 cp -f "$ROOT_DIR/bin/check_soc.sh" "$STAGE_DIR/bin/check_soc.sh"
 cp -f "$ROOT_DIR/lib/notify_signal.sh" "$STAGE_DIR/lib/notify_signal.sh"
+cp -f "$ROOT_DIR/lib/plugin_notify.sh" "$STAGE_DIR/lib/plugin_notify.sh"
+cp -f "$ROOT_DIR/lib/notify.sh" "$STAGE_DIR/lib/notify.sh"
 cp -f "$ROOT_DIR/setup_variables.sh" "$STAGE_DIR/setup_variables.sh"
 cp -f "$ROOT_DIR/plugins.d/10_ccu_health.sh" "$STAGE_DIR/plugins.d/10_ccu_health.sh"
 cp -f "$ROOT_DIR/plugins.d/15_weather.sh" "$STAGE_DIR/plugins.d/15_weather.sh"
@@ -59,6 +61,7 @@ cp -f "$ROOT_DIR/plugins.d/20_renault_zoe.sh" "$STAGE_DIR/plugins.d/20_renault_z
 cp -f "$ROOT_DIR/plugins.d/30_forecast_solar.sh" "$STAGE_DIR/plugins.d/30_forecast_solar.sh"
 cp -f "$ROOT_DIR/config/plugins/weather.env.example" "$STAGE_DIR/config/plugins/weather.env.example"
 cp -f "$ROOT_DIR/config/plugins/renault.env.example" "$STAGE_DIR/config/plugins/renault.env.example"
+cp -f "$ROOT_DIR/config/plugins/ccu_health.env.example" "$STAGE_DIR/config/plugins/ccu_health.env.example"
 cp -f "$ROOT_DIR/config/plugins/forecast_solar.env.example" "$STAGE_DIR/config/plugins/forecast_solar.env.example"
 cp -f "$ROOT_DIR/.env.example" "$STAGE_DIR/.env.example"
 cp -f "$ROOT_DIR/web/index.html" "$STAGE_DIR/web/index.html"
@@ -76,6 +79,8 @@ cp -f "$ROOT_DIR/web/api/plugin_manager.cgi" "$STAGE_DIR/web/api/plugin_manager.
 chmod 755 \
     "$STAGE_DIR/bin/check_soc.sh" \
     "$STAGE_DIR/lib/notify_signal.sh" \
+    "$STAGE_DIR/lib/plugin_notify.sh" \
+    "$STAGE_DIR/lib/notify.sh" \
     "$STAGE_DIR/setup_variables.sh" \
     "$STAGE_DIR/plugins.d/10_ccu_health.sh" \
     "$STAGE_DIR/plugins.d/15_weather.sh" \

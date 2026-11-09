@@ -74,11 +74,13 @@ trim_ws() {
 usage() {
     cat <<'EOF'
 Usage: notify_signal.sh trigger|reset SOC
+       notify_signal.sh --message TEXT
        notify_signal.sh --test
        notify_signal.sh --help
 
   trigger SOC   send the overflow/trigger message
   reset SOC     send the recovery/reset message
+  --message MSG send an explicit notification message
   --test        send a test message and validate phone/apikey credentials
   --help        show this help
 
@@ -361,12 +363,17 @@ main() {
     EVENT=
     SOC=
     TEST=0
+    CUSTOM_MSG=
 
     while [ "$#" -gt 0 ]; do
         case "$1" in
             --test)
                 TEST=1
                 shift
+                ;;
+            --message|--text|-m)
+                CUSTOM_MSG=${2:-}
+                shift 2
                 ;;
             --help|-h)
                 usage
@@ -386,18 +393,30 @@ main() {
     if [ "$TEST" = "1" ]; then
         EVENT="test"
         SOC=0
+    elif [ -n "$CUSTOM_MSG" ]; then
+        EVENT="custom"
+        SOC=0
     else
         EVENT=${1:-}
         SOC=${2:-}
 
         case "$EVENT" in
-            trigger|reset) ;;
-            *) log "ERROR: first argument must be 'trigger' or 'reset'"; return 2 ;;
+            trigger|reset)
+                if ! is_uint "$SOC" || [ "$SOC" -lt 0 ] || [ "$SOC" -gt 100 ]; then
+                    log "ERROR: second argument must be a SoC integer between 0 and 100"
+                    return 2
+                fi
+                ;;
+            message|custom|raw)
+                CUSTOM_MSG=${2:-}
+                EVENT="custom"
+                SOC=0
+                ;;
+            *)
+                log "ERROR: first argument must be 'trigger', 'reset', or '--message'"
+                return 2
+                ;;
         esac
-        if ! is_uint "$SOC" || [ "$SOC" -lt 0 ] || [ "$SOC" -gt 100 ]; then
-            log "ERROR: second argument must be a SoC integer between 0 and 100"
-            return 2
-        fi
     fi
 
     load_config || return $?
@@ -445,8 +464,16 @@ main() {
     esac
 
     if ! acquire_lock; then
-        log "notification already in progress; skipping duplicate ($EVENT, SoC ${SOC}%)"
+        log "notification already in progress; skipping duplicate ($EVENT)"
         return 0
+    fi
+
+    if [ -n "$CUSTOM_MSG" ]; then
+        if send_message "$CUSTOM_MSG"; then
+            log "notification sent ($EVENT: $CUSTOM_MSG)"
+            return 0
+        fi
+        return 1
     fi
 
     if already_sent_recently "$EVENT"; then
