@@ -6,7 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-12
+
 ### Added
+
+- **CCU-Only Mode**: `SMA_IP` is now optional, allowing Sentinella to run as a standalone CCU3/RaspberryMatic, weather, EV, Shelly EM, and tariff monitor without an SMA inverter.
+- **Configurable Hero Tile (`HERO_SOURCE`)**: Choose between `auto`, `sma`, `ccu`, and `shelly` for the primary hero tile, with instant auto-save in the Settings Drawer.
+- **Shelly EM Plugin (`25_shelly_em.sh`)**: Supports Shelly EM (Gen1) and Shelly Pro EM / 3EM (Gen2/Pro) for real-time grid power, phase telemetry, and energy counters.
+- **Dynamic Electricity Tariff Plugin (`35_tibber.sh`)**: Zero-config aWATTar (DE/AT) hourly electricity prices out of the box, with optional Tibber API token support.
+- **Atomic state writes**: All state and JSON writes use `.tmp` + `mv -f` to prevent partial reads on the CCU3.
+
+### Earlier Unreleased Changes
 
 - `UI_LANGUAGE` (`en`/`de`, default `en`) for the dashboard and the built-in
   Signal messages. The header `EN / DE` switch updates the interface

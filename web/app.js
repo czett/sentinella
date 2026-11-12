@@ -118,12 +118,29 @@
             timestamp: "Timestamp",
             systemConfiguration: "System configuration",
             batteryThresholds: "Thresholds",
+            displaySection: "Display",
+            heroSourceLabel: "Hero source",
+            heroSourceAuto: "Auto (SMA → Shelly → CCU3)",
+            heroSourceSma: "SMA Battery SoC",
+            heroSourceCcu: "CCU3 Duty Cycle",
+            heroSourceShelly: "Shelly EM Grid Power",
+            shellyEm: "Shelly EM",
+            enableShelly: "Enable Shelly EM",
+            shellyIp: "Shelly IP / Host",
+            shellyUser: "Username (optional)",
+            shellyPass: "Password (optional)",
+            dynamicTariff: "Dynamic Tariff",
+            enableTariff: "Enable Dynamic Tariff",
+            tariffProvider: "Provider",
+            tariffSurcharge: "Surcharge (ct/kWh)",
+            tibberToken: "Tibber API Token",
+            savedToast: "Saved",
             thresholdsNote: "The signal turns on at the trigger level and off below the reset level. Reset must stay below trigger.",
             triggerLevel: "Trigger level",
             triggerSlider: "Trigger level slider",
             resetLevel: "Reset level",
             resetSlider: "Reset level slider",
-            signalAlerts: "Signal alerts",
+            signalAlerts: "Signal notifications",
             sendNotifications: "Signal Notifications",
             sendNotificationsNote: "Calls the CallMeBot Signal gateway when the signal changes.",
             notifyMute: "Mute all notifications",
@@ -166,8 +183,12 @@
             saveSettings: "Save settings",
             footnotePrefix: "Values are written to",
             footnoteSuffix: "on the CCU. The next monitor run applies them within two minutes.",
-            displaySection: "Display",
+            extensionsSection: "Extensions",
             pluginManagerSection: "PLUGINS",
+            ccuSystemHealth: "CCU3 System Health",
+            gridPhases: "Grid & Phases",
+            netPower: "Net power",
+            statusLabel: "Status",
             pluginNameCcuHealth: "CCU3 System Status",
             pluginNameWeather: "Weather (Open-Meteo)",
             pluginNameForecastSolar: "PV Forecast (Experimental)",
@@ -310,6 +331,23 @@
             timestamp: "Zeitstempel",
             systemConfiguration: "Systemkonfiguration",
             batteryThresholds: "Schaltschwellen",
+            displaySection: "Darstellung",
+            heroSourceLabel: "Hero-Quelle",
+            heroSourceAuto: "Auto (SMA → Shelly → CCU3)",
+            heroSourceSma: "SMA Batterie-SoC",
+            heroSourceCcu: "CCU3 Duty Cycle",
+            heroSourceShelly: "Shelly EM Netzleistung",
+            shellyEm: "Shelly EM",
+            enableShelly: "Shelly EM aktivieren",
+            shellyIp: "Shelly IP / Host",
+            shellyUser: "Benutzername (optional)",
+            shellyPass: "Passwort (optional)",
+            dynamicTariff: "Dynamischer Stromtarif",
+            enableTariff: "Dynamischen Tarif aktivieren",
+            tariffProvider: "Anbieter",
+            tariffSurcharge: "Aufschlag (ct/kWh)",
+            tibberToken: "Tibber API-Token",
+            savedToast: "Gespeichert",
             thresholdsNote: "Das Signal schaltet ab der Einschaltschwelle ein und unter der Ausschaltschwelle wieder ab. Die Ausschaltschwelle muss unter der Einschaltschwelle liegen.",
             triggerLevel: "Einschaltschwelle",
             triggerSlider: "Schieberegler Einschaltschwelle",
@@ -358,8 +396,12 @@
             saveSettings: "Einstellungen speichern",
             footnotePrefix: "Werte werden in",
             footnoteSuffix: "auf der CCU gespeichert und beim nächsten Lauf (innerhalb von zwei Minuten) übernommen.",
-            displaySection: "Darstellung",
+            extensionsSection: "Erweiterungen",
             pluginManagerSection: "ERWEITERUNGEN",
+            ccuSystemHealth: "CCU3 System-Status",
+            gridPhases: "Netz & Phasen",
+            netPower: "Netzleistung",
+            statusLabel: "Status",
             pluginNameCcuHealth: "CCU3 System-Status",
             pluginNameWeather: "Wetter (Open-Meteo)",
             pluginNameForecastSolar: "PV-Prognose (Experimentell)",
@@ -482,6 +524,18 @@
         heroBlock: $("hero-card") || $("hero-block"),
         gauge: $("gauge"),
         socValue: $("soc-value"),
+        socUnit: $("soc-unit"),
+        panelEyebrow: $("panel-eyebrow"),
+        instrumentTitle: $("instrument-title"),
+        heroSource: $("hero-source"),
+        shellyEnabled: $("shelly-enabled"),
+        shellyIp: $("shelly-ip"),
+        shellyUser: $("shelly-user"),
+        shellyPass: $("shelly-pass"),
+        tariffEnabled: $("tariff-enabled"),
+        tariffProvider: $("tariff-provider"),
+        tariffSurcharge: $("tariff-surcharge"),
+        tibberToken: $("tibber-token"),
         socState: $("soc-state"),
         socCaption: $("soc-caption"),
 
@@ -489,6 +543,10 @@
         signalCopy: $("signal-copy"),
 
         rail: $("rail"),
+        railPanel: $("rail-panel"),
+        heroDetail: $("hero-detail"),
+        heroDetailList: $("hero-detail-list"),
+        batteryMetrics: $("battery-metrics"),
         railMarkerLabel: $("rail-marker-label"),
         railResetValue: $("rail-reset-value"),
         railTriggerValue: $("rail-trigger-value"),
@@ -924,6 +982,117 @@
         return render(data);
     }
 
+    var configuredHeroSource = null;
+    var lastPlugins = [];
+
+    function resolveHeroSource(status, plugins) {
+        var pref = configuredHeroSource || (status && status.hero_source) || "auto";
+        if (pref === "sma" || pref === "ccu" || pref === "shelly") {
+            return pref;
+        }
+        if (status && status.sma_configured === true && status.soc != null) {
+            return "sma";
+        }
+        if (Array.isArray(plugins)) {
+            for (var i = 0; i < plugins.length; i++) {
+                if (plugins[i] && plugins[i].id === "shelly_em") {
+                    return "shelly";
+                }
+            }
+        }
+        return "ccu";
+    }
+
+    function findPlugin(plugins, id) {
+        if (!Array.isArray(plugins)) return null;
+        for (var i = 0; i < plugins.length; i++) {
+            if (plugins[i] && plugins[i].id === id) return plugins[i];
+        }
+        return null;
+    }
+
+    function pluginRows(plugin) {
+        if (!plugin) return [];
+        if (Array.isArray(plugin.items)) return plugin.items;
+        if (Array.isArray(plugin.secondary_metrics)) return plugin.secondary_metrics;
+        if (Array.isArray(plugin.metrics)) return plugin.metrics;
+        return [];
+    }
+
+    function pluginPrimary(plugin) {
+        if (!plugin) return { value: "--", unit: "" };
+        if (plugin.primary && plugin.primary.value !== undefined) return plugin.primary;
+        if (plugin.value !== undefined) {
+            return { value: plugin.value, unit: plugin.unit || "" };
+        }
+        var rows = pluginRows(plugin);
+        for (var i = 0; i < rows.length; i++) {
+            if (/DUTY|AUSLASTUNG/i.test(String((rows[i] && rows[i].label) || ""))) {
+                return rows[i];
+            }
+        }
+        return rows.length ? rows[0] : { value: "--", unit: "" };
+    }
+
+    function pluginTone(plugin) {
+        if (!plugin) return "inactive";
+        var color = String(plugin.status_color || plugin.tone || "").toLowerCase();
+        return (color === "red" || color === "critical" || color === "active") ? "active" : "inactive";
+    }
+
+    function renderHeroDetail(heroSource, plugin) {
+        if (!el.heroDetailList) return;
+        var rows = [];
+        var rawRows = pluginRows(plugin);
+
+        if (heroSource === "ccu") {
+            if (plugin) {
+                var primary = pluginPrimary(plugin);
+                var dutyNum = parseFloat(primary.value);
+                var hasDuty = isFinite(dutyNum);
+                var dutyVal = hasDuty
+                    ? (String(dutyNum) + (primary.unit ? " " + primary.unit : "%"))
+                    : (primary.value != null ? String(primary.value) : "--");
+                rows.push({ label: primary.label || "DUTY CYCLE", value: dutyVal });
+                for (var i = 0; i < rawRows.length; i++) {
+                    var r = rawRows[i];
+                    if (!r || /DUTY|AUSLASTUNG/i.test(String(r.label || ""))) continue;
+                    rows.push({
+                        label: r.label || "",
+                        value: (r.value != null ? String(r.value) : "--") + (r.unit ? " " + r.unit : "")
+                    });
+                }
+            }
+        } else if (heroSource === "shelly") {
+            if (plugin) {
+                var sPrimary = pluginPrimary(plugin);
+                var wVal = (sPrimary && sPrimary.value !== undefined && sPrimary.value !== null)
+                    ? String(sPrimary.value) : "--";
+                var sUnit = (sPrimary && sPrimary.unit) ? sPrimary.unit : (wVal !== "--" ? "W" : "");
+                rows.push({ label: t("netPower"), value: sUnit ? (wVal + " " + sUnit) : wVal });
+                rows.push({
+                    label: t("statusLabel"),
+                    value: String(plugin.status_badge || plugin.status || "IDLE")
+                });
+                for (var j = 0; j < rawRows.length; j++) {
+                    var sr = rawRows[j];
+                    if (!sr) continue;
+                    rows.push({
+                        label: sr.label || "",
+                        value: (sr.value != null ? String(sr.value) : "--") + (sr.unit ? " " + sr.unit : "")
+                    });
+                }
+            }
+        }
+
+        el.heroDetailList.innerHTML = rows.map(function (row) {
+            return '<li class="plugin-list-row">' +
+                '<span class="plugin-list-label">' + escapeHtml(String(row.label)) + '</span>' +
+                '<span class="plugin-list-value">' + escapeHtml(String(row.value)) + '</span>' +
+                '</li>';
+        }).join("");
+    }
+
     function render(data) {
         var soc = data.soc;
         var thresholds = normalizeThresholds(data);
@@ -985,42 +1154,113 @@
             }
         });
 
-        el.socValue.textContent = String(soc);
-        el.socState.textContent = chargeTag(charge);
-        el.socState.dataset.charge = charge;
-        el.gauge.setAttribute(
-            "aria-label",
-            t("ariaSoc", { soc: soc, state: chargeLabel(charge).toLowerCase() })
-        );
-        el.socCaption.textContent = captionFor(data, thresholds);
+        var heroSource = resolveHeroSource(data, lastPlugins);
+        var heroPlugin = null;
+        if (heroSource === "ccu") {
+            var ccuPlugin = findPlugin(lastPlugins, "ccu_health");
+            heroPlugin = ccuPlugin;
+            var ccuPrimary = pluginPrimary(ccuPlugin);
+            var dutyNum = parseFloat(ccuPrimary.value);
+            var hasDuty = isFinite(dutyNum);
+            var ccuRows = pluginRows(ccuPlugin);
+            var summaryParts = ccuRows.map(function (m) {
+                return m.label + ": " + m.value + (m.unit ? " " + m.unit : "");
+            });
+            if (el.instrumentTitle) el.instrumentTitle.textContent = "CCU3 Duty Cycle";
+            el.socValue.textContent = hasDuty ? String(dutyNum) : "--";
+            if (el.socUnit) el.socUnit.textContent = hasDuty ? (ccuPrimary.unit || "%") : "";
+            var ccuStatus = (ccuPlugin && (ccuPlugin.status_badge || ccuPlugin.status)) || "OK";
+            el.socState.textContent = ccuPlugin ? ccuStatus : "--";
+            el.socState.dataset.charge = "idle";
+            el.socCaption.textContent = ccuPlugin
+                ? (summaryParts.length ? summaryParts.join(" · ") : "CCU3 / RaspberryMatic")
+                : "Waiting for CCU3 plugin data.";
+            if (el.panelEyebrow) el.panelEyebrow.textContent = t("ccuSystemHealth");
+            el.signalChip.textContent = ccuPlugin ? ccuStatus : "--";
+            el.signalChip.dataset.tone = pluginTone(ccuPlugin);
+            if (el.signalChip.parentElement && el.signalChip.parentElement.parentElement) {
+                el.signalChip.parentElement.parentElement.dataset.tone = el.signalChip.dataset.tone;
+            }
+            el.signalCopy.textContent = ccuPlugin
+                ? (summaryParts.length ? summaryParts.join(" · ") : "Duty Cycle & System")
+                : "Waiting for CCU3 plugin data.";
+        } else if (heroSource === "shelly") {
+            var shellyPlugin = findPlugin(lastPlugins, "shelly_em");
+            heroPlugin = shellyPlugin;
+            var sPrimary = pluginPrimary(shellyPlugin);
+            var wVal = (sPrimary && sPrimary.value !== undefined && sPrimary.value !== null)
+                ? String(sPrimary.value) : "--";
+            var sUnit = (sPrimary && sPrimary.unit) ? sPrimary.unit : (wVal !== "--" ? "W" : "");
+            var sRows = pluginRows(shellyPlugin);
+            var sParts = sRows.map(function (m) {
+                return m.label + ": " + m.value + (m.unit ? " " + m.unit : "");
+            });
+            if (el.instrumentTitle) el.instrumentTitle.textContent = "Shelly EM";
+            el.socValue.textContent = wVal;
+            if (el.socUnit) el.socUnit.textContent = sUnit;
+            var sStatus = (shellyPlugin && (shellyPlugin.status_badge || shellyPlugin.status)) || "IDLE";
+            el.socState.textContent = shellyPlugin ? sStatus : "--";
+            el.socState.dataset.charge = "idle";
+            el.socCaption.textContent = sParts.length ? sParts.join(" · ") : "Shelly EM Grid Power";
+            if (el.panelEyebrow) el.panelEyebrow.textContent = t("gridPhases");
+            el.signalChip.textContent = shellyPlugin ? sStatus : "--";
+            el.signalChip.dataset.tone = pluginTone(shellyPlugin);
+            if (el.signalChip.parentElement && el.signalChip.parentElement.parentElement) {
+                el.signalChip.parentElement.parentElement.dataset.tone = el.signalChip.dataset.tone;
+            }
+            el.signalCopy.textContent = sParts.length ? sParts.join(" · ") : "Shelly EM";
+        } else {
+            if (el.instrumentTitle) el.instrumentTitle.textContent = t("stateOfCharge");
+            if (el.socUnit) el.socUnit.textContent = "%";
+            if (el.panelEyebrow) el.panelEyebrow.textContent = t("hysteresisSignal");
+            el.socValue.textContent = soc == null ? "--" : String(soc);
+            el.socState.textContent = chargeTag(charge);
+            el.socState.dataset.charge = charge;
+            el.gauge.setAttribute(
+                "aria-label",
+                t("ariaSoc", { soc: soc, state: chargeLabel(charge).toLowerCase() })
+            );
+            el.socCaption.textContent = captionFor(data, thresholds);
 
-        el.signalChip.textContent = signalLabel(data);
-        el.signalChip.dataset.tone = tone;
-        if (el.signalChip.parentElement && el.signalChip.parentElement.parentElement) {
-            el.signalChip.parentElement.parentElement.dataset.tone = tone;
-        }
-        el.signalCopy.textContent = signalCopyFor(data, thresholds);
+            el.signalChip.textContent = signalLabel(data);
+            el.signalChip.dataset.tone = tone;
+            if (el.signalChip.parentElement && el.signalChip.parentElement.parentElement) {
+                el.signalChip.parentElement.parentElement.dataset.tone = tone;
+            }
+            el.signalCopy.textContent = signalCopyFor(data, thresholds);
 
-        el.rail.style.setProperty("--soc", String(soc));
-        el.rail.style.setProperty("--reset", String(thresholds.reset));
-        el.rail.style.setProperty("--trigger", String(thresholds.trigger));
-        el.rail.dataset.active = data.signal === true ? "true" : "false";
-        el.rail.setAttribute(
-            "aria-label",
-            t("ariaRail", {
-                soc: soc,
-                reset: thresholds.reset,
-                trigger: thresholds.trigger
-            })
-        );
-        el.railMarkerLabel.textContent = soc + "%";
-        el.railResetValue.textContent = String(thresholds.reset);
-        el.railTriggerValue.textContent = String(thresholds.trigger);
-        if (el.railResetTag) {
-            el.railResetTag.textContent = thresholds.reset + "%";
+            el.rail.style.setProperty("--soc", String(soc == null ? 0 : soc));
+            el.rail.style.setProperty("--reset", String(thresholds.reset));
+            el.rail.style.setProperty("--trigger", String(thresholds.trigger));
+            el.rail.dataset.active = data.signal === true ? "true" : "false";
+            el.rail.setAttribute(
+                "aria-label",
+                t("ariaRail", {
+                    soc: soc,
+                    reset: thresholds.reset,
+                    trigger: thresholds.trigger
+                })
+            );
+            el.railMarkerLabel.textContent = soc + "%";
+            el.railResetValue.textContent = String(thresholds.reset);
+            el.railTriggerValue.textContent = String(thresholds.trigger);
+            if (el.railResetTag) {
+                el.railResetTag.textContent = thresholds.reset + "%";
+            }
+            if (el.railTriggerTag) {
+                el.railTriggerTag.textContent = thresholds.trigger + "%";
+            }
         }
-        if (el.railTriggerTag) {
-            el.railTriggerTag.textContent = thresholds.trigger + "%";
+
+        if (heroSource === "ccu" || heroSource === "shelly") {
+            if (el.railPanel) el.railPanel.hidden = true;
+            if (el.batteryMetrics) el.batteryMetrics.hidden = true;
+            if (el.heroDetail) el.heroDetail.hidden = false;
+            renderHeroDetail(heroSource, heroPlugin);
+        } else {
+            if (el.railPanel) el.railPanel.hidden = false;
+            if (el.batteryMetrics) el.batteryMetrics.hidden = false;
+            if (el.heroDetail) el.heroDetail.hidden = true;
         }
 
         el.chargeState.textContent = chargeLabel(charge);
@@ -1972,6 +2212,10 @@
     }
 
     function renderPluginsList(plugins) {
+        lastPlugins = Array.isArray(plugins) ? plugins : [];
+        if (current) {
+            render(current);
+        }
         if (!el.pluginsSection || !el.pluginsGrid) {
             return;
         }
@@ -1980,7 +2224,12 @@
             el.pluginsGrid.innerHTML = "";
             return;
         }
-        var visible = filterEnabledPlugins(plugins, pluginStates);
+        var heroSrc = resolveHeroSource(current, lastPlugins);
+        var visible = filterEnabledPlugins(plugins, pluginStates).filter(function (p) {
+            if (heroSrc === "ccu" && p && p.id === "ccu_health") return false;
+            if (heroSrc === "shelly" && p && p.id === "shelly_em") return false;
+            return true;
+        });
         if (!visible.length) {
             el.pluginsSection.style.display = "none";
             el.pluginsGrid.innerHTML = "";
@@ -2064,12 +2313,7 @@
             body: JSON.stringify({ id: id, enabled: enabled })
         }).then(function (data) {
             applyPluginStates(data);
-            if (enabled) {
-                fetchAndRenderPlugins();
-                setTimeout(function () {
-                    fetchAndRenderPlugins();
-                }, 600);
-            }
+            refreshPluginsNowAndLater();
         }).catch(function () {
             pluginStates[id] = previous;
             syncPluginToggles();
@@ -2441,6 +2685,33 @@
     }
 
     function fillSettingsForm(data) {
+        if (el.heroSource && data.hero_source) {
+            el.heroSource.value = data.hero_source;
+        }
+        if (el.shellyEnabled) {
+            el.shellyEnabled.checked = Boolean(data.shelly_enabled);
+        }
+        if (el.shellyIp) {
+            el.shellyIp.value = data.shelly_ip || "";
+        }
+        if (el.shellyUser) {
+            el.shellyUser.value = data.shelly_user || "";
+        }
+        if (el.shellyPass) {
+            el.shellyPass.value = "";
+        }
+        if (el.tariffEnabled) {
+            el.tariffEnabled.checked = Boolean(data.tariff_enabled);
+        }
+        if (el.tariffProvider && data.tariff_provider) {
+            el.tariffProvider.value = data.tariff_provider;
+        }
+        if (el.tariffSurcharge) {
+            el.tariffSurcharge.value = data.tariff_surcharge_ct != null ? String(data.tariff_surcharge_ct) : "0";
+        }
+        if (el.tibberToken) {
+            el.tibberToken.value = "";
+        }
         el.triggerSoc.value = String(data.trigger_soc);
         el.resetSoc.value = String(data.reset_soc);
         el.triggerRange.value = String(data.trigger_soc);
@@ -2522,6 +2793,12 @@
     }
 
     function adoptConfig(data) {
+        if (data && data.hero_source) {
+            configuredHeroSource = data.hero_source;
+        }
+        if (current) {
+            render(current);
+        }
         liveConfig = data;
         if (data && data.ui_language) {
             if (!languagePinned && !languageSynced) {
@@ -2756,6 +3033,13 @@
         var phone = el.signalPhone.value.trim();
         el.signalPhone.value = phone;
         var payload = {
+            hero_source: el.heroSource ? el.heroSource.value : "auto",
+            shelly_enabled: el.shellyEnabled ? el.shellyEnabled.checked : false,
+            shelly_ip: el.shellyIp ? el.shellyIp.value.trim() : "",
+            shelly_user: el.shellyUser ? el.shellyUser.value.trim() : "",
+            tariff_enabled: el.tariffEnabled ? el.tariffEnabled.checked : false,
+            tariff_provider: el.tariffProvider ? el.tariffProvider.value : "awattar_de",
+            tariff_surcharge_ct: el.tariffSurcharge ? Number(el.tariffSurcharge.value || 0) : 0,
             trigger_soc: Number(el.triggerSoc.value.trim()),
             reset_soc: Number(el.resetSoc.value.trim()),
             signal_enabled: el.signalEnabled.checked,
@@ -2829,15 +3113,30 @@
         if (el.renaultNotifyHighSoc) {
             payload.renault_notify_high_soc = Number(el.renaultNotifyHighSoc.value.trim() || 80);
         }
+        if (el.shellyPass && el.shellyPass.value && !isMaskedApiKey(el.shellyPass.value)) {
+            payload.shelly_pass = el.shellyPass.value;
+        }
+        if (el.tibberToken && el.tibberToken.value) {
+            payload.tibber_token = el.tibberToken.value;
+        }
         return payload;
     }
 
-    function saveSettings(silent) {
+    function refreshPluginsNowAndLater() {
+        fetchAndRenderPlugins();
+        setTimeout(fetchAndRenderPlugins, 600);
+        setTimeout(fetchAndRenderPlugins, 2500);
+    }
+
+    function saveSettings(opts) {
+        var silent = typeof opts === "boolean" ? opts : !!(opts && opts.silent);
+        var patch = (opts && typeof opts === "object" && opts.patch) || null;
+
         if (!settingsAvailable) {
             return Promise.reject(new Error(t("settingsUnavailableShort")));
         }
 
-        var invalid = validateSettings();
+        var invalid = patch ? null : validateSettings();
         if (invalid) {
             var field = $(invalid.field);
             if (field) {
@@ -2853,15 +3152,17 @@
         return requestJSON(SETTINGS_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(buildPayload())
+            body: JSON.stringify(patch || buildPayload())
         }).then(function (data) {
-            fillSettingsForm(data);
+            if (!patch) {
+                fillSettingsForm(data);
+            }
+            liveConfig = data;
             adoptConfig(data);
-            fetchAndRenderPlugins();
-            setTimeout(function () {
-                fetchAndRenderPlugins();
-            }, 600);
-            if (!silent) {
+            refreshPluginsNowAndLater();
+            if (silent) {
+                showSettingsStatus("success", t("savedToast"));
+            } else {
                 showSettingsStatus(
                     "success",
                     t("configSavedApply")
@@ -2869,6 +3170,32 @@
             }
             return data;
         });
+    }
+
+    var autoSaveTimer = null;
+    var autoSaveQueue = {};
+    var autoSaveBusy = false;
+
+    function queueAutoSave(patch) {
+        Object.assign(autoSaveQueue, patch);
+        if (autoSaveTimer) clearTimeout(autoSaveTimer);
+        autoSaveTimer = setTimeout(flushAutoSave, 180);
+    }
+
+    function flushAutoSave() {
+        autoSaveTimer = null;
+        if (autoSaveBusy || !Object.keys(autoSaveQueue).length) return;
+        var patch = autoSaveQueue;
+        autoSaveQueue = {};
+        autoSaveBusy = true;
+        saveSettings({ silent: true, patch: patch })
+            .catch(function (err) {
+                showSettingsStatus("error", err && err.message ? err.message : t("saveFailed"));
+            })
+            .finally(function () {
+                autoSaveBusy = false;
+                if (Object.keys(autoSaveQueue).length) flushAutoSave();
+            });
     }
 
     function pollTestResult(attempt) {
@@ -3019,7 +3346,7 @@
             showRenaultTestFeedback("success", msgText);
             showSettingsStatus("success", msgText);
             showToast("success", msgText);
-            fetchAndRenderPlugins();
+            refreshPluginsNowAndLater();
         }).catch(function (error) {
             var errText = (error && error.message) || t("renaultTestFailed");
             showRenaultTestFeedback("error", errText);
@@ -3311,6 +3638,74 @@
             }, 0);
         });
     }
+
+    if (el.heroSource) {
+        el.heroSource.addEventListener("change", function () {
+            configuredHeroSource = el.heroSource.value;
+            if (current) render(current);
+            queueAutoSave({ hero_source: el.heroSource.value });
+        });
+    }
+
+    if (el.shellyEnabled) {
+        el.shellyEnabled.addEventListener("change", function () {
+            queueAutoSave({ shelly_enabled: el.shellyEnabled.checked });
+        });
+    }
+
+    if (el.tariffEnabled) {
+        el.tariffEnabled.addEventListener("change", function () {
+            queueAutoSave({ tariff_enabled: el.tariffEnabled.checked });
+        });
+    }
+
+    function bindAutoSave(input, fn) {
+        if (!input) return;
+        input.addEventListener("change", function () {
+            var patch = fn(input);
+            if (patch) queueAutoSave(patch);
+        });
+    }
+
+    bindAutoSave(el.shellyIp, function (i) { return { shelly_ip: i.value.trim() }; });
+    bindAutoSave(el.shellyUser, function (i) { return { shelly_user: i.value.trim() }; });
+    bindAutoSave(el.shellyPass, function (i) {
+        return (i.value && !isMaskedApiKey(i.value)) ? { shelly_pass: i.value } : null;
+    });
+    bindAutoSave(el.tariffProvider, function (i) { return { tariff_provider: i.value }; });
+    bindAutoSave(el.tariffSurcharge, function (i) { return { tariff_surcharge_ct: Number(i.value || 0) }; });
+    bindAutoSave(el.tibberToken, function (i) {
+        return i.value ? { tibber_token: i.value } : null;
+    });
+    bindAutoSave(el.ccuNotifyDc, function (i) { return { ccu_notify_dc_enabled: i.checked }; });
+    bindAutoSave(el.ccuNotifyDcThreshold, function (i) {
+        return { ccu_notify_dc_threshold: Number(i.value.trim() || 80) };
+    });
+    bindAutoSave(el.weatherCity, function (i) { return { weather_city: i.value.trim() || "LOKAL" }; });
+    bindAutoSave(el.weatherLat, function (i) { return { weather_lat: i.value.trim().replace(",", ".") }; });
+    bindAutoSave(el.weatherLon, function (i) { return { weather_lon: i.value.trim().replace(",", ".") }; });
+    bindAutoSave(el.forecastKwp, function (i) { return { forecast_kwp: i.value.trim().replace(",", ".") }; });
+    bindAutoSave(el.forecastDec, function (i) { return { forecast_dec: i.value.trim().replace(",", ".") || "35" }; });
+    bindAutoSave(el.forecastAz, function (i) { return { forecast_az: i.value.trim().replace(",", ".") || "0" }; });
+    bindAutoSave(el.forecastLat, function (i) { return { forecast_lat: i.value.trim().replace(",", ".") }; });
+    bindAutoSave(el.forecastLon, function (i) { return { forecast_lon: i.value.trim().replace(",", ".") }; });
+    bindAutoSave(el.renaultUser, function (i) { return { renault_user: i.value.trim() }; });
+    bindAutoSave(el.renaultVin, function (i) {
+        var v = i.value.trim().toUpperCase();
+        i.value = v;
+        return { renault_vin: v };
+    });
+    bindAutoSave(el.renaultPass, function (i) {
+        return (i.value && !isMaskedApiKey(i.value)) ? { renault_pass: i.value } : null;
+    });
+    bindAutoSave(el.renaultNotifyLow, function (i) { return { renault_notify_low_enabled: i.checked }; });
+    bindAutoSave(el.renaultNotifyLowSoc, function (i) {
+        return { renault_notify_low_soc: Number(i.value.trim() || 20) };
+    });
+    bindAutoSave(el.renaultNotifyHigh, function (i) { return { renault_notify_high_enabled: i.checked }; });
+    bindAutoSave(el.renaultNotifyHighSoc, function (i) {
+        return { renault_notify_high_soc: Number(i.value.trim() || 80) };
+    });
 
     el.settingsForm.addEventListener("submit", function (event) {
         event.preventDefault();

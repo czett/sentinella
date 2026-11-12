@@ -283,6 +283,10 @@ load_config() {
     WEB_ENABLED=${WEB_ENABLED:-true}
     WEB_STATUS_FILE=${WEB_STATUS_FILE:-$STATE_DIR/status.json}
     WEB_HISTORY_POINTS=${WEB_HISTORY_POINTS:-288}
+    case "${HERO_SOURCE:-auto}" in
+        auto|sma|ccu|shelly) HERO_SOURCE=${HERO_SOURCE:-auto} ;;
+        *) HERO_SOURCE=auto ;;
+    esac
 
     # Language for the dashboard and Signal notifications. Unknown values fall
     # back to English so a typo cannot break the monitor or the alerts.
@@ -298,9 +302,16 @@ load_config() {
     # ------------------------------------------------------------------
     # Validation
     # ------------------------------------------------------------------
-    if ! is_safe_host "$SMA_IP"; then
-        log "ERROR: SMA_IP must be an IPv4 address or hostname without scheme/path"
-        return 2
+    if [ -n "$SMA_IP" ]; then
+        SMA_CONFIGURED=true
+        MODE=sma
+        if ! is_safe_host "$SMA_IP"; then
+            log "ERROR: SMA_IP must be an IPv4 address or hostname without scheme/path"
+            return 2
+        fi
+    else
+        SMA_CONFIGURED=false
+        MODE=ccu_only
     fi
     if ! is_uint "$SMA_PORT" || [ "$SMA_PORT" -lt 1 ] || [ "$SMA_PORT" -gt 65535 ]; then
         log "ERROR: SMA_PORT must be an integer between 1 and 65535"
@@ -310,7 +321,7 @@ load_config() {
         usr|user) ;;
         *) log "ERROR: SMA_ROLE must be 'usr' or 'user'"; return 2 ;;
     esac
-    if [ -z "$SMA_PASS" ]; then
+    if [ "$SMA_CONFIGURED" = "true" ] && [ -z "$SMA_PASS" ]; then
         log "ERROR: SMA_PASS must be set in $ENV_FILE"
         return 2
     fi
@@ -817,11 +828,12 @@ determine_charge_state() {
 
 status_json() {
     cat <<EOF
-{"schema":1,"ui_language":"$UI_LANGUAGE","generated_at":"$_j_generated","generated_epoch":$NOW,"host":"$_j_host","soc":$SOC,"previous_soc":$_j_prev,"delta":$_j_delta,"charging":"$CHARGE_STATE","charge_power_w":$_j_charge,"discharge_power_w":$_j_discharge,"signal":$_j_signal,"signal_state":"$SIGNAL_STATE","signal_notifications":$_j_notify,"signal_gateway":"$_j_gateway","thresholds":{"trigger":$THRESHOLD_TRIGGER,"reset":$THRESHOLD_RESET},"variables":{"soc":"$SV_SOC_NAME","signal":"$SV_SIGNAL_NAME"},"ccu_status":"$_j_ccu","history":$_j_history}
+{"schema":1,"ui_language":"$UI_LANGUAGE","mode":"$MODE","sma_configured":$SMA_CONFIGURED,"hero_source":"$HERO_SOURCE","generated_at":"$_j_generated","generated_epoch":$NOW,"host":"$_j_host","soc":$_j_soc,"previous_soc":$_j_prev,"delta":$_j_delta,"charging":"$CHARGE_STATE","charge_power_w":$_j_charge,"discharge_power_w":$_j_discharge,"signal":$_j_signal,"signal_state":"$SIGNAL_STATE","signal_notifications":$_j_notify,"signal_gateway":"$_j_gateway","thresholds":{"trigger":$THRESHOLD_TRIGGER,"reset":$THRESHOLD_RESET},"variables":{"soc":"$SV_SOC_NAME","signal":"$SV_SIGNAL_NAME"},"ccu_status":"$_j_ccu","history":$_j_history}
 EOF
 }
 
 write_status() {
+    _j_soc=$(json_number_or_null "$SOC")
     _j_prev=$(json_number_or_null "$PREV_SOC")
     _j_delta=$(json_number_or_null "$DELTA")
     _j_charge=$(json_number_or_null "$CHARGE_POWER")
@@ -953,6 +965,21 @@ main() {
 
     rotate_log
     acquire_lock || exit 0
+
+    if [ "$SMA_CONFIGURED" = "false" ]; then
+        SOC=""
+        PREV_SOC=""
+        DELTA=""
+        CHARGE_POWER=""
+        DISCHARGE_POWER=""
+        SIGNAL=""
+        SIGNAL_STATE="unknown"
+        CHARGE_STATE="unknown"
+        CCU_OK=1
+        write_status
+        run_plugins
+        exit 0
+    fi
 
     PREV_SOC=$(read_last_soc)
 

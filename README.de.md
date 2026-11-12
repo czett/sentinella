@@ -17,11 +17,15 @@ Sentinella ist eine modulare Monitoring-Plattform auf Basis von 100 % POSIX-Shel
 
 | Modul | Standard | Daten | Quelle |
 |---|---|---|---|
-| **SMA-Speicher** (Kern) | aktiv | SoC, Lade-/Entladeleistung, Überschuss-Signal | HTTPS-WebConnect |
+| **SMA-Speicher** (Kern, optional) | aktiv wenn `SMA_IP` gesetzt | SoC, Lade-/Entladeleistung, Überschuss-Signal | HTTPS-WebConnect |
 | **CCU3 Health** (`10_ccu_health.sh`) | aktiv | Duty Cycle, Load, RAM, Uptime | `tclrpc.so`-XML-RPC auf `127.0.0.1:2001`, Fallback `2010`; `/proc` |
 | **Wetter** (`15_weather.sh`) | aktiv | Temperatur, Luftfeuchte, WMO-Zustand, Wind, Tages-Min/Max | Open-Meteo, ohne API-Schlüssel |
 | **Renault E-Tech** (`20_renault_zoe.sh`) | inaktiv bis zur Konfiguration | SoC, Reichweite, Steckerstatus, Ladestatus, Kilometerstand | MY Renault Cloud |
+| **Shelly EM** (`25_shelly_em.sh`) | inaktiv bis zur Konfiguration | Netzleistung, Phasenwerte, Energiezähler | Shelly Gen1 & Gen2/Pro lokal über HTTP |
 | **PV-Prognose** (`30_forecast_solar.sh`) | inaktiv (experimentell) | Ertrag heute und morgen in `kWh` und `kWh/kWp` | forecast.solar, ohne API-Schlüssel |
+| **Dynamischer Stromtarif** (`35_tibber.sh`) | inaktiv bis zur Aktivierung | Stundenpreis, Min/Max/Schnitt | aWATTar (DE/AT, ohne Schlüssel) oder Tibber |
+
+Sentinella unterstützt zudem den **CCU-Only-Modus** (`SMA_IP` optional) sowie eine **konfigurierbare Hero-Kachel** (`HERO_SOURCE`: `auto`, `sma`, `ccu`, `shelly`) mit sofortigem Auto-Save im Einstellungs-Menü. Alle Status- und JSON-Dateien werden atomar über `.tmp` + `mv -f` geschrieben.
 
 Der Plugin-Manager speichert die Schalter in `config/plugins.env` (`PLUGIN_<NAME>='0|1'`). Die Schalter im Einstellungs-Menü rufen `api/plugin_manager.cgi` auf; der Endpunkt akzeptiert nur bekannte IDs, schreibt die Datei atomar und entfernt die Karte beim Deaktivieren. `web/app.js` filtert die aktuelle Kartenliste sofort, ohne auf den nächsten Lauf zu warten. Zusätzlich beachtet jedes Plugin eine `.disabled`-Datei neben dem Skript.
 

@@ -118,7 +118,7 @@
                     </div>
 
                     <div class="soc" id="gauge" role="img" aria-label="Battery state of charge unknown">
-                        <span class="soc-value" id="soc-value">--</span><span class="soc-unit" aria-hidden="true">%</span>
+                        <span class="soc-value" id="soc-value">--</span><span class="soc-unit" id="soc-unit" aria-hidden="true">%</span>
                     </div>
 
                     <div class="poster-foot">
@@ -130,7 +130,7 @@
                     <div class="signal-panel">
                         <div class="panel-header">
                             <span class="panel-index">02</span>
-                            <span class="panel-eyebrow" data-i18n="hysteresisSignal">Excess Signal</span>
+                            <span class="panel-eyebrow" id="panel-eyebrow" data-i18n="hysteresisSignal">Excess Signal</span>
                         </div>
 
                         <div class="signal-display">
@@ -141,7 +141,7 @@
                         <p class="signal-copy" id="signal-copy" data-i18n="signalCopyDefault">Turns on at the trigger threshold and off below the reset threshold.</p>
                     </div>
 
-                    <div class="rail-panel">
+                    <div class="rail-panel" id="rail-panel">
                         <div class="rail-header">
                             <span class="rail-title" data-i18n="thresholdCorridor">Thresholds</span>
                             <span class="rail-readout">
@@ -173,7 +173,11 @@
                         </div>
                     </div>
 
-                    <section class="metrics" aria-label="Current telemetry">
+                    <section class="hero-detail" id="hero-detail" hidden aria-label="Current device details">
+                        <ul class="plugin-list-metrics" id="hero-detail-list"></ul>
+                    </section>
+
+                    <section class="metrics" id="battery-metrics" aria-label="Current telemetry">
                         <div class="metric">
                             <span class="metric-label" data-i18n="chargingState">Charging state</span>
                             <span class="metric-value" id="charge-state">—</span>
@@ -290,8 +294,30 @@
         <p class="drawer-status" id="settings-status" role="status" hidden></p>
 
         <form class="settings-form" id="settings-form" novalidate>
+            <fieldset class="field-group" id="display-group">
+                <legend><span class="group-index">01</span><span data-i18n="displaySection">Display</span></legend>
+                <label class="field" for="hero-source">
+                    <span class="field-label" data-i18n="heroSourceLabel">Hero source</span>
+                    <select class="input" id="hero-source" name="hero_source">
+                        <option value="auto" data-i18n="heroSourceAuto">Auto (SMA → Shelly → CCU3)</option>
+                        <option value="sma" data-i18n="heroSourceSma">SMA Battery SoC</option>
+                        <option value="ccu" data-i18n="heroSourceCcu">CCU3 Duty Cycle</option>
+                        <option value="shelly" data-i18n="heroSourceShelly">Shelly EM Grid Power</option>
+                    </select>
+                </label>
+
+                <label class="switch-row" for="animations-toggle">
+                    <span>
+                        <span class="field-label" data-i18n="animationsLabel">ANIMATIONS</span>
+                        <span class="field-note" id="animations-status-note" data-i18n="animationsDesc">(On / Off)</span>
+                    </span>
+                    <input class="switch" id="animations-toggle" name="animations_toggle" type="checkbox" role="switch"
+                           checked aria-label="ANIMATIONS" data-i18n-aria="animationsLabel">
+                </label>
+            </fieldset>
+
             <fieldset class="field-group">
-                <legend><span class="group-index">01</span><span data-i18n="batteryThresholds">Battery thresholds</span></legend>
+                <legend><span class="group-index">02</span><span data-i18n="batteryThresholds">Battery thresholds</span></legend>
                 <p class="field-note" data-i18n="thresholdsNote">The signal turns on at the trigger level and off again at the reset level. Reset must stay below trigger.</p>
 
                 <div class="field-row">
@@ -321,7 +347,7 @@
             </fieldset>
 
             <fieldset class="field-group">
-                <legend><span class="group-index">02</span><span data-i18n="signalAlerts">Signal alerts</span></legend>
+                <legend><span class="group-index">03</span><span data-i18n="signalAlerts">Signal notifications</span></legend>
 
                 <label class="switch-row" for="signal_enabled">
                     <span>
@@ -380,7 +406,7 @@
             </fieldset>
 
             <fieldset class="field-group">
-                <legend><span class="group-index">03</span><span data-i18n="inverter">Inverter</span></legend>
+                <legend><span class="group-index">04</span><span data-i18n="inverter">Inverter</span></legend>
 
                 <label class="field" for="sma-ip">
                     <span class="field-label" data-i18n="smaIp">SMA IP address</span>
@@ -407,44 +433,8 @@
                 <p class="field-hint" id="sma-password-hint" hidden data-i18n="storedPasswordHint">A password is stored. Leave the field empty to keep it.</p>
             </fieldset>
 
-            <fieldset class="field-group" id="renault-group">
-                <legend><span class="group-index">04</span><span data-i18n="renaultSection">RENAULT E-TECH</span></legend>
-                <p class="field-note" data-i18n="renaultNote">Optional MY Renault cloud credentials for live E-Tech battery and charging telemetry.</p>
-
-                <label class="field" for="renault-user">
-                    <span class="field-label" data-i18n="renaultEmail">Renault E-Mail</span>
-                    <input class="input" id="renault-user" name="renault_user" type="text"
-                           autocomplete="off" spellcheck="false"
-                           aria-label="Renault E-Mail" data-i18n-aria="renaultEmail"
-                           placeholder="name@example.com">
-                </label>
-
-                <div class="field-row">
-                    <label class="field" for="renault-pass">
-                        <span class="field-label" data-i18n="renaultPassword">Renault Passwort</span>
-                        <input class="input" id="renault-pass" name="renault_pass" type="password"
-                               autocomplete="new-password" spellcheck="false"
-                               aria-label="Renault Passwort" data-i18n-aria="renaultPassword"
-                               placeholder="••••••••">
-                    </label>
-                    <label class="field" for="renault-vin">
-                        <span class="field-label" data-i18n="renaultVin">Renault VIN</span>
-                        <input class="input input-uppercase" id="renault-vin" name="renault_vin" type="text"
-                               autocomplete="off" spellcheck="false" maxlength="17"
-                               aria-label="Renault VIN" data-i18n-aria="renaultVin"
-                               placeholder="VF1...">
-                    </label>
-                </div>
-                <p class="field-hint" id="renault-pass-hint" hidden data-i18n="storedPasswordHint">A password is stored. Leave the field empty to keep it.</p>
-
-                <div class="quick-setup-footer renault-actions">
-                    <button class="button button-outline quick-setup-button" id="renault-test" type="button" data-i18n="testRenaultConnection">Verbindung testen</button>
-                    <p class="quick-setup-status" id="renault-test-status" role="status" aria-live="polite" hidden></p>
-                </div>
-            </fieldset>
-
             <fieldset class="field-group" id="plugin-manager-group">
-                <legend><span class="group-index">05</span><span data-i18n="pluginManagerSection">PLUGINS</span></legend>
+                <legend><span class="group-index">05</span><span data-i18n="extensionsSection">Extensions</span></legend>
                 <label class="switch-row" for="plugin-toggle-10_ccu_health">
                     <span class="field-label" data-i18n="pluginNameCcuHealth">CCU3 System Status</span>
                     <input class="switch plugin-toggle" id="plugin-toggle-10_ccu_health" data-plugin-id="10_ccu_health" type="checkbox" role="switch" checked>
@@ -543,7 +533,41 @@
                     <span class="field-label" data-i18n="pluginNameRenault">Renault E-Tech</span>
                     <input class="switch plugin-toggle" id="plugin-toggle-20_renault_zoe" data-plugin-id="20_renault_zoe" type="checkbox" role="switch">
                 </label>
-                <div class="plugin-settings" id="renault-notify-settings">
+                <div class="plugin-settings" id="renault-settings">
+                    <p class="field-note" data-i18n="renaultNote">Optional MY Renault cloud credentials for live E-Tech battery and charging telemetry.</p>
+
+                    <label class="field" for="renault-user">
+                        <span class="field-label" data-i18n="renaultEmail">Renault E-Mail</span>
+                        <input class="input" id="renault-user" name="renault_user" type="text"
+                               autocomplete="off" spellcheck="false"
+                               aria-label="Renault E-Mail" data-i18n-aria="renaultEmail"
+                               placeholder="name@example.com">
+                    </label>
+
+                    <div class="field-row">
+                        <label class="field" for="renault-pass">
+                            <span class="field-label" data-i18n="renaultPassword">Renault Passwort</span>
+                            <input class="input" id="renault-pass" name="renault_pass" type="password"
+                                   autocomplete="new-password" spellcheck="false"
+                                   aria-label="Renault Passwort" data-i18n-aria="renaultPassword"
+                                   placeholder="••••••••">
+                        </label>
+                        <label class="field" for="renault-vin">
+                            <span class="field-label" data-i18n="renaultVin">Renault VIN</span>
+                            <input class="input input-uppercase" id="renault-vin" name="renault_vin" type="text"
+                                   autocomplete="off" spellcheck="false" maxlength="17"
+                                   aria-label="Renault VIN" data-i18n-aria="renaultVin"
+                                   placeholder="VF1...">
+                        </label>
+                    </div>
+                    <p class="field-hint" id="renault-pass-hint" hidden data-i18n="storedPasswordHint">A password is stored. Leave the field empty to keep it.</p>
+
+                    <div class="quick-setup-footer renault-actions">
+                        <button class="button button-outline quick-setup-button" id="renault-test" type="button" data-i18n="testRenaultConnection">Verbindung testen</button>
+                        <p class="quick-setup-status" id="renault-test-status" role="status" aria-live="polite" hidden></p>
+                    </div>
+
+                    <div id="renault-notify-settings">
                     <label class="switch-row" for="renault-notify-low-enabled">
                         <span class="field-label" data-i18n="renaultNotifyLow">Warnung bei niedrigem SoC</span>
                         <input class="switch" id="renault-notify-low-enabled" name="renault_notify_low_enabled" type="checkbox" role="switch">
@@ -570,19 +594,58 @@
                             <span class="suffix" aria-hidden="true">%</span>
                         </span>
                     </label>
+                    </div>
                 </div>
-            </fieldset>
 
-            <fieldset class="field-group" id="appearance-group">
-                <legend><span class="group-index">06</span><span data-i18n="displaySection">Display</span></legend>
-                <label class="switch-row" for="animations-toggle">
-                    <span>
-                        <span class="field-label" data-i18n="animationsLabel">ANIMATIONS</span>
-                        <span class="field-note" id="animations-status-note" data-i18n="animationsDesc">(On / Off)</span>
+                <label class="switch-row" for="shelly-enabled">
+                    <span class="switch-copy">
+                        <span class="field-label" data-i18n="enableShelly">Enable Shelly EM</span>
                     </span>
-                    <input class="switch" id="animations-toggle" name="animations_toggle" type="checkbox" role="switch"
-                           checked aria-label="ANIMATIONS" data-i18n-aria="animationsLabel">
+                    <input class="switch" id="shelly-enabled" name="shelly_enabled" type="checkbox">
                 </label>
+                <div class="plugin-settings" id="shelly-settings">
+                    <div class="field-row">
+                        <label class="field" for="shelly-ip">
+                            <span class="field-label" data-i18n="shellyIp">Shelly IP / Host</span>
+                            <input class="input" id="shelly-ip" name="shelly_ip" type="text" placeholder="192.168.1.50">
+                        </label>
+                        <label class="field" for="shelly-user">
+                            <span class="field-label" data-i18n="shellyUser">Username (optional)</span>
+                            <input class="input" id="shelly-user" name="shelly_user" type="text" autocomplete="off">
+                        </label>
+                    </div>
+                    <label class="field" for="shelly-pass">
+                        <span class="field-label" data-i18n="shellyPass">Password (optional)</span>
+                        <input class="input" id="shelly-pass" name="shelly_pass" type="password" autocomplete="new-password" placeholder="••••••">
+                    </label>
+                </div>
+
+                <label class="switch-row" for="tariff-enabled">
+                    <span class="switch-copy">
+                        <span class="field-label" data-i18n="enableTariff">Enable Dynamic Tariff</span>
+                    </span>
+                    <input class="switch" id="tariff-enabled" name="tariff_enabled" type="checkbox">
+                </label>
+                <div class="plugin-settings" id="tariff-settings">
+                    <div class="field-row">
+                        <label class="field" for="tariff-provider">
+                            <span class="field-label" data-i18n="tariffProvider">Provider</span>
+                            <select class="input" id="tariff-provider" name="tariff_provider">
+                                <option value="awattar_de">aWATTar DE (Zero-Config)</option>
+                                <option value="awattar_at">aWATTar AT (Zero-Config)</option>
+                                <option value="tibber">Tibber (API Token)</option>
+                            </select>
+                        </label>
+                        <label class="field" for="tariff-surcharge">
+                            <span class="field-label" data-i18n="tariffSurcharge">Surcharge (ct/kWh)</span>
+                            <input class="input" id="tariff-surcharge" name="tariff_surcharge_ct" type="number" step="0.1" value="0">
+                        </label>
+                    </div>
+                    <label class="field" for="tibber-token">
+                        <span class="field-label" data-i18n="tibberToken">Tibber API Token</span>
+                        <input class="input" id="tibber-token" name="tibber_token" type="password" autocomplete="new-password" placeholder="••••••">
+                    </label>
+                </div>
             </fieldset>
 
             <div class="drawer-actions">

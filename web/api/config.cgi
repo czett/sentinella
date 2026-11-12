@@ -94,6 +94,13 @@ WEATHER_TMP_FILE=
 FORECAST_CONFIG_DIR=$ADDON_DIR/config/plugins
 FORECAST_ENV_FILE=${FORECAST_SOLAR_ENV:-$FORECAST_CONFIG_DIR/forecast_solar.env}
 FORECAST_TMP_FILE=
+SHELLY_CONFIG_DIR=$ADDON_DIR/config/plugins
+SHELLY_ENV_FILE=${SHELLY_ENV:-$SHELLY_CONFIG_DIR/shelly_em.env}
+SHELLY_TMP_FILE=
+TIBBER_CONFIG_DIR=$ADDON_DIR/config/plugins
+TIBBER_ENV_FILE=${TIBBER_ENV:-$TIBBER_CONFIG_DIR/tibber.env}
+TIBBER_TMP_FILE=
+PLUGINS_ENV_FILE=$ADDON_DIR/config/plugins.env
 NOTIFY_SCRIPT=$ADDON_DIR/lib/notify_signal.sh
 TEST_RESULT=$STATE_DIR/notify_test.result
 TEST_LOG=$STATE_DIR/notify_test.log
@@ -102,7 +109,18 @@ RENAULT_TEST_LOCK=$STATE_DIR/.test_renault.lock
 CONFIG_LOCK=$STATE_DIR/.config.lock
 TEST_WRAPPER=
 UI_LANGUAGE=en
+HERO_SOURCE=auto
 NOTIFY_DISABLED=0
+SHELLY_ENABLED=false
+SHELLY_IP=
+SHELLY_USER=
+SHELLY_PASS=
+SHELLY_INTERVAL=60
+TARIFF_ENABLED=false
+TARIFF_PROVIDER=awattar_de
+TIBBER_TOKEN=
+TARIFF_SURCHARGE_CT=0
+TARIFF_INTERVAL=900
 RENAULT_USER=
 RENAULT_PASS=
 RENAULT_VIN=
@@ -317,6 +335,7 @@ restore_phone_list() {
 harden_env_perms() {
     for _hp in "$ENV_FILE" "$CONFIG_ENV_FILE" "$RENAULT_ENV_FILE" \
         "$CCU_HEALTH_ENV_FILE" "$WEATHER_ENV_FILE" "$FORECAST_ENV_FILE" \
+        "$SHELLY_ENV_FILE" "$TIBBER_ENV_FILE" \
         "$ADDON_DIR/config/plugins.env" "$ADDON_DIR/config.env"; do
         [ -f "$_hp" ] && [ ! -L "$_hp" ] && chmod 600 "$_hp" 2>/dev/null
     done
@@ -770,11 +789,39 @@ load_forecast_env() {
     return 0
 }
 
+load_shelly_env() {
+    SHELLY_ENABLED=false
+    SHELLY_IP=
+    SHELLY_USER=
+    SHELLY_PASS=
+    SHELLY_INTERVAL=60
+    if [ -r "$SHELLY_ENV_FILE" ]; then
+        # shellcheck source=/dev/null
+        . "$SHELLY_ENV_FILE" 2>/dev/null || true
+    fi
+    return 0
+}
+
+load_tibber_env() {
+    TARIFF_ENABLED=false
+    TARIFF_PROVIDER=awattar_de
+    TIBBER_TOKEN=
+    TARIFF_SURCHARGE_CT=0
+    TARIFF_INTERVAL=900
+    if [ -r "$TIBBER_ENV_FILE" ]; then
+        # shellcheck source=/dev/null
+        . "$TIBBER_ENV_FILE" 2>/dev/null || true
+    fi
+    return 0
+}
+
 load_env() {
     load_renault_env
     load_ccu_health_env
     load_weather_env
     load_forecast_env
+    load_shelly_env
+    load_tibber_env
     [ -r "$ENV_FILE" ] || return 1
     # shellcheck source=/dev/null
     . "$ENV_FILE" || return 1
@@ -791,6 +838,10 @@ load_env() {
         de|DE|de_DE|de-DE) UI_LANGUAGE=de ;;
         *) UI_LANGUAGE=en ;;
     esac
+    case "${HERO_SOURCE:-auto}" in
+        auto|sma|ccu|shelly) HERO_SOURCE=${HERO_SOURCE:-auto} ;;
+        *) HERO_SOURCE=auto ;;
+    esac
     case "${NOTIFY_DISABLED:-}" in
         1|true|TRUE|on|ON|yes|YES) NOTIFY_DISABLED=1 ;;
         *) NOTIFY_DISABLED=0 ;;
@@ -799,6 +850,8 @@ load_env() {
     load_ccu_health_env
     load_weather_env
     load_forecast_env
+    load_shelly_env
+    load_tibber_env
     return 0
 }
 
@@ -813,6 +866,10 @@ config_payload() {
     [ -n "$SMA_PASS" ] && _password_set=true
     _renault_pass_set=false
     [ -n "$RENAULT_PASS" ] && _renault_pass_set=true
+    _shelly_pass_set=false
+    [ -n "$SHELLY_PASS" ] && _shelly_pass_set=true
+    _tibber_token_set=false
+    [ -n "$TIBBER_TOKEN" ] && _tibber_token_set=true
 
     _writable=false
     [ -w "$ENV_FILE" ] && _writable=true
@@ -833,6 +890,7 @@ config_payload() {
 
     printf '{"ok":true'
     printf ',"ui_language":%s' "$(json_str "$UI_LANGUAGE")"
+    printf ',"hero_source":%s' "$(json_str "$HERO_SOURCE")"
     printf ',"trigger_soc":%s' "$_trigger"
     printf ',"reset_soc":%s' "$_reset"
     printf ',"signal_enabled":%s' "$(json_bool_str "$_enabled")"
@@ -855,6 +913,16 @@ config_payload() {
     printf ',"weather_city":%s' "$(json_str "$WEATHER_CITY")"
     printf ',"weather_lat":%s' "$(json_str "$WEATHER_LAT")"
     printf ',"weather_lon":%s' "$(json_str "$WEATHER_LON")"
+    printf ',"shelly_enabled":%s' "$(json_bool_str "$SHELLY_ENABLED")"
+    printf ',"shelly_ip":%s' "$(json_str "$SHELLY_IP")"
+    printf ',"shelly_user":%s' "$(json_str "$SHELLY_USER")"
+    printf ',"shelly_pass_set":%s' "$_shelly_pass_set"
+    printf ',"shelly_interval":%s' "${SHELLY_INTERVAL:-60}"
+    printf ',"tariff_enabled":%s' "$(json_bool_str "$TARIFF_ENABLED")"
+    printf ',"tariff_provider":%s' "$(json_str "$TARIFF_PROVIDER")"
+    printf ',"tibber_token_set":%s' "$_tibber_token_set"
+    printf ',"tariff_surcharge_ct":%s' "${TARIFF_SURCHARGE_CT:-0}"
+    printf ',"tariff_interval":%s' "${TARIFF_INTERVAL:-900}"
     printf ',"forecast_kwp":%s' "$(json_str "$FORECAST_KWP")"
     printf ',"forecast_dec":%s' "$(json_str "$FORECAST_DEC")"
     printf ',"forecast_az":%s' "$(json_str "$FORECAST_AZ")"
@@ -1081,6 +1149,116 @@ EOF
     return 0
 }
 
+save_shelly_env() {
+    _s_en=${1:-$SHELLY_ENABLED}
+    _s_ip=${2:-$SHELLY_IP}
+    _s_user=${3:-$SHELLY_USER}
+    _s_pass=${4:-$SHELLY_PASS}
+    _s_int=${5:-$SHELLY_INTERVAL}
+
+    mkdir -p "$SHELLY_CONFIG_DIR" 2>/dev/null || return 1
+    chmod 700 "$ADDON_DIR/config" "$SHELLY_CONFIG_DIR" 2>/dev/null || true
+
+    SHELLY_TMP_FILE=$SHELLY_ENV_FILE.tmp.$$
+    (
+        umask 077
+        if [ -r "$SHELLY_ENV_FILE" ]; then
+            cat "$SHELLY_ENV_FILE" > "$SHELLY_TMP_FILE"
+        else
+            cat > "$SHELLY_TMP_FILE" <<'EOF'
+# Sentinella - Shelly EM plugin configuration (mode 600)
+SHELLY_ENABLED='false'
+SHELLY_IP=''
+SHELLY_USER=''
+SHELLY_PASS=''
+SHELLY_INTERVAL='60'
+EOF
+        fi
+    ) || return 1
+
+    chmod 600 "$SHELLY_TMP_FILE" 2>/dev/null || true
+    env_set "$SHELLY_TMP_FILE" SHELLY_ENABLED "$_s_en" || return 1
+    env_set "$SHELLY_TMP_FILE" SHELLY_IP "$_s_ip" || return 1
+    env_set "$SHELLY_TMP_FILE" SHELLY_USER "$_s_user" || return 1
+    env_set "$SHELLY_TMP_FILE" SHELLY_PASS "$_s_pass" || return 1
+    env_set "$SHELLY_TMP_FILE" SHELLY_INTERVAL "$_s_int" || return 1
+    chmod 600 "$SHELLY_TMP_FILE" 2>/dev/null || true
+
+    mv -f "$SHELLY_TMP_FILE" "$SHELLY_ENV_FILE" 2>/dev/null || return 1
+    chmod 600 "$SHELLY_ENV_FILE" 2>/dev/null || true
+    SHELLY_TMP_FILE=
+    return 0
+}
+
+save_tibber_env() {
+    _t_en=${1:-$TARIFF_ENABLED}
+    _t_prov=${2:-$TARIFF_PROVIDER}
+    _t_tok=${3:-$TIBBER_TOKEN}
+    _t_sur=${4:-$TARIFF_SURCHARGE_CT}
+    _t_int=${5:-$TARIFF_INTERVAL}
+
+    mkdir -p "$TIBBER_CONFIG_DIR" 2>/dev/null || return 1
+    chmod 700 "$ADDON_DIR/config" "$TIBBER_CONFIG_DIR" 2>/dev/null || true
+
+    TIBBER_TMP_FILE=$TIBBER_ENV_FILE.tmp.$$
+    (
+        umask 077
+        if [ -r "$TIBBER_ENV_FILE" ]; then
+            cat "$TIBBER_ENV_FILE" > "$TIBBER_TMP_FILE"
+        else
+            cat > "$TIBBER_TMP_FILE" <<'EOF'
+# Sentinella - Dynamic Tariff plugin configuration (mode 600)
+TARIFF_ENABLED='false'
+TARIFF_PROVIDER='awattar_de'
+TIBBER_TOKEN=''
+TARIFF_SURCHARGE_CT='0'
+TARIFF_INTERVAL='900'
+EOF
+        fi
+    ) || return 1
+
+    chmod 600 "$TIBBER_TMP_FILE" 2>/dev/null || true
+    env_set "$TIBBER_TMP_FILE" TARIFF_ENABLED "$_t_en" || return 1
+    env_set "$TIBBER_TMP_FILE" TARIFF_PROVIDER "$_t_prov" || return 1
+    env_set "$TIBBER_TMP_FILE" TIBBER_TOKEN "$_t_tok" || return 1
+    env_set "$TIBBER_TMP_FILE" TARIFF_SURCHARGE_CT "$_t_sur" || return 1
+    env_set "$TIBBER_TMP_FILE" TARIFF_INTERVAL "$_t_int" || return 1
+    chmod 600 "$TIBBER_TMP_FILE" 2>/dev/null || true
+
+    mv -f "$TIBBER_TMP_FILE" "$TIBBER_ENV_FILE" 2>/dev/null || return 1
+    chmod 600 "$TIBBER_ENV_FILE" 2>/dev/null || true
+    TIBBER_TMP_FILE=
+    return 0
+}
+
+sync_plugins_env() {
+    _pe_key=$1
+    _pe_val=$2
+    mkdir -p "$ADDON_DIR/config" 2>/dev/null || return 1
+    _pe_tmp=$PLUGINS_ENV_FILE.tmp.$$
+    (
+        umask 077
+        if [ -r "$PLUGINS_ENV_FILE" ]; then
+            cat "$PLUGINS_ENV_FILE" > "$_pe_tmp"
+        else
+            cat > "$_pe_tmp" <<'EOF'
+# Sentinella - Plugin Manager configuration
+PLUGIN_CCU_HEALTH=1
+PLUGIN_WEATHER=1
+PLUGIN_RENAULT_ZOE=0
+PLUGIN_FORECAST_SOLAR=0
+PLUGIN_SHELLY_EM=0
+PLUGIN_TIBBER=0
+EOF
+        fi
+    ) || return 1
+    chmod 600 "$_pe_tmp" 2>/dev/null || true
+    env_set "$_pe_tmp" "$_pe_key" "$_pe_val" || { rm -f "$_pe_tmp" 2>/dev/null || true; return 1; }
+    mv -f "$_pe_tmp" "$PLUGINS_ENV_FILE" 2>/dev/null || { rm -f "$_pe_tmp" 2>/dev/null || true; return 1; }
+    chmod 600 "$PLUGINS_ENV_FILE" 2>/dev/null || true
+    return 0
+}
+
 parse_and_validate_renault() {
     _ruser=$RENAULT_USER
     _rpass=$RENAULT_PASS
@@ -1295,6 +1473,7 @@ save_config() {
     _port=$SMA_PORT
     _password=$SMA_PASS
     _language=$UI_LANGUAGE
+    _hero_source=$HERO_SOURCE
     _notify_disabled=$NOTIFY_DISABLED
 
     _want_trigger=0
@@ -1307,6 +1486,7 @@ save_config() {
     _want_port=0
     _want_password=0
     _want_language=0
+    _want_hero_source=0
 
     if body_has ui_language; then
         _language=$(body_str ui_language)
@@ -1315,6 +1495,15 @@ save_config() {
             *) fail "400 Bad Request" "$(msg language_invalid)" "ui_language" ;;
         esac
         _want_language=1
+    fi
+
+    if body_has hero_source; then
+        _hero_source=$(body_str hero_source)
+        case "$_hero_source" in
+            auto|sma|ccu|shelly) ;;
+            *) fail "400 Bad Request" "Invalid hero_source" "hero_source" ;;
+        esac
+        _want_hero_source=1
     fi
 
     if body_has trigger_soc; then
@@ -1416,8 +1605,10 @@ save_config() {
 
     if body_has sma_ip; then
         _ip=$(body_str sma_ip)
-        is_safe_host "$_ip" || fail "400 Bad Request" \
-            "$(msg ip_invalid)" "sma_ip"
+        if [ -n "$_ip" ]; then
+            is_safe_host "$_ip" || fail "400 Bad Request" \
+                "$(msg ip_invalid)" "sma_ip"
+        fi
         _want_ip=1
     fi
 
@@ -1456,6 +1647,10 @@ save_config() {
 
     if [ "$_want_language" = "1" ]; then
         env_set "$TMP_FILE" UI_LANGUAGE "$_language" || \
+            fail "500 Internal Server Error" "$(msg write_language)"
+    fi
+    if [ "$_want_hero_source" = "1" ]; then
+        env_set "$TMP_FILE" HERO_SOURCE "$_hero_source" || \
             fail "500 Internal Server Error" "$(msg write_language)"
     fi
     if [ "$_want_trigger" = "1" ]; then
@@ -1552,6 +1747,81 @@ save_config() {
             || fail "500 Internal Server Error" "$(msg write_forecast)"
     fi
 
+    _s_en_val=$SHELLY_ENABLED
+    _s_ip_val=$SHELLY_IP
+    _s_user_val=$SHELLY_USER
+    _s_pass_val=$SHELLY_PASS
+    _s_int_val=$SHELLY_INTERVAL
+    _want_shelly=0
+    if body_has shelly_enabled; then
+        case "$(body_bool shelly_enabled)" in
+            true|1) _s_en_val=true ;;
+            *) _s_en_val=false ;;
+        esac
+        _want_shelly=1
+    fi
+    if body_has shelly_ip; then
+        _s_ip_val=$(body_str shelly_ip)
+        if [ -n "$_s_ip_val" ]; then
+            is_safe_host "$_s_ip_val" || fail "400 Bad Request" "$(msg ip_invalid)" "shelly_ip"
+        fi
+        _want_shelly=1
+    fi
+    if body_has shelly_user; then _s_user_val=$(body_str shelly_user); _want_shelly=1; fi
+    if body_has shelly_pass; then
+        _sp_new=$(body_str shelly_pass)
+        [ -n "$_sp_new" ] && _s_pass_val=$_sp_new
+        _want_shelly=1
+    fi
+    if body_has shelly_interval; then _s_int_val=$(body_num shelly_interval); _want_shelly=1; fi
+    if [ "$_want_shelly" = "1" ]; then
+        save_shelly_env "$_s_en_val" "$_s_ip_val" "$_s_user_val" "$_s_pass_val" "$_s_int_val" \
+            || fail "500 Internal Server Error" "$(msg write_failed)"
+        if [ "$_s_en_val" = "true" ]; then
+            sync_plugins_env PLUGIN_SHELLY_EM 1 || true
+        else
+            sync_plugins_env PLUGIN_SHELLY_EM 0 || true
+        fi
+    fi
+
+    _t_en_val=$TARIFF_ENABLED
+    _t_prov_val=$TARIFF_PROVIDER
+    _t_tok_val=$TIBBER_TOKEN
+    _t_sur_val=$TARIFF_SURCHARGE_CT
+    _t_int_val=$TARIFF_INTERVAL
+    _want_tariff=0
+    if body_has tariff_enabled; then
+        case "$(body_bool tariff_enabled)" in
+            true|1) _t_en_val=true ;;
+            *) _t_en_val=false ;;
+        esac
+        _want_tariff=1
+    fi
+    if body_has tariff_provider; then
+        _t_prov_val=$(body_str tariff_provider)
+        case "$_t_prov_val" in
+            awattar_de|awattar_at|tibber) ;;
+            *) fail "400 Bad Request" "Invalid tariff_provider" "tariff_provider" ;;
+        esac
+        _want_tariff=1
+    fi
+    if body_has tibber_token; then
+        _tt_new=$(body_str tibber_token)
+        [ -n "$_tt_new" ] && _t_tok_val=$_tt_new
+        _want_tariff=1
+    fi
+    if body_has tariff_surcharge_ct; then _t_sur_val=$(body_num tariff_surcharge_ct); _want_tariff=1; fi
+    if body_has tariff_interval; then _t_int_val=$(body_num tariff_interval); _want_tariff=1; fi
+    if [ "$_want_tariff" = "1" ]; then
+        save_tibber_env "$_t_en_val" "$_t_prov_val" "$_t_tok_val" "$_t_sur_val" "$_t_int_val" \
+            || fail "500 Internal Server Error" "$(msg write_failed)"
+        if [ "$_t_en_val" = "true" ]; then
+            sync_plugins_env PLUGIN_TIBBER 1 || true
+        else
+            sync_plugins_env PLUGIN_TIBBER 0 || true
+        fi
+    fi
+
     # Notification edge state belongs to the state machine, not to the
     # settings UI. A save must never delete, truncate or rewrite it; a lost
     # state file would re-arm alerts the moment the threshold is exceeded.
@@ -1566,6 +1836,9 @@ save_config() {
     if [ "$_want_forecast" = "1" ] && [ -x "$ADDON_DIR/plugins.d/30_forecast_solar.sh" ]; then
         FORECAST_SOLAR_ADDON_DIR="$ADDON_DIR" FORECAST_SOLAR_ENV="$FORECAST_ENV_FILE" \
             "$ADDON_DIR/plugins.d/30_forecast_solar.sh" </dev/null >/dev/null 2>&1 &
+    fi
+    if [ -x "$ADDON_DIR/bin/check_soc.sh" ]; then
+        SENTINELLA_RUN_PLUGINS=1 "$ADDON_DIR/bin/check_soc.sh" </dev/null >/dev/null 2>&1 &
     fi
     load_env || fail "500 Internal Server Error" \
         "$(msg readback)"

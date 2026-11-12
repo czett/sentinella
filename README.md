@@ -17,11 +17,15 @@ Sentinella is a modular, 100% POSIX-shell monitoring platform for CCU3 and Raspb
 
 | Module | Default | Data | Source |
 |---|---|---|---|
-| **SMA storage** (core) | active | SoC, charge/discharge power, surplus signal | HTTPS WebConnect |
+| **SMA storage** (core, optional) | active when `SMA_IP` is set | SoC, charge/discharge power, surplus signal | HTTPS WebConnect |
 | **CCU3 Health** (`10_ccu_health.sh`) | enabled | Duty cycle, load average, RAM, uptime | `tclrpc.so` XML-RPC on `127.0.0.1:2001`, fallback `2010`; `/proc` |
 | **Weather** (`15_weather.sh`) | enabled | Temperature, humidity, WMO condition, wind, daily min/max | Open-Meteo, no API key |
 | **Renault E-Tech** (`20_renault_zoe.sh`) | disabled until configured | SoC, range, plug status, charging state, odometer | MY Renault cloud |
+| **Shelly EM** (`25_shelly_em.sh`) | disabled until configured | Grid power, phase telemetry, energy counters | Shelly Gen1 & Gen2/Pro local HTTP |
 | **PV Forecast** (`30_forecast_solar.sh`) | disabled (experimental) | Today and tomorrow yield in `kWh` and `kWh/kWp` | forecast.solar, no API key |
+| **Dynamic Tariff** (`35_tibber.sh`) | disabled until enabled | Hourly electricity price, min/max/avg | aWATTar (DE/AT, no key) or Tibber |
+
+Sentinella also supports **CCU-Only Mode** (`SMA_IP` optional) and a **Configurable Hero Tile** (`HERO_SOURCE`: `auto`, `sma`, `ccu`, `shelly`) with instant auto-save in the Settings Drawer. All state and JSON writes use atomic `.tmp` + `mv -f`.
 
 The plugin manager persists enable flags in `config/plugins.env` (`PLUGIN_<NAME>='0|1'`). Toggles in the settings drawer call `api/plugin_manager.cgi`, which accepts whitelisted IDs, writes the file atomically, and removes the card when a plugin is disabled. `web/app.js` filters the current card list immediately, without waiting for the next poll. Each plugin also honours a `.disabled` marker beside its script.
 

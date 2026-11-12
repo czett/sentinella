@@ -1518,6 +1518,21 @@ html[data-theme="dark"] .plugin-card:hover {
     white-space: nowrap;
 }
 
+.hero-detail {
+    padding: clamp(20px, 3vw, 32px) var(--pad);
+    border-bottom: var(--rule);
+    background: var(--paper);
+}
+
+.hero-detail .plugin-list-row {
+    padding: 10px 0;
+}
+
+.hero-detail .plugin-list-value {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
 /* Secondary metrics container inside stat and delta cards */
 .plugin-secondary-metrics {
     margin-top: auto;
