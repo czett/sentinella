@@ -128,6 +128,13 @@ if [ -n "$CONFIG_FILE" ] && [ -r "$CONFIG_FILE" ]; then
     . "$CONFIG_FILE"
 fi
 
+is_uint() {
+    case "$1" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    return 0
+}
+
 RENAULT_NOTIFY_LOW_ENABLED=${RENAULT_NOTIFY_LOW_ENABLED:-0}
 RENAULT_NOTIFY_LOW_SOC=${RENAULT_NOTIFY_LOW_SOC:-20}
 RENAULT_NOTIFY_HIGH_ENABLED=${RENAULT_NOTIFY_HIGH_ENABLED:-0}
@@ -284,13 +291,6 @@ trap 'exit 143' TERM
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-is_uint() {
-    case "$1" in
-        ''|*[!0-9]*) return 1 ;;
-    esac
-    return 0
-}
-
 is_number() {
     case "$1" in
         ''|*[!0-9.-]*) return 1 ;;
@@ -311,8 +311,8 @@ curl_config_escape() {
     printf '%s' "${1:-}" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
 }
 
-is_uint "$CONNECT_TIMEOUT" || CONNECT_TIMEOUT=8
-is_uint "$MAX_TIME" || MAX_TIME=15
+is_uint "$CONNECT_TIMEOUT" || CONNECT_TIMEOUT=5
+is_uint "$MAX_TIME" || MAX_TIME=12
 is_uint "$CACHE_TTL" || CACHE_TTL=21600
 
 mkdir -p "$STATE_DIR" 2>/dev/null || true
