@@ -10,10 +10,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- **CCU-Only Mode**: `SMA_IP` is now optional, allowing Sentinella to run as a standalone CCU3/RaspberryMatic, weather, EV, Shelly EM, and tariff monitor without an SMA inverter.
-- **Configurable Hero Tile (`HERO_SOURCE`)**: Choose between `auto`, `sma`, `ccu`, and `shelly` for the primary hero tile, with instant auto-save in the Settings Drawer.
-- **Shelly EM Plugin (`25_shelly_em.sh`)**: Supports Shelly EM (Gen1) and Shelly Pro EM / 3EM (Gen2/Pro) for real-time grid power, phase telemetry, and energy counters.
-- **Dynamic Electricity Tariff Plugin (`35_tibber.sh`)**: Zero-config aWATTar (DE/AT) hourly electricity prices out of the box, with optional Tibber API token support.
+- **CCU-Only Mode & Symmetric SMA Module (`SMA_ENABLED`)**: `SMA_IP` is now optional and SMA Battery Storage can be toggled cleanly via `SMA_ENABLED`. When SMA is disabled or unconfigured, Tiles `03` (SoC History) and `04` (System Register) automatically hide; when active alongside another Hero source, SMA renders symmetrically in `05 Extensions`.
+- **Configurable Hero Tile (`HERO_SOURCE`)**: Choose between `auto`, `sma`, `ccu`, and `shelly` for the primary hero tile with instant auto-save in the Settings Drawer and automatic deduplication against `05 Extensions`.
+- **Shelly EM Plugin (`25_shelly_em.sh`)**: Supports Shelly EM (Gen1) and Shelly Pro EM / 3EM (Gen2/Pro) for real-time grid power, phase telemetry, and energy counters using the `stat` card layout.
+- **Dynamic Electricity Tariff Plugin (`35_tibber.sh`)**: Zero-config aWATTar (DE/AT) hourly electricity prices out of the box, with optional Tibber API token support and `stat` card layout.
+- **Responsive 3-Column Extension Grid & Live Plugin Sync**: `.plugins-grid` caps at 3 cards per row on desktop (`>= 900px`), `deploy.sh` stages all `plugins.d/*.sh` dynamically, and plugin toggles refresh immediately.
 - **Atomic state writes**: All state and JSON writes use `.tmp` + `mv -f` to prevent partial reads on the CCU3.
 
 ### Earlier Unreleased Changes

@@ -279,7 +279,7 @@ resolve_ip_location() {
     _ip_url=${WEATHER_IP_URL:-https://ipapi.co/json/}
     [ -n "$_ip_url" ] || return 0
 
-    _ip_json=$(curl -s --connect-timeout 4 --max-time 8 "$_ip_url" 2>/dev/null) || return 0
+    _ip_json=$(curl -s --connect-timeout 5 --max-time 12 "$_ip_url" </dev/null 2>/dev/null) || return 0
     [ -n "$_ip_json" ] || return 0
 
     _ip_city=$(printf '%s' "$_ip_json" | tr -d '\r\n' \
@@ -336,7 +336,7 @@ is_lat "$WEATHER_LAT" || WEATHER_LAT=51.51
 is_lon "$WEATHER_LON" || WEATHER_LON=7.46
 [ -n "$WEATHER_CITY" ] || WEATHER_CITY="$I18N_DEFAULT_CITY"
 is_uint "$WEATHER_CONNECT_TIMEOUT" || WEATHER_CONNECT_TIMEOUT=5
-is_uint "$WEATHER_MAX_TIME" || WEATHER_MAX_TIME=15
+is_uint "$WEATHER_MAX_TIME" || WEATHER_MAX_TIME=12
 
 if [ "$WEATHER_PRINT_ONLY" = "1" ]; then
     printf '%s,%s\n' "$WEATHER_LAT" "$WEATHER_LON"
@@ -456,7 +456,7 @@ if [ -n "${WEATHER_MOCK_JSON:-}" ]; then
 else
     HTTP_CODE=$(curl -s -o "$RAW_FILE" -w '%{http_code}' \
         --connect-timeout "$WEATHER_CONNECT_TIMEOUT" --max-time "$WEATHER_MAX_TIME" \
-        "$API_URL" 2>/dev/null) || HTTP_CODE=000
+        "$API_URL" </dev/null 2>/dev/null) || HTTP_CODE=000
 fi
 
 case "$HTTP_CODE" in

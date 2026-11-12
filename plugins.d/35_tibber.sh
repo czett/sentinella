@@ -88,18 +88,17 @@ PROVIDER_LABEL="aWATTar DE"
 if [ "$TARIFF_PROVIDER" = "tibber" ]; then
     PROVIDER_LABEL="Tibber"
     if [ -z "$TIBBER_TOKEN" ]; then
-        if [ ! -f "$OUT_FILE" ]; then
-            write_json '{"id":"tibber","title":"Dynamic Tariff","status":"OFFLINE","tone":"warning","value":"--","unit":"ct/kWh","metrics":[{"label":"Provider","value":"Tibber"},{"label":"Status","value":"Missing token"}]}'
-        fi
+        NOW_ISO=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || printf '')
+        write_json "{\"id\":\"tibber\",\"layout\":\"stat\",\"title\":\"DYNAMIC TARIFF\",\"status_badge\":\"OFFLINE\",\"status_color\":\"neutral\",\"timestamp\":\"$NOW_ISO\",\"primary\":{\"value\":\"--\",\"unit\":\"ct/kWh\",\"label\":\"PRICE\"},\"secondary_metrics\":[{\"label\":\"PROVIDER\",\"value\":\"Tibber\"},{\"label\":\"STATUS\",\"value\":\"Missing token\"}]}"
         exit 0
     fi
     TIBBER_URL=${TIBBER_API_URL:-https://api.tibber.com/v1-beta/gql}
     GQL='{"query":"{ viewer { homes { currentSubscription { priceInfo { current { total level } } } } } }"}'
-    RAW=$(curl -kfsS --connect-timeout 5 --max-time 10 \
+    RAW=$(curl -kfsS --connect-timeout 5 --max-time 12 \
         -H "Authorization: Bearer $TIBBER_TOKEN" \
         -H "Content-Type: application/json" \
         -d "$GQL" \
-        "$TIBBER_URL" 2>/dev/null || true)
+        "$TIBBER_URL" </dev/null 2>/dev/null || true)
     if [ -n "$RAW" ]; then
         PRICE_CT=$(printf '%s' "$RAW" | awk -v sur="${TARIFF_SURCHARGE_CT:-0}" '
         { buf = buf $0 " " }
@@ -122,7 +121,7 @@ else
             AWATTAR_URL=${AWATTAR_API_URL:-https://api.awattar.de/v1/marketdata}
             ;;
     esac
-    RAW=$(curl -kfsS --connect-timeout 5 --max-time 10 "$AWATTAR_URL" 2>/dev/null || true)
+    RAW=$(curl -kfsS --connect-timeout 5 --max-time 12 "$AWATTAR_URL" </dev/null 2>/dev/null || true)
     if [ -n "$RAW" ]; then
         PRICE_CT=$(printf '%s' "$RAW" | awk -v hms="$HOUR_START_MS" -v sur="${TARIFF_SURCHARGE_CT:-0}" '
         { buf = buf $0 " " }
@@ -151,20 +150,21 @@ else
     fi
 fi
 
+NOW_ISO=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || printf '')
+
 if [ -z "$PRICE_CT" ]; then
     if [ ! -f "$OUT_FILE" ]; then
-        write_json "{\"id\":\"tibber\",\"title\":\"Dynamic Tariff\",\"status\":\"OFFLINE\",\"tone\":\"error\",\"value\":\"--\",\"unit\":\"ct/kWh\",\"metrics\":[{\"label\":\"Provider\",\"value\":\"$PROVIDER_LABEL\"}]}"
+        write_json "{\"id\":\"tibber\",\"layout\":\"stat\",\"title\":\"DYNAMIC TARIFF\",\"status_badge\":\"OFFLINE\",\"status_color\":\"red\",\"timestamp\":\"$NOW_ISO\",\"primary\":{\"value\":\"--\",\"unit\":\"ct/kWh\",\"label\":\"PRICE\"},\"secondary_metrics\":[{\"label\":\"PROVIDER\",\"value\":\"$PROVIDER_LABEL\"},{\"label\":\"SURCHARGE\",\"value\":\"${TARIFF_SURCHARGE_CT:-0} ct\"}]}"
     fi
     exit 0
 fi
 
-TONE=$(awk -v p="$PRICE_CT" 'BEGIN { if (p < 15) print "ok"; else if (p > 30) print "warning"; else print "info" }')
+COLOR=$(awk -v p="$PRICE_CT" 'BEGIN { if (p < 15) print "green"; else if (p > 30) print "red"; else print "blue" }')
 STATUS_TAG="NORMAL"
-case "$TONE" in
-    ok) STATUS_TAG="LOW" ;;
-    warning) STATUS_TAG="HIGH" ;;
+case "$COLOR" in
+    green) STATUS_TAG="LOW" ;;
+    red) STATUS_TAG="HIGH" ;;
 esac
 
-NOW_ISO=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || printf '')
-write_json "{\"id\":\"tibber\",\"title\":\"Dynamic Tariff\",\"status\":\"$STATUS_TAG\",\"tone\":\"$TONE\",\"value\":\"$PRICE_CT\",\"unit\":\"ct/kWh\",\"updated_at\":\"$NOW_ISO\",\"metrics\":[{\"label\":\"Provider\",\"value\":\"$PROVIDER_LABEL\"},{\"label\":\"Surcharge\",\"value\":\"${TARIFF_SURCHARGE_CT:-0} ct\"}]}"
+write_json "{\"id\":\"tibber\",\"layout\":\"stat\",\"title\":\"DYNAMIC TARIFF\",\"status_badge\":\"$STATUS_TAG\",\"status_color\":\"$COLOR\",\"timestamp\":\"$NOW_ISO\",\"primary\":{\"value\":\"$PRICE_CT\",\"unit\":\"ct/kWh\",\"label\":\"PRICE\"},\"secondary_metrics\":[{\"label\":\"PROVIDER\",\"value\":\"$PROVIDER_LABEL\"},{\"label\":\"SURCHARGE\",\"value\":\"${TARIFF_SURCHARGE_CT:-0} ct\"}]}"
 exit 0

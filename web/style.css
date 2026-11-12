@@ -1312,6 +1312,12 @@ body[data-state="loading"] .rail-marker {
     margin-top: 24px;
 }
 
+@media (min-width: 900px) {
+    .plugins-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
 /* Base Plugin Card */
 .plugin-card {
     display: flex;

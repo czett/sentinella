@@ -185,7 +185,9 @@ for file in VERSION .env package/uninstall.sh bin/check_soc.sh lib/notify_signal
             plugins.d/10_ccu_health.sh \
             plugins.d/15_weather.sh \
             plugins.d/20_renault_zoe.sh \
+            plugins.d/25_shelly_em.sh \
             plugins.d/30_forecast_solar.sh \
+            plugins.d/35_tibber.sh \
             config/plugins/weather.env.example \
             config/plugins/renault.env.example \
             config/plugins/forecast_solar.env.example \
@@ -248,14 +250,10 @@ install -m 755 "$ROOT/lib/plugin_notify.sh"  "$STAGE/lib/plugin_notify.sh"
 install -m 755 "$ROOT/lib/notify.sh"         "$STAGE/lib/notify.sh"
 install -m 700 "$ROOT/setup_variables.sh"    "$STAGE/setup_variables.sh"
 install -m 755 "$ROOT/package/uninstall.sh"  "$STAGE/uninstall.sh"
-install -m 755 "$ROOT/plugins.d/10_ccu_health.sh" \
-    "$STAGE/plugins.d/10_ccu_health.sh"
-install -m 755 "$ROOT/plugins.d/15_weather.sh" \
-    "$STAGE/plugins.d/15_weather.sh"
-install -m 755 "$ROOT/plugins.d/20_renault_zoe.sh" \
-    "$STAGE/plugins.d/20_renault_zoe.sh"
-install -m 755 "$ROOT/plugins.d/30_forecast_solar.sh" \
-    "$STAGE/plugins.d/30_forecast_solar.sh"
+for _plugin_src in "$ROOT/plugins.d"/*.sh; do
+    [ -f "$_plugin_src" ] || continue
+    install -m 755 "$_plugin_src" "$STAGE/plugins.d/$(basename "$_plugin_src")"
+done
 install -m 644 "$ROOT/config/plugins/weather.env.example" \
     "$STAGE/config/plugins/weather.env.example"
 install -m 644 "$ROOT/config/plugins/renault.env.example" \
@@ -287,7 +285,7 @@ ssh_ccu() {
 
 if [ "$WIPE" -eq 1 ]; then
     info "checking SSH connection to $REMOTE"
-    ssh_ccu "$REMOTE" 'true' \
+    ssh_ccu -n "$REMOTE" 'true' \
         || die "cannot connect to $REMOTE (check host, key and root login)"
 
     info "wiping Sentinella from $REMOTE:$ADDON_DIR"
@@ -328,7 +326,7 @@ WIPE_SCRIPT
 fi
 
 info "checking SSH connection to $REMOTE"
-ssh_ccu "$REMOTE" 'true' \
+ssh_ccu -n "$REMOTE" 'true' \
     || die "cannot connect to $REMOTE (check host, key and root login)"
 
 info "copying add-on to $ADDON_DIR"
@@ -639,9 +637,9 @@ if [ "$SKIP_WEB" != "1" ]; then
     WEB_PATH="/addons/sentinella"
     if command -v curl >/dev/null 2>&1; then
         # A static .cgi download would not have the CGI Content-Type header.
-        _content_type=$(curl -fsSL -m 5 -o /dev/null \
+        _content_type=$(curl -fsSL --connect-timeout 5 --max-time 12 -o /dev/null \
             -w '%{content_type}' \
-            "http://127.0.0.1${WEB_PATH}/api/config.cgi" 2>/dev/null) || _content_type=
+            "http://127.0.0.1${WEB_PATH}/api/config.cgi" </dev/null 2>/dev/null) || _content_type=
         case "$_content_type" in
             application/json*)
                 printf 'Settings API reachable at %s/api/\n' "$WEB_PATH"
@@ -699,65 +697,53 @@ if [ "$SKIP_CRON" != "1" ]; then
 fi
 
 if [ "$SKIP_VARS" != "1" ]; then
-    sh "$ADDON_DIR/setup_variables.sh"
-fi
-
-if [ "$SKIP_TEST" != "1" ]; then
-    if "$ADDON_DIR/bin/check_soc.sh"; then
-        printf 'First check completed successfully.\n'
-    else
-        printf 'WARNING: first check failed; see log or run the script manually.\n' >&2
-    fi
-
-    if [ -x "$ADDON_DIR/plugins.d/10_ccu_health.sh" ]; then
-        if "$ADDON_DIR/plugins.d/10_ccu_health.sh"; then
-            printf 'ccu_health plugin checked.\n'
-        else
-            printf 'WARNING: ccu_health plugin failed; existing card kept.\n' >&2
-        fi
-    fi
-
-    if [ -x "$ADDON_DIR/plugins.d/15_weather.sh" ]; then
-        if "$ADDON_DIR/plugins.d/15_weather.sh"; then
-            printf 'weather plugin checked.\n'
-        else
-            printf 'WARNING: weather plugin failed; existing card kept.\n' >&2
-        fi
-    fi
-
-    if [ -x "$ADDON_DIR/plugins.d/20_renault_zoe.sh" ]; then
-        if "$ADDON_DIR/plugins.d/20_renault_zoe.sh"; then
-            printf 'renault_zoe plugin checked.\n'
-        else
-            printf 'WARNING: renault_zoe plugin failed; existing card kept.\n' >&2
-        fi
-    fi
-
-    # Populate the forecast card immediately. The plugin exits 0 when offline
-    # and keeps any card that is already present, so this cannot fail a deploy.
-    if [ -x "$ADDON_DIR/plugins.d/30_forecast_solar.sh" ]; then
-        if "$ADDON_DIR/plugins.d/30_forecast_solar.sh"; then
-            printf 'forecast.solar plugin refreshed.\n'
-        else
-            printf 'WARNING: forecast.solar plugin failed; existing card kept.\n' >&2
-        fi
-    fi
-
-    # A --test message validates phone/apikey without touching state/signal.
-    SIGNAL_TEST_ENABLED=$(
-        . "$ADDON_DIR/.env" 2>/dev/null || exit 1
-        [ "${SIGNAL_ENABLED:-false}" = "true" ] && printf 'yes' || printf 'no'
-    ) || SIGNAL_TEST_ENABLED=no
-    if [ "$SIGNAL_TEST_ENABLED" = "yes" ]; then
-        printf 'Validating Signal credentials with a test message...\n'
-        if "$ADDON_DIR/lib/notify_signal.sh" --test; then
-            printf 'Signal test message sent successfully.\n'
-        else
-            printf 'WARNING: Signal test failed; check SIGNAL_PHONE/SIGNAL_APIKEY.\n' >&2
-        fi
-    fi
+    sh "$ADDON_DIR/setup_variables.sh" </dev/null
 fi
 REMOTE_SCRIPT
+
+if [ "$SKIP_TEST" != "1" ]; then
+    info "running initial verification on $REMOTE"
+    # shellcheck disable=SC2029  # ADDON_DIR is intentionally expanded locally
+    ssh_ccu -n "$REMOTE" "ADDON_DIR='$ADDON_DIR' sh -c '
+        run_verify() {
+            if command -v timeout >/dev/null 2>&1; then
+                timeout 20 \"\$@\" </dev/null
+            else
+                \"\$@\" </dev/null
+            fi
+        }
+
+        if run_verify \"\$ADDON_DIR/bin/check_soc.sh\"; then
+            printf \"First check completed successfully.\\n\"
+        else
+            printf \"WARNING: first check failed or timed out; see log or run the script manually.\\n\" >&2
+        fi
+
+        for _p in 10_ccu_health.sh 15_weather.sh 20_renault_zoe.sh 30_forecast_solar.sh; do
+            if [ -x \"\$ADDON_DIR/plugins.d/\$_p\" ]; then
+                if run_verify \"\$ADDON_DIR/plugins.d/\$_p\"; then
+                    printf \"%s plugin checked.\\n\" \"\$_p\"
+                else
+                    printf \"WARNING: %s plugin failed or timed out; existing card kept.\\n\" \"\$_p\" >&2
+                fi
+            fi
+        done
+
+        # A --test message validates phone/apikey without touching state/signal.
+        SIGNAL_TEST_ENABLED=\$(
+            . \"\$ADDON_DIR/.env\" 2>/dev/null || exit 1
+            [ \"\${SIGNAL_ENABLED:-false}\" = \"true\" ] && printf \"yes\" || printf \"no\"
+        ) || SIGNAL_TEST_ENABLED=no
+        if [ \"\$SIGNAL_TEST_ENABLED\" = \"yes\" ]; then
+            printf \"Validating Signal credentials with a test message...\\n\"
+            if run_verify \"\$ADDON_DIR/lib/notify_signal.sh\" --test; then
+                printf \"Signal test message sent successfully.\\n\"
+            else
+                printf \"WARNING: Signal test failed or timed out; check SIGNAL_PHONE/SIGNAL_APIKEY.\\n\" >&2
+            fi
+        fi
+    '" || printf 'WARNING: remote verification step failed; deployment files were installed.\n' >&2
+fi
 
 cat <<EOF
 

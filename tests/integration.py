@@ -2087,7 +2087,10 @@ eval(mockEnv);
         deploy_text = (ROOT / "deploy.sh").read_text()
         check(
             "plugins.d/20_renault_zoe.sh" in deploy_text
-            and 'install -m 755 "$ROOT/plugins.d/20_renault_zoe.sh"' in deploy_text,
+            and (
+                'install -m 755 "$ROOT/plugins.d/20_renault_zoe.sh"' in deploy_text
+                or 'install -m 755 "$_plugin_src" "$STAGE/plugins.d/$(basename "$_plugin_src")"' in deploy_text
+            ),
             "deploy.sh stages 20_renault_zoe.sh with mode 755",
             failures,
         )

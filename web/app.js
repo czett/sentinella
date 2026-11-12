@@ -124,13 +124,16 @@
             heroSourceSma: "SMA Battery SoC",
             heroSourceCcu: "CCU3 Duty Cycle",
             heroSourceShelly: "Shelly EM Grid Power",
+            smaEnabled: "SMA Battery Storage",
             shellyEm: "Shelly EM",
             enableShelly: "Enable Shelly EM",
+            shellyNote: "Polls local Shelly EM / Pro 3EM grid power (requires IP or hostname).",
             shellyIp: "Shelly IP / Host",
             shellyUser: "Username (optional)",
             shellyPass: "Password (optional)",
             dynamicTariff: "Dynamic Tariff",
             enableTariff: "Enable Dynamic Tariff",
+            tariffNote: "Zero-config spot prices via aWATTar DE/AT, or Tibber with API token.",
             tariffProvider: "Provider",
             tariffSurcharge: "Surcharge (ct/kWh)",
             tibberToken: "Tibber API Token",
@@ -337,13 +340,16 @@
             heroSourceSma: "SMA Batterie-SoC",
             heroSourceCcu: "CCU3 Duty Cycle",
             heroSourceShelly: "Shelly EM Netzleistung",
+            smaEnabled: "SMA Batterie-Speicher",
             shellyEm: "Shelly EM",
             enableShelly: "Shelly EM aktivieren",
+            shellyNote: "Liest lokale Netzleistung über Shelly EM / Pro 3EM (benötigt IP oder Hostname).",
             shellyIp: "Shelly IP / Host",
             shellyUser: "Benutzername (optional)",
             shellyPass: "Passwort (optional)",
             dynamicTariff: "Dynamischer Stromtarif",
             enableTariff: "Dynamischen Tarif aktivieren",
+            tariffNote: "Zero-Config Börsenstrompreis über aWATTar DE/AT oder Tibber mit API-Token.",
             tariffProvider: "Anbieter",
             tariffSurcharge: "Aufschlag (ct/kWh)",
             tibberToken: "Tibber API-Token",
@@ -528,11 +534,14 @@
         panelEyebrow: $("panel-eyebrow"),
         instrumentTitle: $("instrument-title"),
         heroSource: $("hero-source"),
+        smaEnabled: $("sma-enabled"),
         shellyEnabled: $("shelly-enabled"),
+        shellySettings: $("shelly-settings"),
         shellyIp: $("shelly-ip"),
         shellyUser: $("shelly-user"),
         shellyPass: $("shelly-pass"),
         tariffEnabled: $("tariff-enabled"),
+        tariffSettings: $("tariff-settings"),
         tariffProvider: $("tariff-provider"),
         tariffSurcharge: $("tariff-surcharge"),
         tibberToken: $("tibber-token"),
@@ -563,6 +572,9 @@
         chartEmpty: $("chart-empty"),
         chartRange: $("chart-range"),
         historyCount: $("history-count"),
+        lowerGrid: $("sma-lower-grid"),
+        historyCard: $("history-card"),
+        systemRegisterCard: $("system-register-card"),
 
         metaHost: $("meta-host"),
         metaSocVar: $("meta-soc-var"),
@@ -728,6 +740,7 @@
         }
         configLanguageTried = true;
         requestJSON(CONFIG_URL).then(function (data) {
+            adoptConfig(data);
             adoptBackendLanguage(data && data.ui_language);
         }).catch(function () {
             /* Keep the localStorage choice until status.json provides one. */
@@ -990,7 +1003,10 @@
         if (pref === "sma" || pref === "ccu" || pref === "shelly") {
             return pref;
         }
-        if (status && status.sma_configured === true && status.soc != null) {
+        var smaConfigured = Boolean(status && status.sma_configured);
+        var smaEnabled = status && status.sma_enabled !== false && status.sma_enabled !== "false";
+        var hasSoc = status && status.soc !== null && status.soc !== undefined && status.soc !== "";
+        if (smaConfigured && smaEnabled && hasSoc) {
             return "sma";
         }
         if (Array.isArray(plugins)) {
@@ -1263,6 +1279,20 @@
             if (el.heroDetail) el.heroDetail.hidden = true;
         }
 
+        var smaActive = Boolean(data.sma_configured) && data.sma_enabled !== false && data.sma_enabled !== "false";
+        if (el.historyCard) {
+            el.historyCard.hidden = !smaActive;
+            el.historyCard.style.display = smaActive ? "" : "none";
+        }
+        if (el.systemRegisterCard) {
+            el.systemRegisterCard.hidden = !smaActive;
+            el.systemRegisterCard.style.display = smaActive ? "" : "none";
+        }
+        if (el.lowerGrid) {
+            el.lowerGrid.hidden = !smaActive;
+            el.lowerGrid.style.display = smaActive ? "" : "none";
+        }
+
         el.chargeState.textContent = chargeLabel(charge);
         el.chargeState.dataset.charge = charge;
         el.powerState.textContent = powerText(data);
@@ -1459,6 +1489,13 @@
         if (!data || typeof data !== "object") {
             throw new Error("empty payload");
         }
+        var ccuOnly = data.sma_configured === false ||
+            data.sma_enabled === false ||
+            data.sma_enabled === "false" ||
+            data.mode === "ccu_only";
+        if (data.soc === null && ccuOnly) {
+            return;
+        }
         if (!Number.isInteger(data.soc) || data.soc < 0 || data.soc > 100) {
             throw new Error("invalid SoC");
         }
@@ -1496,6 +1533,7 @@
                 validatePayload(data);
                 syncLanguageFromStatus(data);
                 render(data);
+                renderPluginsList(lastPlugins, true);
                 hideNotice();
                 schedule(POLL_MS);
             })
@@ -1550,6 +1588,8 @@
 
         return {
             schema: 1,
+            sma_configured: true,
+            sma_enabled: true,
             generated_at: new Date().toISOString(),
             generated_epoch: now,
             host: "192.168.178.123 (demo)",
@@ -1716,7 +1756,24 @@
             "SCHNEE": "SNOW",
             "SNOW": "SNOW",
             "GEWITTER": "THUNDERSTORM",
-            "THUNDERSTORM": "THUNDERSTORM"
+            "THUNDERSTORM": "THUNDERSTORM",
+            "DYNAMIC TARIFF": "DYNAMIC TARIFF",
+            "PRICE": "PRICE",
+            "PROVIDER": "PROVIDER",
+            "SURCHARGE": "SURCHARGE",
+            "LOW": "LOW",
+            "NORMAL": "NORMAL",
+            "HIGH": "HIGH",
+            "SHELLY EM": "SHELLY EM",
+            "GRID POWER": "GRID POWER",
+            "FEED-IN": "FEED-IN",
+            "GRID DRAW": "GRID DRAW",
+            "IDLE": "IDLE",
+            "GEN": "GEN",
+            "No IP configured": "No IP configured",
+            "Missing token": "Missing token",
+            "Unreachable": "Unreachable",
+            "Parse error": "Parse error"
         },
         de: {
             "RENAULT E-TECH": "RENAULT E-TECH",
@@ -1847,7 +1904,24 @@
             "SNOW": "SCHNEE",
             "SCHNEE": "SCHNEE",
             "THUNDERSTORM": "GEWITTER",
-            "GEWITTER": "GEWITTER"
+            "GEWITTER": "GEWITTER",
+            "DYNAMIC TARIFF": "DYNAMISCHER TARIF",
+            "PRICE": "PREIS",
+            "PROVIDER": "ANBIETER",
+            "SURCHARGE": "AUFSCHLAG",
+            "LOW": "GÜNSTIG",
+            "NORMAL": "NORMAL",
+            "HIGH": "HOCH",
+            "SHELLY EM": "SHELLY EM",
+            "GRID POWER": "NETZLEISTUNG",
+            "FEED-IN": "EINSPEISUNG",
+            "GRID DRAW": "NETZBEZUG",
+            "IDLE": "LEERLAUF",
+            "GEN": "GEN",
+            "No IP configured": "Keine IP konfiguriert",
+            "Missing token": "Token fehlt",
+            "Unreachable": "Nicht erreichbar",
+            "Parse error": "Lesefehler"
         },
         /* System health states are a closed vocabulary shared by host-telemetry
            plugins. Translate them only through this map so a health badge can
@@ -2211,23 +2285,74 @@
         }
     }
 
-    function renderPluginsList(plugins) {
+    function buildSmaPluginCard(status) {
+        if (!status) return null;
+        var smaConfigured = Boolean(status.sma_configured);
+        var smaEnabled = status.sma_enabled !== false && status.sma_enabled !== "false";
+        var hasSoc = status.soc !== null && status.soc !== undefined && status.soc !== "";
+        if (!smaEnabled || (!smaConfigured && !hasSoc)) {
+            return null;
+        }
+        var isDe = currentLanguage === "de";
+        var soc = hasSoc ? Math.round(Number(status.soc)) : "--";
+        var badge = isDe ? "BEREIT" : "READY";
+        var color = "neutral";
+        if (status.signal === true || status.signal_state === "overflow") {
+            badge = isDe ? "ÜBERSCHUSS" : "OVERFLOW";
+            color = "red";
+        } else if (status.charging === "charging") {
+            badge = isDe ? "LÄDT" : "CHARGING";
+            color = "green";
+        } else if (status.charging === "discharging") {
+            badge = isDe ? "ENTLÄDT" : "DISCHARGING";
+            color = "blue";
+        }
+        var powerVal = "--";
+        if (status.charge_power_w != null && Number(status.charge_power_w) > 0) {
+            powerVal = "+" + Math.round(Number(status.charge_power_w)) + " W";
+        } else if (status.discharge_power_w != null && Number(status.discharge_power_w) > 0) {
+            powerVal = "-" + Math.round(Number(status.discharge_power_w)) + " W";
+        } else if (status.charge_power_w != null) {
+            powerVal = "0 W";
+        }
+        var sigLabel = status.signal === true ? (isDe ? "Aktiv" : "Active") : (isDe ? "Aus" : "Off");
+        var ccuVal = status.ccu_status === "ok" ? "OK" : (status.ccu_status || "--");
+        return {
+            id: "sma_battery",
+            title: isDe ? "SMA BATTERIE" : "SMA BATTERY",
+            layout: "stat",
+            status_badge: badge,
+            status_color: color,
+            primary: { value: soc, unit: "%", label: "SOC" },
+            secondary_metrics: [
+                { label: isDe ? "LEISTUNG" : "POWER", value: powerVal },
+                { label: "SIGNAL", value: sigLabel },
+                { label: "CCU3", value: ccuVal }
+            ]
+        };
+    }
+
+    function renderPluginsList(plugins, skipHeroRender) {
         lastPlugins = Array.isArray(plugins) ? plugins : [];
-        if (current) {
+        if (!skipHeroRender && current) {
             render(current);
         }
         if (!el.pluginsSection || !el.pluginsGrid) {
             return;
         }
-        if (!Array.isArray(plugins) || !plugins.length) {
-            el.pluginsSection.style.display = "none";
-            el.pluginsGrid.innerHTML = "";
-            return;
-        }
         var heroSrc = resolveHeroSource(current, lastPlugins);
-        var visible = filterEnabledPlugins(plugins, pluginStates).filter(function (p) {
-            if (heroSrc === "ccu" && p && p.id === "ccu_health") return false;
-            if (heroSrc === "shelly" && p && p.id === "shelly_em") return false;
+        var baseList = Array.isArray(plugins) ? filterEnabledPlugins(plugins, pluginStates) : [];
+        if (heroSrc !== "sma") {
+            var smaCard = buildSmaPluginCard(current);
+            if (smaCard) {
+                baseList = [smaCard].concat(baseList);
+            }
+        }
+        var visible = baseList.filter(function (p) {
+            if (!p || !p.id) return true;
+            if (heroSrc === "sma" && p.id === "sma_battery") return false;
+            if (heroSrc === "ccu" && (p.id === "ccu_health" || p.id === "10_ccu_health")) return false;
+            if (heroSrc === "shelly" && (p.id === "shelly_em" || p.id === "25_shelly_em")) return false;
             return true;
         });
         if (!visible.length) {
@@ -2688,8 +2813,14 @@
         if (el.heroSource && data.hero_source) {
             el.heroSource.value = data.hero_source;
         }
+        if (el.smaEnabled) {
+            el.smaEnabled.checked = data.sma_enabled !== false && Boolean(data.sma_ip);
+        }
         if (el.shellyEnabled) {
             el.shellyEnabled.checked = Boolean(data.shelly_enabled);
+        }
+        if (el.shellySettings && el.shellyEnabled) {
+            el.shellySettings.hidden = !el.shellyEnabled.checked;
         }
         if (el.shellyIp) {
             el.shellyIp.value = data.shelly_ip || "";
@@ -2702,6 +2833,9 @@
         }
         if (el.tariffEnabled) {
             el.tariffEnabled.checked = Boolean(data.tariff_enabled);
+        }
+        if (el.tariffSettings && el.tariffEnabled) {
+            el.tariffSettings.hidden = !el.tariffEnabled.checked;
         }
         if (el.tariffProvider && data.tariff_provider) {
             el.tariffProvider.value = data.tariff_provider;
@@ -2796,9 +2930,18 @@
         if (data && data.hero_source) {
             configuredHeroSource = data.hero_source;
         }
+        if (current && data) {
+            if (data.sma_enabled !== undefined) {
+                current.sma_enabled = data.sma_enabled;
+            }
+            if (data.sma_ip !== undefined) {
+                current.sma_configured = Boolean(data.sma_ip) && data.sma_enabled !== false;
+            }
+        }
         if (current) {
             render(current);
         }
+        renderPluginsList(lastPlugins);
         liveConfig = data;
         if (data && data.ui_language) {
             if (!languagePinned && !languageSynced) {
@@ -3045,6 +3188,7 @@
             signal_enabled: el.signalEnabled.checked,
             signal_phone: phone,
             notify_disabled: el.notifyDisabled ? el.notifyDisabled.checked : false,
+            sma_enabled: el.smaEnabled ? el.smaEnabled.checked : false,
             sma_ip: el.smaIp.value.trim(),
             sma_port: Number(el.smaPort.value.trim())
         };
@@ -3407,8 +3551,13 @@
         if (el.callmebotPaste) {
             el.callmebotPaste.value = "";
         }
-        if (settingsFocusBefore && typeof settingsFocusBefore.focus === "function") {
-            settingsFocusBefore.focus();
+        if (settingsFocusBefore && typeof settingsFocusBefore.focus === "function" &&
+            settingsFocusBefore !== document.body &&
+            (!settingsFocusBefore.classList || !settingsFocusBefore.classList.contains("skip-link")) &&
+            document.body.contains(settingsFocusBefore)) {
+            try { settingsFocusBefore.focus({ preventScroll: true }); } catch (e) { settingsFocusBefore.focus(); }
+        } else if (el.settingsOpen && typeof el.settingsOpen.focus === "function") {
+            try { el.settingsOpen.focus({ preventScroll: true }); } catch (e2) { el.settingsOpen.focus(); }
         }
     }
 
@@ -3643,19 +3792,42 @@
         el.heroSource.addEventListener("change", function () {
             configuredHeroSource = el.heroSource.value;
             if (current) render(current);
+            renderPluginsList(lastPlugins);
             queueAutoSave({ hero_source: el.heroSource.value });
+        });
+    }
+
+    if (el.smaEnabled) {
+        el.smaEnabled.addEventListener("change", function () {
+            if (current) {
+                current.sma_enabled = el.smaEnabled.checked;
+                if (el.smaEnabled.checked && ((el.smaIp && el.smaIp.value.trim()) || (liveConfig && liveConfig.sma_ip))) {
+                    current.sma_configured = true;
+                }
+                render(current);
+            }
+            renderPluginsList(lastPlugins);
+            queueAutoSave({ sma_enabled: el.smaEnabled.checked });
         });
     }
 
     if (el.shellyEnabled) {
         el.shellyEnabled.addEventListener("change", function () {
+            if (el.shellySettings) {
+                el.shellySettings.hidden = !el.shellyEnabled.checked;
+            }
             queueAutoSave({ shelly_enabled: el.shellyEnabled.checked });
+            refreshPluginsNowAndLater();
         });
     }
 
     if (el.tariffEnabled) {
         el.tariffEnabled.addEventListener("change", function () {
+            if (el.tariffSettings) {
+                el.tariffSettings.hidden = !el.tariffEnabled.checked;
+            }
             queueAutoSave({ tariff_enabled: el.tariffEnabled.checked });
+            refreshPluginsNowAndLater();
         });
     }
 

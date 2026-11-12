@@ -832,6 +832,14 @@ load_env() {
     SIGNAL_PHONE=$(trim_ws "${SIGNAL_PHONE:-}")
     SIGNAL_APIKEY=$(trim_ws "${SIGNAL_APIKEY:-${SIGNAL_API_KEY:-}}")
     SMA_IP=${SMA_IP:-}
+    SMA_ENABLED=${SMA_ENABLED:-}
+    if [ -z "$SMA_ENABLED" ]; then
+        if [ -n "$SMA_IP" ]; then SMA_ENABLED=1; else SMA_ENABLED=0; fi
+    fi
+    case "$SMA_ENABLED" in
+        1|true|TRUE|on|ON|yes|YES) SMA_ENABLED=1 ;;
+        *) SMA_ENABLED=0 ;;
+    esac
     SMA_PORT=${SMA_PORT:-443}
     SMA_PASS=${SMA_PASS:-}
     case "${UI_LANGUAGE:-}" in
@@ -897,6 +905,9 @@ config_payload() {
     printf ',"notify_disabled":%s' "$_notify_disabled"
     printf ',"signal_phone":%s' "$(json_str "$(mask_phone_list "$SIGNAL_PHONE")")"
     printf ',"signal_apikey_set":%s' "$_apikey_set"
+    _sma_enabled=false
+    [ "$SMA_ENABLED" = "1" ] && _sma_enabled=true
+    printf ',"sma_enabled":%s' "$_sma_enabled"
     printf ',"sma_ip":%s' "$(json_str "$SMA_IP")"
     printf ',"sma_port":%s' "$_port"
     printf ',"sma_password_set":%s' "$_password_set"
@@ -1470,6 +1481,7 @@ save_config() {
     _phone=$SIGNAL_PHONE
     _apikey=$SIGNAL_APIKEY
     _ip=$SMA_IP
+    _sma_enabled=$SMA_ENABLED
     _port=$SMA_PORT
     _password=$SMA_PASS
     _language=$UI_LANGUAGE
@@ -1480,6 +1492,7 @@ save_config() {
     _want_reset=0
     _want_enabled=0
     _want_notify_disabled=0
+    _want_sma_enabled=0
     _want_phone=0
     _want_apikey=0
     _want_ip=0
@@ -1603,6 +1616,12 @@ save_config() {
         esac
     fi
 
+    if body_has sma_enabled; then
+        _sma_enabled_raw=$(body_bool sma_enabled) || fail "400 Bad Request" "Invalid sma_enabled" "sma_enabled"
+        if [ "$_sma_enabled_raw" = "true" ]; then _sma_enabled=1; else _sma_enabled=0; fi
+        _want_sma_enabled=1
+    fi
+
     if body_has sma_ip; then
         _ip=$(body_str sma_ip)
         if [ -n "$_ip" ]; then
@@ -1676,6 +1695,10 @@ save_config() {
     if [ "$_want_apikey" = "1" ]; then
         env_set "$TMP_FILE" SIGNAL_APIKEY "$_apikey" || \
             fail "500 Internal Server Error" "$(msg write_apikey)"
+    fi
+    if [ "$_want_sma_enabled" = "1" ]; then
+        env_set "$TMP_FILE" SMA_ENABLED "$_sma_enabled" || \
+            fail "500 Internal Server Error" "Failed to write SMA_ENABLED"
     fi
     if [ "$_want_ip" = "1" ]; then
         env_set "$TMP_FILE" SMA_IP "$_ip" || \

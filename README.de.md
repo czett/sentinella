@@ -53,10 +53,12 @@ Die Ausführung im Poll-Lauf wird über `SENTINELLA_RUN_PLUGINS=1` in der Cron-U
 │ │   ├── 10_ccu_health.sh             │     ├── config.cgi & settings.cgi     │
 │ │   ├── 15_weather.sh                │     ├── plugin_manager.cgi            │
 │ │   ├── 20_renault_zoe.sh            │     ├── plugins.cgi                   │
-│ │   └── 30_forecast_solar.sh         │     ├── action_zoe.cgi (HVAC aus)     │
-│ ├── config/ (Modus 600)              │     ├── test_signal.cgi               │
-│ │   ├── config.env                   │     ├── test_renault.cgi              │
-│ │   ├── plugins.env                  │     └── update_check.cgi              │
+│ │   ├── 25_shelly_em.sh              │     ├── action_zoe.cgi (HVAC aus)     │
+│ │   ├── 30_forecast_solar.sh         │     ├── test_signal.cgi               │
+│ │   └── 35_tibber.sh                 │     ├── test_renault.cgi              │
+│ ├── config/ (Modus 600)              │     └── update_check.cgi              │
+│ │   ├── config.env                   │                                       │
+│ │   ├── plugins.env                  │                                       │
 │ │   └── plugins/*.env                │                                       │
 │ └── state/ (Modus 700)               │  Karten:                              │
 │     ├── plugins/*.json               │   [ stat ]   [ delta ]   [ list ]     │
@@ -100,7 +102,7 @@ Die Tabelle zeigt Budgets, keine Momentaufnahme. Aktuelle Byte-Zahlen werden mit
 
 ```sh
 ./tools/build_addon.sh
-# Ausgabe: dist/sentinella-1.1.0.tar.gz
+# Ausgabe: dist/sentinella-1.2.0.tar.gz
 ```
 
 Das Archiv in der CCU3-WebUI unter **Einstellungen → Systemsteuerung → Zusatzsoftware** hochladen oder per SSH mit `./deploy.sh` installieren.
@@ -287,7 +289,8 @@ curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8181/tclrega.exe
 ```sh
 sh -n bin/check_soc.sh lib/notify_signal.sh setup_variables.sh \
       plugins.d/10_ccu_health.sh plugins.d/15_weather.sh \
-      plugins.d/20_renault_zoe.sh plugins.d/30_forecast_solar.sh \
+      plugins.d/20_renault_zoe.sh plugins.d/25_shelly_em.sh \
+      plugins.d/30_forecast_solar.sh plugins.d/35_tibber.sh \
       web/api/config.cgi web/api/plugin_manager.cgi web/api/plugins.cgi \
       web/api/action_zoe.cgi web/api/update_check.cgi \
       tools/benchmark_footprint.sh tools/build_addon.sh

@@ -35,7 +35,7 @@
             } catch (error) {}
         })();
     </script>
-    <link rel="stylesheet" href="./style.css">
+    <link rel="stylesheet" href="./style.css?v=1.2.1">
     <link rel="icon" href="./favicon.svg" type="image/svg+xml">
     <link rel="icon" href="./favicon.ico" sizes="32x32">
 </head>
@@ -198,8 +198,8 @@
                 </div>
             </section>
 
-            <div class="lower-grid">
-                <section class="history-panel" aria-labelledby="history-title">
+            <div class="lower-grid" id="sma-lower-grid">
+                <section class="history-panel" id="history-card" aria-labelledby="history-title">
                     <div class="section-head">
                         <div class="section-head-left">
                             <span class="panel-index">03</span>
@@ -225,7 +225,7 @@
                     </div>
                 </section>
 
-                <section class="meta-panel" aria-labelledby="meta-title">
+                <section class="meta-panel" id="system-register-card" aria-labelledby="meta-title">
                     <div class="section-head">
                         <div class="section-head-left">
                             <span class="panel-index">04</span>
@@ -407,6 +407,11 @@
 
             <fieldset class="field-group">
                 <legend><span class="group-index">04</span><span data-i18n="inverter">Inverter</span></legend>
+
+                <label class="switch-row" for="sma-enabled">
+                    <span class="field-label" data-i18n="smaEnabled">SMA Battery Storage</span>
+                    <input class="switch" id="sma-enabled" name="sma_enabled" type="checkbox" role="switch">
+                </label>
 
                 <label class="field" for="sma-ip">
                     <span class="field-label" data-i18n="smaIp">SMA IP address</span>
@@ -600,10 +605,11 @@
                 <label class="switch-row" for="shelly-enabled">
                     <span class="switch-copy">
                         <span class="field-label" data-i18n="enableShelly">Enable Shelly EM</span>
+                        <span class="field-note" data-i18n="shellyNote">Polls local Shelly EM / Pro 3EM grid power (requires IP or hostname).</span>
                     </span>
                     <input class="switch" id="shelly-enabled" name="shelly_enabled" type="checkbox">
                 </label>
-                <div class="plugin-settings" id="shelly-settings">
+                <div class="plugin-settings" id="shelly-settings" hidden>
                     <div class="field-row">
                         <label class="field" for="shelly-ip">
                             <span class="field-label" data-i18n="shellyIp">Shelly IP / Host</span>
@@ -623,10 +629,11 @@
                 <label class="switch-row" for="tariff-enabled">
                     <span class="switch-copy">
                         <span class="field-label" data-i18n="enableTariff">Enable Dynamic Tariff</span>
+                        <span class="field-note" data-i18n="tariffNote">Zero-config spot prices via aWATTar DE/AT, or Tibber with API token.</span>
                     </span>
                     <input class="switch" id="tariff-enabled" name="tariff_enabled" type="checkbox">
                 </label>
-                <div class="plugin-settings" id="tariff-settings">
+                <div class="plugin-settings" id="tariff-settings" hidden>
                     <div class="field-row">
                         <label class="field" for="tariff-provider">
                             <span class="field-label" data-i18n="tariffProvider">Provider</span>
@@ -661,6 +668,6 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-<script src="./app.js" defer></script>
+<script src="./app.js?v=1.2.1" defer></script>
 </body>
 </html>

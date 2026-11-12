@@ -243,6 +243,14 @@ load_config() {
 
     # Inverter
     SMA_IP=${SMA_IP:-}
+    SMA_ENABLED=${SMA_ENABLED:-}
+    if [ -z "$SMA_ENABLED" ]; then
+        if [ -n "$SMA_IP" ]; then SMA_ENABLED=1; else SMA_ENABLED=0; fi
+    fi
+    case "$SMA_ENABLED" in
+        1|true|TRUE|on|ON|yes|YES) SMA_ENABLED=1; SMA_ENABLED_JSON=true ;;
+        *) SMA_ENABLED=0; SMA_ENABLED_JSON=false ;;
+    esac
     SMA_PORT=${SMA_PORT:-443}
     SMA_ROLE=${SMA_ROLE:-usr}
     SMA_PASS=${SMA_PASS:-}
@@ -251,7 +259,7 @@ load_config() {
     BATTERY_DISCHARGE_POWER_KEY=${BATTERY_DISCHARGE_POWER_KEY:-}
     SMA_TLS_VERIFY=${SMA_TLS_VERIFY:-false}
     SMA_CONNECT_TIMEOUT=${SMA_CONNECT_TIMEOUT:-5}
-    SMA_MAX_TIME=${SMA_MAX_TIME:-15}
+    SMA_MAX_TIME=${SMA_MAX_TIME:-12}
     SMA_RETRIES=${SMA_RETRIES:-2}
     SMA_RETRY_DELAY=${SMA_RETRY_DELAY:-5}
 
@@ -302,7 +310,7 @@ load_config() {
     # ------------------------------------------------------------------
     # Validation
     # ------------------------------------------------------------------
-    if [ -n "$SMA_IP" ]; then
+    if [ "$SMA_ENABLED" = "1" ] && [ -n "$SMA_IP" ]; then
         SMA_CONFIGURED=true
         MODE=sma
         if ! is_safe_host "$SMA_IP"; then
@@ -423,7 +431,7 @@ load_config() {
         SMA_CONNECT_TIMEOUT=5
     fi
     if ! is_uint "$SMA_MAX_TIME" || [ "$SMA_MAX_TIME" -lt 1 ]; then
-        SMA_MAX_TIME=15
+        SMA_MAX_TIME=12
     fi
     if ! is_uint "$SMA_RETRIES" || [ "$SMA_RETRIES" -lt 1 ]; then
         SMA_RETRIES=2
@@ -701,10 +709,10 @@ write_ccu() {
 
     _rega="${_rega}"'WriteLine("SMA_SOC_OK");'
 
-    _resp=$(curl -fsS --connect-timeout 5 -m 15 \
+    _resp=$(curl -fsS --connect-timeout 5 --max-time 12 \
         -H 'Content-Type: application/x-www-form-urlencoded' \
         --data-binary "$_rega" \
-        "$CCU_REGA_URL") || {
+        "$CCU_REGA_URL" </dev/null) || {
         log "ERROR: CCU3 ReGa request failed ($CCU_REGA_URL)"
         return 1
     }
@@ -828,7 +836,7 @@ determine_charge_state() {
 
 status_json() {
     cat <<EOF
-{"schema":1,"ui_language":"$UI_LANGUAGE","mode":"$MODE","sma_configured":$SMA_CONFIGURED,"hero_source":"$HERO_SOURCE","generated_at":"$_j_generated","generated_epoch":$NOW,"host":"$_j_host","soc":$_j_soc,"previous_soc":$_j_prev,"delta":$_j_delta,"charging":"$CHARGE_STATE","charge_power_w":$_j_charge,"discharge_power_w":$_j_discharge,"signal":$_j_signal,"signal_state":"$SIGNAL_STATE","signal_notifications":$_j_notify,"signal_gateway":"$_j_gateway","thresholds":{"trigger":$THRESHOLD_TRIGGER,"reset":$THRESHOLD_RESET},"variables":{"soc":"$SV_SOC_NAME","signal":"$SV_SIGNAL_NAME"},"ccu_status":"$_j_ccu","history":$_j_history}
+{"schema":1,"ui_language":"$UI_LANGUAGE","mode":"$MODE","sma_configured":$SMA_CONFIGURED,"sma_enabled":$SMA_ENABLED_JSON,"hero_source":"$HERO_SOURCE","generated_at":"$_j_generated","generated_epoch":$NOW,"host":"$_j_host","soc":$_j_soc,"previous_soc":$_j_prev,"delta":$_j_delta,"charging":"$CHARGE_STATE","charge_power_w":$_j_charge,"discharge_power_w":$_j_discharge,"signal":$_j_signal,"signal_state":"$SIGNAL_STATE","signal_notifications":$_j_notify,"signal_gateway":"$_j_gateway","thresholds":{"trigger":$THRESHOLD_TRIGGER,"reset":$THRESHOLD_RESET},"variables":{"soc":"$SV_SOC_NAME","signal":"$SV_SIGNAL_NAME"},"ccu_status":"$_j_ccu","history":$_j_history}
 EOF
 }
 

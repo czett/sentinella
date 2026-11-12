@@ -79,10 +79,10 @@ write_json() {
     mv -f "$_tmp" "$OUT_FILE" 2>/dev/null || { rm -f "$_tmp" 2>/dev/null || true; return 1; }
 }
 
+NOW_ISO=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || printf '')
+
 if [ -z "$SHELLY_BASE_URL" ] && [ -z "$SHELLY_IP" ]; then
-    if [ ! -f "$OUT_FILE" ]; then
-        write_json '{"id":"shelly_em","title":"Shelly EM","status":"OFFLINE","tone":"warning","value":"--","unit":"W","metrics":[{"label":"Status","value":"No IP configured"}]}'
-    fi
+    write_json "{\"id\":\"shelly_em\",\"layout\":\"stat\",\"title\":\"SHELLY EM\",\"status_badge\":\"OFFLINE\",\"status_color\":\"neutral\",\"timestamp\":\"$NOW_ISO\",\"primary\":{\"value\":\"--\",\"unit\":\"W\",\"label\":\"GRID POWER\"},\"secondary_metrics\":[{\"label\":\"STATUS\",\"value\":\"No IP configured\"}]}"
     exit 0
 fi
 
@@ -96,18 +96,18 @@ fi
 
 # Try Gen2/Pro first
 # shellcheck disable=SC2086
-RAW=$(curl -kfsS --connect-timeout 4 --max-time 8 $CURL_AUTH "$BASE_URL/rpc/Shelly.GetStatus" 2>/dev/null || true)
+RAW=$(curl -kfsS --connect-timeout 5 --max-time 12 $CURL_AUTH "$BASE_URL/rpc/Shelly.GetStatus" </dev/null 2>/dev/null || true)
 GEN=2
 if [ -z "$RAW" ]; then
     # Fallback to Gen1
     # shellcheck disable=SC2086
-    RAW=$(curl -kfsS --connect-timeout 4 --max-time 8 $CURL_AUTH "$BASE_URL/status" 2>/dev/null || true)
+    RAW=$(curl -kfsS --connect-timeout 5 --max-time 12 $CURL_AUTH "$BASE_URL/status" </dev/null 2>/dev/null || true)
     GEN=1
 fi
 
 if [ -z "$RAW" ]; then
     if [ ! -f "$OUT_FILE" ]; then
-        write_json '{"id":"shelly_em","title":"Shelly EM","status":"OFFLINE","tone":"error","value":"--","unit":"W","metrics":[{"label":"Status","value":"Unreachable"}]}'
+        write_json "{\"id\":\"shelly_em\",\"layout\":\"stat\",\"title\":\"SHELLY EM\",\"status_badge\":\"OFFLINE\",\"status_color\":\"red\",\"timestamp\":\"$NOW_ISO\",\"primary\":{\"value\":\"--\",\"unit\":\"W\",\"label\":\"GRID POWER\"},\"secondary_metrics\":[{\"label\":\"STATUS\",\"value\":\"Unreachable\"}]}"
     fi
     exit 0
 fi
@@ -156,7 +156,7 @@ END {
 
 if [ -z "$PARSED" ]; then
     if [ ! -f "$OUT_FILE" ]; then
-        write_json '{"id":"shelly_em","title":"Shelly EM","status":"OFFLINE","tone":"warning","value":"--","unit":"W","metrics":[{"label":"Status","value":"Parse error"}]}'
+        write_json "{\"id\":\"shelly_em\",\"layout\":\"stat\",\"title\":\"SHELLY EM\",\"status_badge\":\"OFFLINE\",\"status_color\":\"neutral\",\"timestamp\":\"$NOW_ISO\",\"primary\":{\"value\":\"--\",\"unit\":\"W\",\"label\":\"GRID POWER\"},\"secondary_metrics\":[{\"label\":\"STATUS\",\"value\":\"Parse error\"}]}"
     fi
     exit 0
 fi
@@ -167,16 +167,16 @@ EOF
 
 if [ "$TOTAL_W" -lt -10 ] 2>/dev/null; then
     STATUS_TAG="FEED-IN"
-    TONE="ok"
+    COLOR="green"
 elif [ "$TOTAL_W" -gt 10 ] 2>/dev/null; then
     STATUS_TAG="GRID DRAW"
-    TONE="info"
+    COLOR="blue"
 else
     STATUS_TAG="IDLE"
-    TONE="neutral"
+    COLOR="neutral"
 fi
 
-METRICS="{\"label\":\"Gen\",\"value\":\"Gen$GEN\"}"
+METRICS="{\"label\":\"GEN\",\"value\":\"Gen$GEN\"}"
 if [ -n "$PA" ]; then
     METRICS="$METRICS,{\"label\":\"L1\",\"value\":\"${PA} W\"}"
 fi
@@ -187,6 +187,5 @@ if [ -n "$PC" ]; then
     METRICS="$METRICS,{\"label\":\"L3\",\"value\":\"${PC} W\"}"
 fi
 
-NOW_ISO=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || printf '')
-write_json "{\"id\":\"shelly_em\",\"title\":\"Shelly EM\",\"status\":\"$STATUS_TAG\",\"tone\":\"$TONE\",\"value\":\"$TOTAL_W\",\"unit\":\"W\",\"updated_at\":\"$NOW_ISO\",\"metrics\":[$METRICS]}"
+write_json "{\"id\":\"shelly_em\",\"layout\":\"stat\",\"title\":\"SHELLY EM\",\"status_badge\":\"$STATUS_TAG\",\"status_color\":\"$COLOR\",\"timestamp\":\"$NOW_ISO\",\"primary\":{\"value\":$TOTAL_W,\"unit\":\"W\",\"label\":\"GRID POWER\"},\"secondary_metrics\":[$METRICS]}"
 exit 0

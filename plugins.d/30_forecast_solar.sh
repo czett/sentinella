@@ -148,7 +148,7 @@ fi
 
 API_BASE=${FORECAST_API_URL:-https://api.forecast.solar/estimate}
 CONNECT_TIMEOUT=${FORECAST_CONNECT_TIMEOUT:-5}
-MAX_TIME=${FORECAST_MAX_TIME:-20}
+MAX_TIME=${FORECAST_MAX_TIME:-12}
 
 STATE_DIR=${FORECAST_STATE_DIR:-$APP_DIR/state/plugins}
 OUT_FILE=$STATE_DIR/forecast_solar.json
@@ -230,7 +230,7 @@ fi
 is_number "$FORECAST_DEC" || FORECAST_DEC=35
 is_number "$FORECAST_AZ" || FORECAST_AZ=0
 is_uint "$CONNECT_TIMEOUT" || CONNECT_TIMEOUT=5
-is_uint "$MAX_TIME" || MAX_TIME=20
+is_uint "$MAX_TIME" || MAX_TIME=12
 
 # The API base is concatenated into the request URL. Reject anything that is
 # not a plain http(s) origin/path without whitespace or control characters.
@@ -283,7 +283,7 @@ keep_or_neutral() {
 URL="$API_BASE/$FORECAST_LAT/$FORECAST_LON/$FORECAST_DEC/$FORECAST_AZ/$FORECAST_KWP"
 HTTP_CODE=$(curl -s -o "$RAW_FILE" -w '%{http_code}' \
     --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME" \
-    "$URL" 2>/dev/null) || HTTP_CODE=000
+    "$URL" </dev/null 2>/dev/null) || HTTP_CODE=000
 
 case "$HTTP_CODE" in
     200) ;;
