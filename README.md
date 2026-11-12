@@ -4,16 +4,18 @@
 
 **Sentinella: a low-footprint energy and system monitor for the HomeMatic CCU3.**
 
-Sentinella is a modular, 100% POSIX-shell monitoring platform for CCU3 and RaspberryMatic. A single cron-driven engine collects telemetry from SMA storage, Renault E-Tech vehicles, the CCU3 host itself, and keyless weather services, then publishes `status.json`, writes CCU3 system variables, and dispatches stateful push alerts. No daemon, Node.js, Python, `jq`, or external CDN runs on the CCU3.
+Sentinella is a POSIX-shell monitoring platform for CCU3 and RaspberryMatic. A single cron-driven engine collects telemetry from SMA storage, Shelly EM meters, Renault E-Tech vehicles, dynamic electricity tariffs, the CCU3 host, and Open-Meteo weather, then writes `status.json`, updates CCU3 system variables, and dispatches stateful push alerts. No daemon, Node.js, Python, `jq`, or external CDN runs on the CCU3.
 
 ## Capabilities
 
-1. **SMA solar and home storage**: SoC, charge/discharge power, and the grid-surplus signal over HTTPS WebConnect.
-2. **EV telemetry** (Renault E-Tech): SoC, range, plug status, charging state, odometer for Zoe, Megane, and R5.
-3. **CCU3 host telemetry**: duty cycle via XML-RPC on ports `2001`/`2010`, load average, RAM, uptime.
-4. **Weather and PV outlook**: keyless Open-Meteo weather and an optional experimental forecast.solar yield outlook.
-5. **Stateful multi-channel push**: Signal / CallMeBot with hysteresis, per-event cooldowns, and first-run silence.
-6. **Plugin manager**: WebUI toggles; disabled plugins are skipped at execution time.
+1. **SMA solar and home storage (optional)**: SoC, charge/discharge power, and the grid-surplus signal over HTTPS WebConnect. Omit `SMA_IP` or set `SMA_ENABLED=0` for CCU-Only Mode.
+2. **CCU3 host telemetry**: duty cycle via XML-RPC on ports `2001`/`2010`, load average, RAM, uptime.
+3. **Shelly EM grid telemetry**: real-time grid power, phase telemetry, and energy counters over local HTTP (Gen1 & Gen2/Pro).
+4. **Dynamic electricity tariffs**: zero-config aWATTar (DE/AT) hourly prices or Tibber via API token.
+5. **EV telemetry** (Renault E-Tech): SoC, range, plug status, charging state, odometer for Zoe, Megane, and R5.
+6. **Weather and PV outlook**: keyless Open-Meteo weather and an optional experimental forecast.solar yield outlook.
+7. **Stateful push alerts**: Signal / CallMeBot with hysteresis, per-event cooldowns, and first-run silence.
+8. **Plugin manager & configurable Hero Tile**: WebUI toggles with instant auto-save; choose `auto`, `sma`, `ccu`, or `shelly` as the primary Hero Tile.
 
 | Module | Default | Data | Source |
 |---|---|---|---|
@@ -25,7 +27,7 @@ Sentinella is a modular, 100% POSIX-shell monitoring platform for CCU3 and Raspb
 | **PV Forecast** (`30_forecast_solar.sh`) | disabled (experimental) | Today and tomorrow yield in `kWh` and `kWh/kWp` | forecast.solar, no API key |
 | **Dynamic Tariff** (`35_tibber.sh`) | disabled until enabled | Hourly electricity price, min/max/avg | aWATTar (DE/AT, no key) or Tibber |
 
-Sentinella also supports **CCU-Only Mode** (`SMA_IP` optional) and a **Configurable Hero Tile** (`HERO_SOURCE`: `auto`, `sma`, `ccu`, `shelly`) with instant auto-save in the Settings Drawer. All state and JSON writes use atomic `.tmp` + `mv -f`.
+Sentinella supports **CCU-Only Mode** (`SMA_IP` optional, or `SMA_ENABLED=0` to pause SMA polling while keeping credentials, hiding battery tiles **03** and **04**) and a **Configurable Hero Tile** (`HERO_SOURCE`: `auto`, `sma`, `ccu`, `shelly`) with instant auto-save in the Settings Drawer. All state and JSON writes use atomic `.tmp` + `mv -f`.
 
 The plugin manager persists enable flags in `config/plugins.env` (`PLUGIN_<NAME>='0|1'`). Toggles in the settings drawer call `api/plugin_manager.cgi`, which accepts whitelisted IDs, writes the file atomically, and removes the card when a plugin is disabled. `web/app.js` filters the current card list immediately, without waiting for the next poll. Each plugin also honours a `.disabled` marker beside its script.
 
@@ -81,10 +83,10 @@ Measured with `BENCHMARK_RUNS=20 ./tools/benchmark_footprint.sh` on the developm
 
 | Metric | Measured / bound | Guard | Status |
 | :--- | :---: | :---: | :---: |
-| **Release tarball** (`sentinella-<version>.tar.gz`) | **102 KB** (104,405 B) | `<= 200 KB` | Informational |
-| **Installed add-on footprint** | **247 KB** (252,181 B) | `<= 400 KB` | **PASS** |
-| **Core execution** (`bin/check_soc.sh --dry-run`) | **16 ms** (20-run average) | `<= 150 ms` | **PASS** |
-| **Plugin execution** (`plugins.d/20_renault_zoe.sh`) | **23 ms** (20-run average) | `<= 250 ms` | **PASS** |
+| **Release tarball** (`sentinella-<version>.tar.gz`) | **111 KB** (112,806 B) | `<= 200 KB` | Informational |
+| **Installed add-on footprint** | **258 KB** (263,399 B) | `<= 400 KB` | **PASS** |
+| **Core execution** (`bin/check_soc.sh --dry-run`) | **17 ms** (5-run average) | `<= 150 ms` | **PASS** |
+| **Plugin execution** (`plugins.d/20_renault_zoe.sh`) | **28 ms** (5-run average) | `<= 250 ms` | **PASS** |
 | **Peak process RSS** | **~1.2 MB** on ash (< 0.25% of 1 GB) | `<= 2.5 MB` | **PASS** |
 | **RF duty cycle** | **0%** (HTTPS and local XML-RPC only) | `0% Hard Cap` | **PASS** |
 
@@ -157,7 +159,7 @@ The cron entry (`crontab -e`, see [`examples/crontab.txt`](examples/crontab.txt)
 
 Open `http://<ccu-ip>/addons/sentinella/` (`?demo=1` loads preview data locally).
 
-The dashboard refreshes `status.json` every 30 seconds and shows SoC telemetry, hysteresis state, history, and plugin cards in section **05 Extensions**. The settings drawer manages thresholds, Signal onboarding, inverter credentials, Renault access, and plugin toggles. Language changes apply immediately and persist through `api/config.cgi`.
+The dashboard refreshes `status.json` every 30 seconds and shows the selected Hero Tile, telemetry details, SoC history & system register (when SMA is active), and plugin cards in a responsive 3-column desktop grid in section **05 Extensions**. The settings drawer manages `HERO_SOURCE`, SMA enablement, thresholds, Signal onboarding, inverter credentials, Shelly EM, dynamic tariffs, Renault access, and plugin toggles. Language changes apply immediately and persist through `api/config.cgi`.
 
 `status.json` schema:
 
@@ -165,7 +167,11 @@ The dashboard refreshes `status.json` every 30 seconds and shows SoC telemetry, 
 {
   "schema": 1,
   "ui_language": "en",
-  "generated_at": "2026-11-08T12:00:00Z",
+  "mode": "sma",
+  "sma_configured": true,
+  "sma_enabled": true,
+  "hero_source": "auto",
+  "generated_at": "2026-11-12T12:00:00Z",
   "generated_epoch": 1762603200,
   "host": "192.168.178.123",
   "soc": 91,
@@ -212,7 +218,8 @@ If `state/signal` is missing and the first reading lands between `THRESHOLD_RESE
 
 | Key | Default | Description |
 |---|---|---|
-| `SMA_IP` | - | Inverter IPv4 address or hostname |
+| `SMA_ENABLED` | `true` | Enable/disable SMA polling (`false` keeps credentials and hides tiles 03/04) |
+| `SMA_IP` | - | Inverter IPv4 address or hostname (optional for CCU-Only Mode) |
 | `SMA_PORT` | `443` | HTTPS port |
 | `SMA_ROLE` | `usr` | Login role (`usr` or `user`) |
 | `SMA_PASS` | - | Inverter WebUI password |
@@ -236,6 +243,7 @@ If `state/signal` is missing and the first reading lands between `THRESHOLD_RESE
 | `THRESHOLD_TRIGGER` | `95` | Set the signal `true` at or above this SoC |
 | `THRESHOLD_RESET` | `90` | Set the signal `false` at or below this SoC |
 | `UI_LANGUAGE` | `en` | `en` or `de` for the UI, plugin cards, and default Signal texts |
+| `HERO_SOURCE` | `auto` | Primary Hero Tile: `auto`, `sma`, `ccu`, or `shelly` |
 
 ### Signal notifications
 
@@ -263,6 +271,14 @@ The status badge follows the duty cycle: below `50%` OPTIMAL, `50-80%` WARNING, 
 ### Weather (Open-Meteo)
 
 Enabled by default. No API key. Set `WEATHER_CITY`, `WEATHER_LAT`, and `WEATHER_LON` in `config/plugins/weather.env` to override the location. When any of them is missing, the plugin resolves it once via `https://ipapi.co/json/` and caches the result back into `weather.env`; explicit values from the settings drawer are never replaced.
+
+### Shelly EM (`25_shelly_em.sh`)
+
+Disabled by default; enable in the settings drawer. Supports Shelly EM (Gen1 `/status`) and Shelly Pro EM / 3EM (Gen2/Pro `/rpc/Shelly.GetStatus`) over local HTTP. Set `SHELLY_IP` (and optional `SHELLY_USER` / `SHELLY_PASS`) in the settings drawer or `config/plugins/shelly_em.env`.
+
+### Dynamic Tariff (`35_tibber.sh`)
+
+Disabled by default; enable in the settings drawer. Uses aWATTar (`awattar_de` or `awattar_at`) with zero configuration, or Tibber when `TIBBER_TOKEN` is set in `config/plugins/tibber.env`. Optional `TARIFF_SURCHARGE_CT` adds grid fees/taxes in `ct/kWh`.
 
 ### PV forecast (forecast.solar)
 

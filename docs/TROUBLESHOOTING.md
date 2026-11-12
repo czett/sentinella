@@ -1,6 +1,6 @@
 # Sentinella troubleshooting
 
-Sentinella is a modular CCU3 energy and system monitor. The core poll covers SMA storage, while `plugins.d/` adds Renault E-Tech telemetry, CCU3 host health, weather, the experimental PV forecast, and stateful push alerts. Start with the core foreground run; it shows the real error and does not depend on cron:
+Sentinella is a modular CCU3 energy and system monitor. The core poll covers SMA storage (optional — omit `SMA_IP` or set `SMA_ENABLED=0` for CCU-Only Mode), while `plugins.d/` adds CCU3 host health, Shelly EM grid power, dynamic electricity tariffs, Renault E-Tech telemetry, Open-Meteo weather, and the experimental PV forecast. Start with the core foreground run; it shows the real error and does not depend on cron:
 
 ```sh
 /usr/local/addons/sentinella/bin/check_soc.sh; echo "exit=$?"

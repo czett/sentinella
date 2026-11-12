@@ -16,9 +16,6 @@ All notable changes to this project are documented here. The format follows
 - **Dynamic Electricity Tariff Plugin (`35_tibber.sh`)**: Zero-config aWATTar (DE/AT) hourly electricity prices out of the box, with optional Tibber API token support and `stat` card layout.
 - **Responsive 3-Column Extension Grid & Live Plugin Sync**: `.plugins-grid` caps at 3 cards per row on desktop (`>= 900px`), `deploy.sh` stages all `plugins.d/*.sh` dynamically, and plugin toggles refresh immediately.
 - **Atomic state writes**: All state and JSON writes use `.tmp` + `mv -f` to prevent partial reads on the CCU3.
-
-### Earlier Unreleased Changes
-
 - `UI_LANGUAGE` (`en`/`de`, default `en`) for the dashboard and the built-in
   Signal messages. The header `EN / DE` switch updates the interface
   immediately and persists the choice through `api/config.cgi`.
