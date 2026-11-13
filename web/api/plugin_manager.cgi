@@ -53,7 +53,9 @@ LOCK_DIR=$ADDON_DIR/config/.plugins.lock
 PLUGIN_TABLE='10_ccu_health PLUGIN_CCU_HEALTH ccu_health.json
 15_weather PLUGIN_WEATHER weather.json
 20_renault_zoe PLUGIN_RENAULT_ZOE renault_zoe.json
-30_forecast_solar PLUGIN_FORECAST_SOLAR forecast_solar.json'
+25_shelly_em PLUGIN_SHELLY_EM shelly_em.json
+30_forecast_solar PLUGIN_FORECAST_SOLAR forecast_solar.json
+35_tibber PLUGIN_TIBBER tibber.json'
 
 headers() {
     [ -n "$1" ] && printf 'Status: %s\r\n' "$1"
@@ -70,9 +72,9 @@ fail() {
     exit 0
 }
 
-# Prints 1 or 0 for the given variable. Optional plugins (PV forecast and
-# Renault E-Tech) default to 0 (disabled) on a clean install; the core CCU3
-# health and weather plugins default to 1 (enabled).
+# Prints 1 or 0 for the given variable. Optional plugins (PV forecast,
+# Renault E-Tech, Shelly EM, and Dynamic Tariff) default to 0 (disabled) on a
+# clean install; the core CCU3 health and weather plugins default to 1 (enabled).
 flag_value() {
     _v=""
     if [ -f "$PLUGINS_ENV" ] && [ ! -L "$PLUGINS_ENV" ]; then
@@ -81,9 +83,38 @@ flag_value() {
     fi
     case "$_v" in
         1|true|TRUE|on|ON|yes|YES) printf '1' ;;
-        0|false|FALSE|off|OFF|no|NO) printf '0' ;;
+        0|false|FALSE|off|OFF|no|NO)
+            if [ "$1" = "PLUGIN_SHELLY_EM" ] && [ -f "$ADDON_DIR/config/plugins/shelly_em.env" ]; then
+                _se=$(sed -n 's/^[[:space:]]*SHELLY_ENABLED[[:space:]]*=[[:space:]]*//p' \
+                    "$ADDON_DIR/config/plugins/shelly_em.env" 2>/dev/null | tail -n 1 | tr -d "\"' \r")
+                case "$_se" in
+                    1|true|TRUE|on|ON|yes|YES) printf '1'; return 0 ;;
+                esac
+            elif [ "$1" = "PLUGIN_TIBBER" ] && [ -f "$ADDON_DIR/config/plugins/tibber.env" ]; then
+                _te=$(sed -n 's/^[[:space:]]*TARIFF_ENABLED[[:space:]]*=[[:space:]]*//p' \
+                    "$ADDON_DIR/config/plugins/tibber.env" 2>/dev/null | tail -n 1 | tr -d "\"' \r")
+                case "$_te" in
+                    1|true|TRUE|on|ON|yes|YES) printf '1'; return 0 ;;
+                esac
+            fi
+            printf '0'
+            ;;
         *)
-            if [ "$1" = "PLUGIN_FORECAST_SOLAR" ] || [ "$1" = "PLUGIN_RENAULT_ZOE" ]; then
+            if [ "$1" = "PLUGIN_SHELLY_EM" ] && [ -f "$ADDON_DIR/config/plugins/shelly_em.env" ]; then
+                _se=$(sed -n 's/^[[:space:]]*SHELLY_ENABLED[[:space:]]*=[[:space:]]*//p' \
+                    "$ADDON_DIR/config/plugins/shelly_em.env" 2>/dev/null | tail -n 1 | tr -d "\"' \r")
+                case "$_se" in
+                    1|true|TRUE|on|ON|yes|YES) printf '1'; return 0 ;;
+                esac
+            elif [ "$1" = "PLUGIN_TIBBER" ] && [ -f "$ADDON_DIR/config/plugins/tibber.env" ]; then
+                _te=$(sed -n 's/^[[:space:]]*TARIFF_ENABLED[[:space:]]*=[[:space:]]*//p' \
+                    "$ADDON_DIR/config/plugins/tibber.env" 2>/dev/null | tail -n 1 | tr -d "\"' \r")
+                case "$_te" in
+                    1|true|TRUE|on|ON|yes|YES) printf '1'; return 0 ;;
+                esac
+            fi
+            if [ "$1" = "PLUGIN_FORECAST_SOLAR" ] || [ "$1" = "PLUGIN_RENAULT_ZOE" ] || \
+               [ "$1" = "PLUGIN_SHELLY_EM" ] || [ "$1" = "PLUGIN_TIBBER" ]; then
                 printf '0'
             else
                 printf '1'
@@ -197,7 +228,7 @@ elif [ "$NEW" = "1" ]; then
     SCRIPT="${ADDON_DIR}/plugins.d/${REQ_ID}.sh"
     if [ -x "$SCRIPT" ]; then
         # Run once to immediately re-generate the state JSON card
-        "$SCRIPT" >/dev/null 2>&1 &
+        SMA_MONITOR_ADDON_DIR="$ADDON_DIR" "$SCRIPT" </dev/null >/dev/null 2>&1 &
     fi
 fi
 

@@ -357,8 +357,19 @@ node --check web/app.js
 ./tools/benchmark_footprint.sh
 # CCU3-Release-Archiv (dist/sentinella-<version>.tar.gz)
 ./tools/build_addon.sh
+# Integrations- und Sicherheitssuite (32 Abschnitte: SEN-01..SEN-11, Plugins, Packaging)
 python3 tests/integration.py
 ```
+
+### Benchmark & Footprint (`v1.2.1`)
+
+| Metrik | Gemessen | Budget |
+| :--- | :---: | :---: |
+| Release-Tarball (`dist/sentinella-1.2.1.tar.gz`) | **115 KB** (117.525 B) | `<= 200 KB` |
+| Installierter Add-on-Footprint | **281 KB** (286.894 B) | `<= 400 KB` |
+| `bin/check_soc.sh --dry-run` (Ø 5 Läufe) | **21 ms** | `<= 150 ms` |
+| `plugins.d/20_renault_zoe.sh` (Ø 5 Läufe) | **30 ms** | `<= 250 ms` |
+| Integrationssuite (`tests/integration.py`) | **32 Abschnitte** | PASS |
 
 Optionaler Speedwire-Multicast-Sniffer für den Arbeitsplatz (`239.12.255.254:9524`):
 

@@ -12,6 +12,7 @@ Requirements: Python 3.8+, curl, openssl. Run from the repository root:
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import shutil
@@ -71,6 +72,11 @@ class State:
         self.renault_cockpit_fail = False
         self.renault_cockpit_v2_calls = 0
         self.renault_rate_limited_calls = 0
+        self.shelly_gen2_payload: object | None = None
+        self.shelly_gen1_payload: object | None = None
+        self.shelly_raw_body: str | None = None
+        self.shelly_auth: tuple[str, str] | None = None
+        self.shelly_requests: list[str] = []
 
     def reset_requests(self) -> None:
         with self.lock:
@@ -89,6 +95,7 @@ class State:
             self.renault_cockpit_calls = 0
             self.renault_cockpit_v2_calls = 0
             self.renault_rate_limited_calls = 0
+            self.shelly_requests = []
 
 
 class SmaHandler(BaseHTTPRequestHandler):
@@ -430,6 +437,57 @@ class RenaultHandler(BaseHTTPRequestHandler):
         self._json(404, {"err": 404})
 
 
+class ShellyHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, *_args) -> None:
+        pass
+
+    def _send_raw(self, status: int, body: bytes, extra_headers: dict[str, str] | None = None) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        if extra_headers:
+            for k, v in extra_headers.items():
+                self.send_header(k, v)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self) -> None:  # noqa: N802
+        state: State = self.server.state  # type: ignore[attr-defined]
+        path = urlparse(self.path).path
+        with state.lock:
+            state.shelly_requests.append(path)
+            auth = state.shelly_auth
+            raw_body = state.shelly_raw_body
+            gen2_payload = state.shelly_gen2_payload
+            gen1_payload = state.shelly_gen1_payload
+
+        if auth is not None:
+            expected = base64.b64encode(f"{auth[0]}:{auth[1]}".encode()).decode("ascii")
+            hdr = self.headers.get("Authorization", "")
+            if hdr != f"Basic {expected}":
+                self._send_raw(
+                    401,
+                    b'{"error":"unauthorized"}',
+                    {"WWW-Authenticate": 'Basic realm="Shelly"'},
+                )
+                return
+
+        if raw_body is not None:
+            self._send_raw(200, raw_body.encode())
+            return
+
+        if path == "/rpc/Shelly.GetStatus" and gen2_payload is not None:
+            self._send_raw(200, json.dumps(gen2_payload).encode())
+            return
+        if path == "/status" and gen1_payload is not None:
+            self._send_raw(200, json.dumps(gen1_payload).encode())
+            return
+
+        self._send_raw(404, b'{"code":404,"message":"Not Found"}')
+
+
 def start_server(handler, state: State, tls: tuple[str, str] | None = None):
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     server.state = state  # type: ignore[attr-defined]
@@ -617,11 +675,14 @@ def main() -> int:
     fc = start_server(ForecastHandler, forecast_state)
     renault_state = State()
     rn = start_server(RenaultHandler, renault_state)
+    shelly_state = State()
+    sh_srv = start_server(ShellyHandler, shelly_state)
     sma_port = sma.server_address[1]
     rega_port = rega.server_address[1]
     signal_port = sig.server_address[1]
     forecast_port = fc.server_address[1]
     renault_port = rn.server_address[1]
+    shelly_port = sh_srv.server_address[1]
 
     try:
         print("\n1. trigger at 96 %")
@@ -3329,7 +3390,9 @@ if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SON
             "10_ccu_health": True,
             "15_weather": True,
             "20_renault_zoe": False,
+            "25_shelly_em": False,
             "30_forecast_solar": False,
+            "35_tibber": False,
         }
         check(pm_get.get("plugins") == expected_defaults,
               f"clean defaults enable only CCU3 Health and Weather (got {pm_get.get('plugins')})", failures)
@@ -3401,6 +3464,8 @@ if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SON
         check('id="plugin-manager-group"' in html_text, "settings drawer has plugin manager fieldset", failures)
         for pid in all_ids:
             check(f'data-plugin-id="{pid}"' in html_text, f"switch row for {pid}", failures)
+        check('id="shelly-enabled"' in html_text, "switch row for shelly-enabled", failures)
+        check('id="tariff-enabled"' in html_text, "switch row for tariff-enabled", failures)
         for term in ["ERWEITERUNGEN", "CCU3 System-Status", "Wetter (Open-Meteo)",
                      "PV-Prognose (Experimentell)", "Renault E-Tech"]:
             check(f'"{term}"' in app_js_text, f"web/app.js i18n contains {term}", failures)
@@ -3903,6 +3968,471 @@ if (!code.includes('addEventListener("blur"') || !code.includes("syncNormalizedH
             failures,
         )
 
+        print("\n32. Shelly EM end-to-end: instant SETUP card, plugin_manager preservation, Gen2/Gen1, Auth & Hero")
+        sh_addon = make_addon(tmp, sma_port, rega_port, name="shelly-addon")
+        (sh_addon / "plugins.d").mkdir(parents=True)
+        (sh_addon / "config" / "plugins").mkdir(parents=True)
+        (sh_addon / "state" / "plugins").mkdir(parents=True)
+        (sh_addon / "www").mkdir(parents=True)
+        for p_name in ("15_weather.sh", "25_shelly_em.sh", "35_tibber.sh"):
+            shutil.copy2(ROOT / "plugins.d" / p_name, sh_addon / "plugins.d" / p_name)
+            (sh_addon / "plugins.d" / p_name).chmod(0o755)
+
+        # 32a. Instant card appearance without manual Save (empty shelly_ip -> SETUP card)
+        st_sh_on, cfg_sh_on = parse_cgi(run_cgi(
+            sh_addon, "POST", "config",
+            body=json.dumps({"shelly_enabled": True}),
+        ))
+        check(
+            st_sh_on == "200 OK" and cfg_sh_on.get("shelly_enabled") is True,
+            f"POST config enables Shelly without IP (got {st_sh_on})",
+            failures,
+        )
+        sh_plugins_env = sh_addon / "config" / "plugins.env"
+        check(
+            sh_plugins_env.is_file() and "PLUGIN_SHELLY_EM='1'" in sh_plugins_env.read_text(),
+            "config.cgi syncs PLUGIN_SHELLY_EM='1' to config/plugins.env",
+            failures,
+        )
+        sh_card_path = sh_addon / "state" / "plugins" / "shelly_em.json"
+        check(wait_until(lambda: sh_card_path.is_file()), "shelly_em.json appears immediately after toggle", failures)
+        _, plugins_arr = parse_cgi(run_cgi(sh_addon, "GET", "plugins"))
+        sh_cards = [c for c in plugins_arr if isinstance(c, dict) and c.get("id") == "shelly_em"]
+        check(len(sh_cards) == 1, f"GET plugins.cgi immediately returns shelly_em card (got {plugins_arr})", failures)
+        sh_setup_card = sh_cards[0] if sh_cards else {}
+        check(
+            sh_setup_card.get("status_badge") == "SETUP"
+            and sh_setup_card.get("status_color") == "blue"
+            and sh_setup_card.get("primary") == {"value": "SETUP", "unit": "", "label": "STATUS"}
+            and sh_setup_card.get("secondary_metrics") == [{"label": "STATUS", "value": "Enter IP"}],
+            f"Shelly SETUP card has expected schema (got {sh_setup_card})",
+            failures,
+        )
+
+        # 32b. Enabling tariff also works immediately & plugin_manager.cgi preserves both
+        st_tf_on, cfg_tf_on = parse_cgi(run_cgi(
+            sh_addon, "POST", "config",
+            body=json.dumps({"tariff_enabled": True, "tariff_provider": "tibber"}),
+        ))
+        check(st_tf_on == "200 OK" and cfg_tf_on.get("tariff_enabled") is True, "POST config enables tariff", failures)
+        tb_card_path = sh_addon / "state" / "plugins" / "tibber.json"
+        check(wait_until(lambda: tb_card_path.is_file()), "tibber.json appears immediately after toggle", failures)
+        _, pm_after_toggle = parse_cgi(run_cgi(
+            sh_addon, "POST", "plugin_manager",
+            body='{"id":"15_weather","enabled":false}',
+        ))
+        check(
+            pm_after_toggle.get("ok") is True
+            and pm_after_toggle.get("plugins", {}).get("25_shelly_em") is True
+            and pm_after_toggle.get("plugins", {}).get("35_tibber") is True
+            and pm_after_toggle.get("plugins", {}).get("15_weather") is False,
+            f"plugin_manager.cgi preserves 25_shelly_em & 35_tibber across other plugin toggles (got {pm_after_toggle})",
+            failures,
+        )
+        pm_text = sh_plugins_env.read_text()
+        check(
+            "PLUGIN_SHELLY_EM='1'" in pm_text and "PLUGIN_TIBBER='1'" in pm_text and "PLUGIN_WEATHER='0'" in pm_text,
+            "config/plugins.env retains PLUGIN_SHELLY_EM='1' and PLUGIN_TIBBER='1'",
+            failures,
+        )
+
+        # 32c. Shelly Gen2 / Plus / Pro (/rpc/Shelly.GetStatus) & Gen1 (/status) via HTTP mock
+        def run_shelly_plugin(extra_env: dict[str, str] | None = None) -> tuple[subprocess.CompletedProcess, dict]:
+            env = {
+                "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                "SHELLY_ADDON_DIR": str(sh_addon),
+                "SHELLY_BASE_URL": f"http://127.0.0.1:{shelly_port}",
+            }
+            if extra_env:
+                env.update(extra_env)
+            res = subprocess.run(
+                ["sh", str(sh_addon / "plugins.d" / "25_shelly_em.sh")],
+                env=env, capture_output=True, text=True, timeout=15,
+            )
+            data = json.loads(sh_card_path.read_text()) if sh_card_path.is_file() else {}
+            return res, data
+
+        # Gen2 em:0 positive grid draw
+        shelly_state.reset_requests()
+        shelly_state.shelly_auth = None
+        shelly_state.shelly_raw_body = None
+        shelly_state.shelly_gen1_payload = None
+        shelly_state.shelly_gen2_payload = {
+            "em:0": {
+                "id": 0,
+                "a_act_power": 400.2,
+                "b_act_power": 500.1,
+                "c_act_power": 350.1,
+                "total_act_power": 1250.4,
+                "total_current": 5.5,
+            }
+        }
+        res_g2_pos, card_g2_pos = run_shelly_plugin()
+        sec_g2_pos = {m["label"]: m["value"] for m in card_g2_pos.get("secondary_metrics", [])}
+        check(
+            res_g2_pos.returncode == 0
+            and card_g2_pos.get("status_badge") == "GRID DRAW"
+            and card_g2_pos.get("status_color") == "blue"
+            and card_g2_pos.get("primary", {}).get("value") == 1250
+            and sec_g2_pos.get("GEN") == "Gen2"
+            and sec_g2_pos.get("L1") == "400.2 W"
+            and sec_g2_pos.get("L2") == "500.1 W"
+            and sec_g2_pos.get("L3") == "350.1 W",
+            f"Shelly Gen2 em:0 grid draw parsed cleanly (got {card_g2_pos})",
+            failures,
+        )
+
+        # Gen2 em:0 negative PV feed-in
+        shelly_state.shelly_gen2_payload = {
+            "em:0": {
+                "id": 0,
+                "a_act_power": -140.2,
+                "b_act_power": -150.3,
+                "c_act_power": -130.0,
+                "total_act_power": -420.5,
+            }
+        }
+        res_g2_neg, card_g2_neg = run_shelly_plugin()
+        check(
+            res_g2_neg.returncode == 0
+            and card_g2_neg.get("status_badge") == "FEED-IN"
+            and card_g2_neg.get("status_color") == "green"
+            and card_g2_neg.get("primary", {}).get("value") == -421,
+            f"Shelly Gen2 em:0 negative feed-in parsed cleanly (got {card_g2_neg})",
+            failures,
+        )
+
+        # Gen2 em1:0 (Pro EM-50: act_power)
+        shelly_state.shelly_gen2_payload = {
+            "em1:0": {"id": 0, "act_power": 482.7, "voltage": 231.4, "current": 2.15}
+        }
+        res_em1, card_em1 = run_shelly_plugin()
+        check(
+            res_em1.returncode == 0
+            and card_em1.get("status_badge") == "GRID DRAW"
+            and card_em1.get("primary", {}).get("value") == 483,
+            f"Shelly Gen2 em1:0 act_power parsed cleanly (got {card_em1})",
+            failures,
+        )
+
+        # Gen2 switch:0 (Plus Plug S / Plus 1PM: apower)
+        shelly_state.shelly_gen2_payload = {
+            "switch:0": {
+                "id": 0,
+                "output": True,
+                "apower": 185.3,
+                "voltage": 230.1,
+                "current": 0.82,
+                "aenergy": {"total": 1234.56},
+            }
+        }
+        res_sw, card_sw = run_shelly_plugin()
+        check(
+            res_sw.returncode == 0
+            and card_sw.get("status_badge") == "GRID DRAW"
+            and card_sw.get("primary", {}).get("value") == 185,
+            f"Shelly Gen2 switch:0 apower parsed cleanly (got {card_sw})",
+            failures,
+        )
+
+        # Gen1 /status fallback (404 on /rpc/Shelly.GetStatus) - Shelly EM/3EM total_power
+        shelly_state.reset_requests()
+        shelly_state.shelly_gen2_payload = None
+        shelly_state.shelly_gen1_payload = {
+            "emeters": [{"power": 210.4, "voltage": 230.5}, {"power": 105.2, "voltage": 230.2}],
+            "total_power": 315.6,
+        }
+        res_g1_em, card_g1_em = run_shelly_plugin()
+        sec_g1_em = {m["label"]: m["value"] for m in card_g1_em.get("secondary_metrics", [])}
+        check(
+            res_g1_em.returncode == 0
+            and "/rpc/Shelly.GetStatus" in shelly_state.shelly_requests
+            and "/status" in shelly_state.shelly_requests
+            and card_g1_em.get("primary", {}).get("value") == 316
+            and sec_g1_em.get("GEN") == "Gen1",
+            f"Shelly Gen1 EM/3EM total_power fallback works (got {card_g1_em})",
+            failures,
+        )
+
+        # Gen1 /status Shelly 1PM / Plug S meters[0].power
+        shelly_state.shelly_gen1_payload = {
+            "meters": [{"power": -95.2, "is_valid": True, "total": 4321}]
+        }
+        res_g1_1pm, card_g1_1pm = run_shelly_plugin()
+        check(
+            res_g1_1pm.returncode == 0
+            and card_g1_1pm.get("status_badge") == "FEED-IN"
+            and card_g1_1pm.get("status_color") == "green"
+            and card_g1_1pm.get("primary", {}).get("value") == -95,
+            f"Shelly Gen1 1PM/Plug S meters[0].power fallback works (got {card_g1_1pm})",
+            failures,
+        )
+
+        # HTTP Basic Auth (persisted via config.cgi, including space in password)
+        shelly_state.reset_requests()
+        shelly_state.shelly_auth = ("shelly", "secret pass")
+        shelly_state.shelly_gen2_payload = {"em:0": {"total_act_power": 612.0}}
+        st_auth_cfg, cfg_auth = parse_cgi(run_cgi(
+            sh_addon, "POST", "config",
+            body=json.dumps({
+                "shelly_enabled": True,
+                "shelly_user": "shelly",
+                "shelly_pass": "secret pass",
+            }),
+        ))
+        check(
+            st_auth_cfg == "200 OK"
+            and cfg_auth.get("shelly_user") == "shelly"
+            and cfg_auth.get("shelly_pass_set") is True
+            and "secret pass" not in json.dumps(cfg_auth),
+            f"config.cgi saves shelly_user & shelly_pass without leaking secret (got {cfg_auth})",
+            failures,
+        )
+        res_auth, card_auth = run_shelly_plugin()
+        check(
+            res_auth.returncode == 0
+            and card_auth.get("primary", {}).get("value") == 612
+            and card_auth.get("status_badge") == "GRID DRAW",
+            f"Shelly HTTP Basic Auth succeeds (got {card_auth})",
+            failures,
+        )
+
+        # Unreachable host starting from SETUP card -> OFFLINE (red), exit 0
+        shelly_state.shelly_auth = None
+        sh_card_path.write_text('{"id":"shelly_em","status_badge":"SETUP"}')
+        res_unreach, card_unreach = run_shelly_plugin({
+            "SHELLY_BASE_URL": "http://127.0.0.1:1",
+            "SHELLY_CONNECT_TIMEOUT": "1",
+            "SHELLY_MAX_TIME": "1",
+        })
+        check(
+            res_unreach.returncode == 0
+            and card_unreach.get("status_badge") == "OFFLINE"
+            and card_unreach.get("status_color") == "red"
+            and card_unreach.get("primary") == {"value": "OFFLINE", "unit": "", "label": "STATUS"}
+            and card_unreach.get("secondary_metrics") == [
+                {"label": "HOST", "value": "http://127.0.0.1:1"},
+                {"label": "STATUS", "value": "Unreachable"},
+            ],
+            f"Shelly unreachable host writes OFFLINE card (got {card_unreach})",
+            failures,
+        )
+
+        # Unreachable SHELLY_IP (192.0.2.1) with NO prior shelly_em.json still creates OFFLINE card & plugins.cgi returns it
+        sh_card_path.unlink(missing_ok=True)
+        sh_env_file = sh_addon / "config" / "plugins" / "shelly_em.env"
+        sh_env_file.write_text("SHELLY_ENABLED='true'\nSHELLY_IP='192.0.2.1'\nSHELLY_USER=''\nSHELLY_PASS=''\nSHELLY_INTERVAL='60'\n")
+        res_no_prior = subprocess.run(
+            ["sh", str(sh_addon / "plugins.d" / "25_shelly_em.sh")],
+            env={
+                "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                "SHELLY_ADDON_DIR": str(sh_addon),
+                "SHELLY_CONNECT_TIMEOUT": "1",
+                "SHELLY_MAX_TIME": "1",
+            },
+            capture_output=True, text=True, timeout=10,
+        )
+        card_no_prior = json.loads(sh_card_path.read_text()) if sh_card_path.is_file() else {}
+        _, plugins_unreach = parse_cgi(run_cgi(sh_addon, "GET", "plugins"))
+        unreach_cards = [c for c in plugins_unreach if isinstance(c, dict) and c.get("id") == "shelly_em"]
+        check(
+            res_no_prior.returncode == 0
+            and card_no_prior.get("status_badge") == "OFFLINE"
+            and card_no_prior.get("primary") == {"value": "OFFLINE", "unit": "", "label": "STATUS"}
+            and card_no_prior.get("secondary_metrics") == [
+                {"label": "HOST", "value": "192.0.2.1"},
+                {"label": "STATUS", "value": "Unreachable"},
+            ]
+            and len(unreach_cards) == 1,
+            f"unreachable SHELLY_IP=192.0.2.1 with no prior card writes OFFLINE & plugins.cgi returns it (got {card_no_prior})",
+            failures,
+        )
+
+        # POST config with shelly_enabled=true and unreachable shelly_ip makes shelly_em visible immediately (< 500ms)
+        sh_card_path.unlink(missing_ok=True)
+        t_start = time.monotonic()
+        st_imm, cfg_imm = parse_cgi(run_cgi(
+            sh_addon, "POST", "config",
+            body=json.dumps({"shelly_enabled": True, "shelly_ip": "192.0.2.1"}),
+        ))
+        elapsed_ms = (time.monotonic() - t_start) * 1000.0
+        _, plugins_imm = parse_cgi(run_cgi(sh_addon, "GET", "plugins"))
+        imm_cards = [c for c in plugins_imm if isinstance(c, dict) and c.get("id") == "shelly_em"]
+        check(
+            st_imm == "200 OK"
+            and cfg_imm.get("shelly_enabled") is True
+            and cfg_imm.get("shelly_ip") == "192.0.2.1"
+            and elapsed_ms < 500.0
+            and len(imm_cards) == 1
+            and imm_cards[0].get("status_badge") in {"SETUP", "OFFLINE"},
+            f"POST config with unreachable IP pre-seeds shelly_em in <500ms ({elapsed_ms:.1f}ms, got {imm_cards})",
+            failures,
+        )
+
+        # Regression: shelly_em.env SHELLY_ENABLED='true' still works when config/plugins.env has stale PLUGIN_SHELLY_EM='0'
+        sh_card_path.unlink(missing_ok=True)
+        sh_plugins_env.write_text("PLUGIN_CCU_HEALTH='1'\nPLUGIN_WEATHER='1'\nPLUGIN_SHELLY_EM='0'\nPLUGIN_TIBBER='0'\n")
+        _, pm_reconcile = parse_cgi(run_cgi(sh_addon, "GET", "plugin_manager"))
+        check(
+            pm_reconcile.get("plugins", {}).get("25_shelly_em") is True,
+            f"plugin_manager.cgi reports 25_shelly_em=true when shelly_em.env has SHELLY_ENABLED=true (got {pm_reconcile})",
+            failures,
+        )
+        res_stale = subprocess.run(
+            ["sh", str(sh_addon / "plugins.d" / "25_shelly_em.sh")],
+            env={
+                "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                "SHELLY_ADDON_DIR": str(sh_addon),
+                "SHELLY_CONNECT_TIMEOUT": "1",
+                "SHELLY_MAX_TIME": "1",
+            },
+            capture_output=True, text=True, timeout=10,
+        )
+        check(
+            res_stale.returncode == 0 and sh_card_path.is_file(),
+            "25_shelly_em.sh runs when shelly_em.env has SHELLY_ENABLED=true despite stale PLUGIN_SHELLY_EM=0",
+            failures,
+        )
+        sh_card_path.unlink(missing_ok=True)
+        sh_plugins_env.write_text("PLUGIN_CCU_HEALTH='1'\nPLUGIN_WEATHER='1'\nPLUGIN_SHELLY_EM='0'\n")
+        st_hs_only, _ = parse_cgi(run_cgi(
+            sh_addon, "POST", "config",
+            body=json.dumps({"hero_source": "shelly"}),
+        ))
+        _, plugins_hs_only = parse_cgi(run_cgi(sh_addon, "GET", "plugins"))
+        check(
+            st_hs_only == "200 OK"
+            and "PLUGIN_SHELLY_EM='1'" in sh_plugins_env.read_text()
+            and any(isinstance(c, dict) and c.get("id") == "shelly_em" for c in plugins_hs_only),
+            "POST config hero_source=shelly repairs stale PLUGIN_SHELLY_EM=0 and pre-seeds shelly_em.json",
+            failures,
+        )
+
+        # Regression: config.cgi removes stale .disabled markers when enabling shelly/tariff
+        sh_disabled_marker = sh_addon / "plugins.d" / "25_shelly_em.sh.disabled"
+        tb_disabled_marker = sh_addon / "plugins.d" / "35_tibber.sh.disabled"
+        sh_card_path.unlink(missing_ok=True)
+        tb_card_path.unlink(missing_ok=True)
+        sh_disabled_marker.touch()
+        st_sh_undisable, cfg_sh_undisable = parse_cgi(run_cgi(
+            sh_addon, "POST", "config",
+            body=json.dumps({"shelly_enabled": True, "shelly_ip": "192.0.2.1"}),
+        ))
+        check(
+            st_sh_undisable == "200 OK"
+            and cfg_sh_undisable.get("shelly_enabled") is True
+            and not sh_disabled_marker.exists()
+            and wait_until(lambda: sh_card_path.is_file()),
+            "POST config shelly_enabled=true removes stale 25_shelly_em.sh.disabled and produces shelly_em.json",
+            failures,
+        )
+        tb_disabled_marker.touch()
+        st_tb_undisable, cfg_tb_undisable = parse_cgi(run_cgi(
+            sh_addon, "POST", "config",
+            body=json.dumps({"tariff_enabled": True}),
+        ))
+        check(
+            st_tb_undisable == "200 OK"
+            and cfg_tb_undisable.get("tariff_enabled") is True
+            and not tb_disabled_marker.exists()
+            and wait_until(lambda: tb_card_path.is_file()),
+            "POST config tariff_enabled=true removes stale 35_tibber.sh.disabled and produces tibber.json",
+            failures,
+        )
+        sh_card_path.unlink(missing_ok=True)
+        sh_disabled_marker.touch()
+        st_hs_undisable, _ = parse_cgi(run_cgi(
+            sh_addon, "POST", "config",
+            body=json.dumps({"hero_source": "shelly"}),
+        ))
+        check(
+            st_hs_undisable == "200 OK"
+            and not sh_disabled_marker.exists()
+            and wait_until(lambda: sh_card_path.is_file()),
+            "POST config hero_source=shelly with SHELLY_ENABLED=true removes stale 25_shelly_em.sh.disabled",
+            failures,
+        )
+
+        # Malformed JSON -> OFFLINE (Parse error), exit 0
+        shelly_state.shelly_raw_body = "not-valid-json{{{"
+        res_mal, card_mal = run_shelly_plugin()
+        check(
+            res_mal.returncode == 0
+            and card_mal.get("status_badge") == "OFFLINE"
+            and card_mal.get("secondary_metrics") == [{"label": "STATUS", "value": "Parse error"}],
+            f"Shelly malformed JSON writes Parse error card (got {card_mal})",
+            failures,
+        )
+        shelly_state.shelly_raw_body = None
+
+        # Hero promotion (HERO_SOURCE="shelly") & frontend deduplication/instant visibility
+        st_hero, cfg_hero = parse_cgi(run_cgi(
+            sh_addon, "POST", "config",
+            body=json.dumps({"hero_source": "shelly", "shelly_enabled": True}),
+        ))
+        check(
+            st_hero == "200 OK" and cfg_hero.get("hero_source") == "shelly",
+            f"config.cgi persists hero_source=shelly (got {cfg_hero.get('hero_source')!r})",
+            failures,
+        )
+        if shutil.which("node"):
+            sh_js_script = r"""
+const fs = require("fs");
+const code = fs.readFileSync(process.argv[1], "utf8");
+const mFilt = code.match(/function filterEnabledPlugins\([\s\S]*?\n    \}\n/);
+const mHero = code.match(/function resolveHeroSource\([\s\S]*?\n    \}\n/);
+if (!mFilt || !mHero) process.exit(2);
+const runner = new Function(
+    "var configuredHeroSource = 'auto';\n" +
+    mFilt[0] + "\n" + mHero[0] +
+    "\nreturn { filterEnabledPlugins, resolveHeroSource, setHero: function(h){ configuredHeroSource = h; } };"
+)();
+const cards = [{id:"ccu_health"}, {id:"shelly_em", status_badge:"SETUP"}, {id:"tibber"}];
+const kept = runner.filterEnabledPlugins(cards, {"10_ccu_health": true, "25_shelly_em": true, "35_tibber": true}).map(c => c.id);
+if (JSON.stringify(kept) !== JSON.stringify(["ccu_health","shelly_em","tibber"])) {
+    console.error("filterEnabledPlugins failed: " + JSON.stringify(kept));
+    process.exit(1);
+}
+runner.setHero("auto");
+if (runner.resolveHeroSource({sma_configured: false, sma_enabled: false}, cards) !== "shelly") {
+    console.error("auto hero did not select shelly without SMA");
+    process.exit(1);
+}
+runner.setHero("shelly");
+if (runner.resolveHeroSource({sma_configured: true, sma_enabled: true, soc: 80}, cards) !== "shelly") {
+    console.error("explicit hero_source=shelly did not override SMA");
+    process.exit(1);
+}
+for (const term of ['"STATUS"', '"Enter IP"', '"FEED-IN"', '"GRID DRAW"', '"EINSPEISUNG"', '"NETZBEZUG"', '"IP eingeben"']) {
+    if (!code.includes(term)) {
+        console.error("Missing PLUGIN_I18N term: " + term);
+        process.exit(1);
+    }
+}
+"""
+            sh_js_res = subprocess.run(
+                ["node", "-e", sh_js_script, str(ROOT / "web" / "app.js")],
+                capture_output=True, text=True, timeout=10,
+            )
+            check(
+                sh_js_res.returncode == 0,
+                f"web/app.js Shelly hero promotion, filtering & DE/EN I18N pass ({sh_js_res.stderr.strip() or 'ok'})",
+                failures,
+            )
+
+        # Disabling Shelly immediately removes shelly_em.json
+        st_sh_off, cfg_sh_off = parse_cgi(run_cgi(
+            sh_addon, "POST", "config",
+            body=json.dumps({"shelly_enabled": False}),
+        ))
+        check(
+            st_sh_off == "200 OK"
+            and cfg_sh_off.get("shelly_enabled") is False
+            and not sh_card_path.exists(),
+            "disabling Shelly removes shelly_em.json immediately",
+            failures,
+        )
+
 
     finally:
         sma.shutdown()
@@ -3910,11 +4440,13 @@ if (!code.includes('addEventListener("blur"') || !code.includes("syncNormalizedH
         sig.shutdown()
         fc.shutdown()
         rn.shutdown()
+        sh_srv.shutdown()
         sma.server_close()
         rega.server_close()
         sig.server_close()
         fc.server_close()
         rn.server_close()
+        sh_srv.server_close()
         if not failures:
             shutil.rmtree(tmp, ignore_errors=True)
 

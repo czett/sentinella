@@ -27,7 +27,7 @@ OUT_FILE=$STATE_DIR/tibber.json
 # ---------------------------------------------------------------------------
 # Plugin Manager Execution Guard (config/plugins.env or .disabled marker)
 # ---------------------------------------------------------------------------
-PLUGIN_TIBBER=0
+PLUGIN_TIBBER=""
 for _pm_env in \
     "${SENTINELLA_PLUGINS_ENV:-}" \
     "$ADDON_DIR/config/plugins.env" \
@@ -39,7 +39,7 @@ do
         break
     fi
 done
-case "${PLUGIN_TIBBER:-0}" in
+case "${PLUGIN_TIBBER:-}" in
     0|false|FALSE|off|OFF|no|NO)
         rm -f "$OUT_FILE" 2>/dev/null || true
         exit 0
@@ -59,9 +59,10 @@ TIBBER_TOKEN=
 TARIFF_SURCHARGE_CT=0
 TARIFF_INTERVAL=900
 
-if [ -r "$ADDON_DIR/config/plugins/tibber.env" ]; then
+_tibber_env=${TIBBER_ENV:-$ADDON_DIR/config/plugins/tibber.env}
+if [ -r "$_tibber_env" ]; then
     # shellcheck source=/dev/null
-    . "$ADDON_DIR/config/plugins/tibber.env" 2>/dev/null || true
+    . "$_tibber_env" 2>/dev/null || true
 fi
 
 if [ "$TARIFF_ENABLED" != "true" ] && [ "${PLUGIN_TIBBER:-0}" != "1" ]; then

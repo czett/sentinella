@@ -1086,20 +1086,27 @@
                 var sPrimary = pluginPrimary(plugin);
                 var wVal = (sPrimary && sPrimary.value !== undefined && sPrimary.value !== null)
                     ? String(sPrimary.value) : "--";
-                var sUnit = (sPrimary && sPrimary.unit) ? sPrimary.unit : (wVal !== "--" ? "W" : "");
+                var sUnit = (sPrimary && sPrimary.unit !== undefined)
+                    ? String(sPrimary.unit) : (wVal !== "--" ? "W" : "");
                 rows.push({ label: t("netPower"), value: sUnit ? (wVal + " " + sUnit) : wVal });
                 rows.push({
                     label: t("statusLabel"),
-                    value: String(plugin.status_badge || plugin.status || "IDLE")
+                    value: translatePluginText(String(plugin.status_badge || plugin.status || "IDLE"), currentLanguage)
                 });
                 for (var j = 0; j < rawRows.length; j++) {
                     var sr = rawRows[j];
                     if (!sr) continue;
                     rows.push({
-                        label: sr.label || "",
-                        value: (sr.value != null ? String(sr.value) : "--") + (sr.unit ? " " + sr.unit : "")
+                        label: translatePluginText(sr.label || "", currentLanguage),
+                        value: translatePluginText(sr.value != null ? String(sr.value) : "--", currentLanguage) +
+                            (sr.unit ? " " + sr.unit : "")
                     });
                 }
+            } else {
+                rows.push({
+                    label: t("statusLabel"),
+                    value: translatePluginText("Connecting...", currentLanguage)
+                });
             }
         }
 
@@ -1208,20 +1215,24 @@
             var sPrimary = pluginPrimary(shellyPlugin);
             var wVal = (sPrimary && sPrimary.value !== undefined && sPrimary.value !== null)
                 ? String(sPrimary.value) : "--";
-            var sUnit = (sPrimary && sPrimary.unit) ? sPrimary.unit : (wVal !== "--" ? "W" : "");
+            var sUnit = (sPrimary && sPrimary.unit !== undefined)
+                ? String(sPrimary.unit) : (wVal !== "--" ? "W" : "");
             var sRows = pluginRows(shellyPlugin);
             var sParts = sRows.map(function (m) {
-                return m.label + ": " + m.value + (m.unit ? " " + m.unit : "");
+                return translatePluginText(m.label, currentLanguage) + ": " +
+                    translatePluginText(m.value, currentLanguage) +
+                    (m.unit ? " " + m.unit : "");
             });
             if (el.instrumentTitle) el.instrumentTitle.textContent = "Shelly EM";
             el.socValue.textContent = wVal;
             if (el.socUnit) el.socUnit.textContent = sUnit;
-            var sStatus = (shellyPlugin && (shellyPlugin.status_badge || shellyPlugin.status)) || "IDLE";
-            el.socState.textContent = shellyPlugin ? sStatus : "--";
+            var rawSStatus = (shellyPlugin && (shellyPlugin.status_badge || shellyPlugin.status)) || "IDLE";
+            var sStatus = shellyPlugin ? translatePluginText(rawSStatus, currentLanguage) : "--";
+            el.socState.textContent = sStatus;
             el.socState.dataset.charge = "idle";
             el.socCaption.textContent = sParts.length ? sParts.join(" · ") : "Shelly EM Grid Power";
             if (el.panelEyebrow) el.panelEyebrow.textContent = t("gridPhases");
-            el.signalChip.textContent = shellyPlugin ? sStatus : "--";
+            el.signalChip.textContent = sStatus;
             el.signalChip.dataset.tone = pluginTone(shellyPlugin);
             if (el.signalChip.parentElement && el.signalChip.parentElement.parentElement) {
                 el.signalChip.parentElement.parentElement.dataset.tone = el.signalChip.dataset.tone;
@@ -1771,7 +1782,12 @@
             "FEED-IN": "FEED-IN",
             "GRID DRAW": "GRID DRAW",
             "IDLE": "IDLE",
+            "OFFLINE": "OFFLINE",
             "GEN": "GEN",
+            "HOST": "HOST",
+            "STATUS": "STATUS",
+            "Enter IP": "Enter IP",
+            "Connecting...": "Connecting...",
             "No IP configured": "No IP configured",
             "Missing token": "Missing token",
             "Unreachable": "Unreachable",
@@ -1919,7 +1935,12 @@
             "FEED-IN": "EINSPEISUNG",
             "GRID DRAW": "NETZBEZUG",
             "IDLE": "LEERLAUF",
+            "OFFLINE": "OFFLINE",
             "GEN": "GEN",
+            "HOST": "HOST",
+            "STATUS": "STATUS",
+            "Enter IP": "IP eingeben",
+            "Connecting...": "Verbinde...",
             "No IP configured": "Keine IP konfiguriert",
             "Missing token": "Token fehlt",
             "Unreachable": "Nicht erreichbar",
@@ -2378,7 +2399,9 @@
        ("20_renault_zoe" / "renault_zoe") stay hidden until explicitly enabled. */
     function isPluginDefaultEnabled(id) {
         return id !== "30_forecast_solar" && id !== "forecast_solar" &&
-            id !== "20_renault_zoe" && id !== "renault_zoe";
+            id !== "20_renault_zoe" && id !== "renault_zoe" &&
+            id !== "25_shelly_em" && id !== "shelly_em" &&
+            id !== "35_tibber" && id !== "tibber";
     }
 
     function filterEnabledPlugins(plugins, states) {
@@ -2412,6 +2435,12 @@
     function applyPluginStates(data) {
         if (data && data.plugins && typeof data.plugins === "object") {
             pluginStates = data.plugins;
+            if (liveConfig && typeof liveConfig.shelly_enabled === "boolean") {
+                pluginStates["25_shelly_em"] = liveConfig.shelly_enabled;
+            }
+            if (liveConfig && typeof liveConfig.tariff_enabled === "boolean") {
+                pluginStates["35_tibber"] = liveConfig.tariff_enabled;
+            }
             syncPluginToggles();
             if (currentPlugins) {
                 renderPluginsList(currentPlugins);
@@ -2932,6 +2961,12 @@
         if (data && data.hero_source) {
             configuredHeroSource = data.hero_source;
         }
+        if (data && typeof data.shelly_enabled === "boolean") {
+            pluginStates["25_shelly_em"] = data.shelly_enabled;
+        }
+        if (data && typeof data.tariff_enabled === "boolean") {
+            pluginStates["35_tibber"] = data.tariff_enabled;
+        }
         if (current && data) {
             if (data.sma_enabled !== undefined) {
                 current.sma_enabled = data.sma_enabled;
@@ -3316,6 +3351,7 @@
         fetchAndRenderPlugins();
         setTimeout(fetchAndRenderPlugins, 600);
         setTimeout(fetchAndRenderPlugins, 2500);
+        setTimeout(fetchAndRenderPlugins, 5000);
     }
 
     function saveSettings(opts) {
@@ -3859,20 +3895,34 @@
 
     if (el.shellyEnabled) {
         el.shellyEnabled.addEventListener("change", function () {
+            var enabled = !!el.shellyEnabled.checked;
             if (el.shellySettings) {
-                el.shellySettings.hidden = !el.shellyEnabled.checked;
+                el.shellySettings.hidden = !enabled;
             }
-            queueAutoSave({ shelly_enabled: el.shellyEnabled.checked });
+            pluginStates["25_shelly_em"] = enabled;
+            if (currentPlugins) {
+                renderPluginsList(currentPlugins);
+            }
+            var patch = { shelly_enabled: enabled };
+            if (el.shellyIp) {
+                patch.shelly_ip = syncNormalizedHostField(el.shellyIp);
+            }
+            queueAutoSave(patch);
             refreshPluginsNowAndLater();
         });
     }
 
     if (el.tariffEnabled) {
         el.tariffEnabled.addEventListener("change", function () {
+            var enabled = !!el.tariffEnabled.checked;
             if (el.tariffSettings) {
-                el.tariffSettings.hidden = !el.tariffEnabled.checked;
+                el.tariffSettings.hidden = !enabled;
             }
-            queueAutoSave({ tariff_enabled: el.tariffEnabled.checked });
+            pluginStates["35_tibber"] = enabled;
+            if (currentPlugins) {
+                renderPluginsList(currentPlugins);
+            }
+            queueAutoSave({ tariff_enabled: enabled });
             refreshPluginsNowAndLater();
         });
     }

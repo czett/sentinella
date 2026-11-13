@@ -1845,14 +1845,51 @@ save_config() {
         is_uint "$_s_int_val" && [ "$_s_int_val" -ge 10 ] || fail "400 Bad Request" "Invalid shelly_interval" "shelly_interval"
         _want_shelly=1
     fi
+    _run_shelly=0
     if [ "$_want_shelly" = "1" ]; then
         save_shelly_env "$_s_en_val" "$_s_ip_val" "$_s_user_val" "$_s_pass_val" "$_s_int_val" \
             || fail "500 Internal Server Error" "$(msg write_failed)"
         if [ "$_s_en_val" = "true" ]; then
             sync_plugins_env PLUGIN_SHELLY_EM 1 || true
+            rm -f "$ADDON_DIR/plugins.d/25_shelly_em.sh.disabled" 2>/dev/null || true
+            _run_shelly=1
+            if [ ! -f "$STATE_DIR/plugins/shelly_em.json" ]; then
+                mkdir -p "$STATE_DIR/plugins" 2>/dev/null || true
+                chmod 755 "$STATE_DIR/plugins" 2>/dev/null || true
+                _sh_ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || printf '')
+                _sh_tmp="$STATE_DIR/plugins/shelly_em.json.tmp.$$"
+                if [ -n "$_s_ip_val" ]; then
+                    _sh_sec="[{\"label\":\"HOST\",\"value\":$(json_str "$_s_ip_val")},{\"label\":\"STATUS\",\"value\":\"Connecting...\"}]"
+                else
+                    _sh_sec='[{"label":"STATUS","value":"Enter IP"}]'
+                fi
+                printf '%s\n' "{\"id\":\"shelly_em\",\"layout\":\"stat\",\"title\":\"SHELLY EM\",\"status_badge\":\"SETUP\",\"status_color\":\"blue\",\"timestamp\":\"$_sh_ts\",\"primary\":{\"value\":\"SETUP\",\"unit\":\"\",\"label\":\"STATUS\"},\"secondary_metrics\":$_sh_sec}" > "$_sh_tmp" 2>/dev/null && {
+                    chmod 644 "$_sh_tmp" 2>/dev/null || true
+                    mv -f "$_sh_tmp" "$STATE_DIR/plugins/shelly_em.json" 2>/dev/null || rm -f "$_sh_tmp" 2>/dev/null || true
+                } || rm -f "$_sh_tmp" 2>/dev/null || true
+            fi
         else
             sync_plugins_env PLUGIN_SHELLY_EM 0 || true
+            rm -f "$STATE_DIR/plugins/shelly_em.json" 2>/dev/null || true
+            _run_shelly=1
         fi
+    elif [ "$SHELLY_ENABLED" = "true" ] && [ ! -f "$STATE_DIR/plugins/shelly_em.json" ]; then
+        sync_plugins_env PLUGIN_SHELLY_EM 1 || true
+        rm -f "$ADDON_DIR/plugins.d/25_shelly_em.sh.disabled" 2>/dev/null || true
+        _run_shelly=1
+        mkdir -p "$STATE_DIR/plugins" 2>/dev/null || true
+        chmod 755 "$STATE_DIR/plugins" 2>/dev/null || true
+        _sh_ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || printf '')
+        _sh_tmp="$STATE_DIR/plugins/shelly_em.json.tmp.$$"
+        if [ -n "$SHELLY_IP" ]; then
+            _sh_sec="[{\"label\":\"HOST\",\"value\":$(json_str "$SHELLY_IP")},{\"label\":\"STATUS\",\"value\":\"Connecting...\"}]"
+        else
+            _sh_sec='[{"label":"STATUS","value":"Enter IP"}]'
+        fi
+        printf '%s\n' "{\"id\":\"shelly_em\",\"layout\":\"stat\",\"title\":\"SHELLY EM\",\"status_badge\":\"SETUP\",\"status_color\":\"blue\",\"timestamp\":\"$_sh_ts\",\"primary\":{\"value\":\"SETUP\",\"unit\":\"\",\"label\":\"STATUS\"},\"secondary_metrics\":$_sh_sec}" > "$_sh_tmp" 2>/dev/null && {
+            chmod 644 "$_sh_tmp" 2>/dev/null || true
+            mv -f "$_sh_tmp" "$STATE_DIR/plugins/shelly_em.json" 2>/dev/null || rm -f "$_sh_tmp" 2>/dev/null || true
+        } || rm -f "$_sh_tmp" 2>/dev/null || true
     fi
 
     _t_en_val=$TARIFF_ENABLED
@@ -1895,14 +1932,23 @@ save_config() {
         is_uint "$_t_int_val" && [ "$_t_int_val" -ge 10 ] || fail "400 Bad Request" "Invalid tariff_interval" "tariff_interval"
         _want_tariff=1
     fi
+    _run_tariff=0
     if [ "$_want_tariff" = "1" ]; then
         save_tibber_env "$_t_en_val" "$_t_prov_val" "$_t_tok_val" "$_t_sur_val" "$_t_int_val" \
             || fail "500 Internal Server Error" "$(msg write_failed)"
         if [ "$_t_en_val" = "true" ]; then
             sync_plugins_env PLUGIN_TIBBER 1 || true
+            rm -f "$ADDON_DIR/plugins.d/35_tibber.sh.disabled" 2>/dev/null || true
+            _run_tariff=1
         else
             sync_plugins_env PLUGIN_TIBBER 0 || true
+            rm -f "$STATE_DIR/plugins/tibber.json" 2>/dev/null || true
+            _run_tariff=1
         fi
+    elif [ "$TARIFF_ENABLED" = "true" ] && [ ! -f "$STATE_DIR/plugins/tibber.json" ]; then
+        sync_plugins_env PLUGIN_TIBBER 1 || true
+        rm -f "$ADDON_DIR/plugins.d/35_tibber.sh.disabled" 2>/dev/null || true
+        _run_tariff=1
     fi
 
     # Notification edge state belongs to the state machine, not to the
@@ -1919,6 +1965,15 @@ save_config() {
     if [ "$_want_forecast" = "1" ] && [ -x "$ADDON_DIR/plugins.d/30_forecast_solar.sh" ]; then
         FORECAST_SOLAR_ADDON_DIR="$ADDON_DIR" FORECAST_SOLAR_ENV="$FORECAST_ENV_FILE" \
             "$ADDON_DIR/plugins.d/30_forecast_solar.sh" </dev/null >/dev/null 2>&1 &
+    fi
+    if [ "$_run_shelly" = "1" ] && [ -x "$ADDON_DIR/plugins.d/25_shelly_em.sh" ]; then
+        SHELLY_ADDON_DIR="$ADDON_DIR" SHELLY_ENV="$SHELLY_ENV_FILE" \
+            SHELLY_CONNECT_TIMEOUT=2 SHELLY_MAX_TIME=4 \
+            "$ADDON_DIR/plugins.d/25_shelly_em.sh" </dev/null >/dev/null 2>&1 &
+    fi
+    if [ "$_run_tariff" = "1" ] && [ -x "$ADDON_DIR/plugins.d/35_tibber.sh" ]; then
+        TIBBER_ADDON_DIR="$ADDON_DIR" TIBBER_ENV="$TIBBER_ENV_FILE" \
+            "$ADDON_DIR/plugins.d/35_tibber.sh" </dev/null >/dev/null 2>&1 &
     fi
     if [ -x "$ADDON_DIR/bin/check_soc.sh" ]; then
         SENTINELLA_RUN_PLUGINS=1 "$ADDON_DIR/bin/check_soc.sh" </dev/null >/dev/null 2>&1 &

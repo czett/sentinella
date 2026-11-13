@@ -372,9 +372,19 @@ node --check web/app.js
 # CCU3 release archive (dist/sentinella-<version>.tar.gz)
 ./tools/build_addon.sh
 
-# Integration and security suite (SEN-01..SEN-11, plugins, packaging)
+# Integration and security suite (32 sections: SEN-01..SEN-11, plugins, packaging)
 python3 tests/integration.py
 ```
+
+### Benchmark & Footprint (`v1.2.1`)
+
+| Metric | Measured | Budget |
+| :--- | :---: | :---: |
+| Release tarball (`dist/sentinella-1.2.1.tar.gz`) | **115 KB** (117,525 B) | `<= 200 KB` |
+| Installed add-on footprint | **281 KB** (286,894 B) | `<= 400 KB` |
+| `bin/check_soc.sh --dry-run` (avg of 5) | **21 ms** | `<= 150 ms` |
+| `plugins.d/20_renault_zoe.sh` (avg of 5) | **30 ms** | `<= 250 ms` |
+| Integration suite (`tests/integration.py`) | **32 sections** | PASS |
 
 ## Troubleshooting
 

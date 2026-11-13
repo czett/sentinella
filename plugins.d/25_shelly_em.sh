@@ -27,24 +27,28 @@ OUT_FILE=$STATE_DIR/shelly_em.json
 # ---------------------------------------------------------------------------
 # Plugin Manager Execution Guard (config/plugins.env or .disabled marker)
 # ---------------------------------------------------------------------------
-PLUGIN_SHELLY_EM=0
-for _pm_env in \
-    "${SENTINELLA_PLUGINS_ENV:-}" \
-    "$ADDON_DIR/config/plugins.env" \
-    /usr/local/addons/sentinella/config/plugins.env
-do
-    if [ -n "$_pm_env" ] && [ -r "$_pm_env" ]; then
-        # shellcheck source=/dev/null
-        . "$_pm_env" 2>/dev/null || true
-        break
-    fi
-done
-case "${PLUGIN_SHELLY_EM:-0}" in
-    0|false|FALSE|off|OFF|no|NO)
-        rm -f "$OUT_FILE" 2>/dev/null || true
-        exit 0
-        ;;
-esac
+PLUGIN_SHELLY_EM=""
+if [ -n "${SENTINELLA_PLUGINS_ENV:-}" ] && [ -r "$SENTINELLA_PLUGINS_ENV" ]; then
+    # shellcheck source=/dev/null
+    . "$SENTINELLA_PLUGINS_ENV" 2>/dev/null || true
+    case "${PLUGIN_SHELLY_EM:-}" in
+        0|false|FALSE|off|OFF|no|NO)
+            rm -f "$OUT_FILE" 2>/dev/null || true
+            exit 0
+            ;;
+    esac
+else
+    for _pm_env in \
+        "$ADDON_DIR/config/plugins.env" \
+        /usr/local/addons/sentinella/config/plugins.env
+    do
+        if [ -r "$_pm_env" ]; then
+            # shellcheck source=/dev/null
+            . "$_pm_env" 2>/dev/null || true
+            break
+        fi
+    done
+fi
 if [ -f "$ADDON_DIR/plugins.d/25_shelly_em.sh.disabled" ]; then
     rm -f "$OUT_FILE" 2>/dev/null || true
     exit 0
@@ -59,9 +63,10 @@ SHELLY_USER=
 SHELLY_PASS=
 SHELLY_INTERVAL=60
 
-if [ -r "$ADDON_DIR/config/plugins/shelly_em.env" ]; then
+_shelly_env=${SHELLY_ENV:-$ADDON_DIR/config/plugins/shelly_em.env}
+if [ -r "$_shelly_env" ]; then
     # shellcheck source=/dev/null
-    . "$ADDON_DIR/config/plugins/shelly_em.env" 2>/dev/null || true
+    . "$_shelly_env" 2>/dev/null || true
 fi
 
 if [ "$SHELLY_ENABLED" != "true" ] && [ "${PLUGIN_SHELLY_EM:-0}" != "1" ]; then
@@ -79,35 +84,51 @@ write_json() {
     mv -f "$_tmp" "$OUT_FILE" 2>/dev/null || { rm -f "$_tmp" 2>/dev/null || true; return 1; }
 }
 
+should_write_fallback() {
+    [ ! -f "$OUT_FILE" ] && return 0
+    grep -Eq '"status_badge":"(SETUP|OFFLINE)"' "$OUT_FILE" 2>/dev/null
+}
+
 NOW_ISO=$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || printf '')
 
-if [ -z "$SHELLY_BASE_URL" ] && [ -z "$SHELLY_IP" ]; then
-    write_json "{\"id\":\"shelly_em\",\"layout\":\"stat\",\"title\":\"SHELLY EM\",\"status_badge\":\"OFFLINE\",\"status_color\":\"neutral\",\"timestamp\":\"$NOW_ISO\",\"primary\":{\"value\":\"--\",\"unit\":\"W\",\"label\":\"GRID POWER\"},\"secondary_metrics\":[{\"label\":\"STATUS\",\"value\":\"No IP configured\"}]}"
+if [ -z "${SHELLY_BASE_URL:-}" ] && [ -z "$SHELLY_IP" ]; then
+    write_json "{\"id\":\"shelly_em\",\"layout\":\"stat\",\"title\":\"SHELLY EM\",\"status_badge\":\"SETUP\",\"status_color\":\"blue\",\"timestamp\":\"$NOW_ISO\",\"primary\":{\"value\":\"SETUP\",\"unit\":\"\",\"label\":\"STATUS\"},\"secondary_metrics\":[{\"label\":\"STATUS\",\"value\":\"Enter IP\"}]}"
     exit 0
 fi
 
-BASE_URL=${SHELLY_BASE_URL:-http://$SHELLY_IP}
+if [ -n "${SHELLY_BASE_URL:-}" ]; then
+    BASE_URL=$SHELLY_BASE_URL
+else
+    case "$SHELLY_IP" in
+        http://*|https://*) BASE_URL=$SHELLY_IP ;;
+        *) BASE_URL="http://$SHELLY_IP" ;;
+    esac
+fi
 BASE_URL=$(printf '%s' "$BASE_URL" | sed 's:/*$::')
 
-CURL_AUTH=""
-if [ -n "$SHELLY_USER" ] && [ -n "$SHELLY_PASS" ]; then
-    CURL_AUTH="--anyauth -u $SHELLY_USER:$SHELLY_PASS"
+if [ -n "$SHELLY_PASS" ]; then
+    _auth_user=${SHELLY_USER:-admin}
+    set -- --anyauth -u "$_auth_user:$SHELLY_PASS"
+else
+    set --
 fi
 
+SHELLY_CONNECT_TIMEOUT=${SHELLY_CONNECT_TIMEOUT:-5}
+SHELLY_MAX_TIME=${SHELLY_MAX_TIME:-12}
+SHELLY_HOST_LABEL=$(printf '%s' "${SHELLY_IP:-${SHELLY_BASE_URL:-}}" | tr -d '"\\')
+
 # Try Gen2/Pro first
-# shellcheck disable=SC2086
-RAW=$(curl -kfsS --connect-timeout 5 --max-time 12 $CURL_AUTH "$BASE_URL/rpc/Shelly.GetStatus" </dev/null 2>/dev/null || true)
+RAW=$(curl -kfsS --connect-timeout "$SHELLY_CONNECT_TIMEOUT" --max-time "$SHELLY_MAX_TIME" "$@" "$BASE_URL/rpc/Shelly.GetStatus" </dev/null 2>/dev/null || true)
 GEN=2
 if [ -z "$RAW" ]; then
     # Fallback to Gen1
-    # shellcheck disable=SC2086
-    RAW=$(curl -kfsS --connect-timeout 5 --max-time 12 $CURL_AUTH "$BASE_URL/status" </dev/null 2>/dev/null || true)
+    RAW=$(curl -kfsS --connect-timeout "$SHELLY_CONNECT_TIMEOUT" --max-time "$SHELLY_MAX_TIME" "$@" "$BASE_URL/status" </dev/null 2>/dev/null || true)
     GEN=1
 fi
 
 if [ -z "$RAW" ]; then
-    if [ ! -f "$OUT_FILE" ]; then
-        write_json "{\"id\":\"shelly_em\",\"layout\":\"stat\",\"title\":\"SHELLY EM\",\"status_badge\":\"OFFLINE\",\"status_color\":\"red\",\"timestamp\":\"$NOW_ISO\",\"primary\":{\"value\":\"--\",\"unit\":\"W\",\"label\":\"GRID POWER\"},\"secondary_metrics\":[{\"label\":\"STATUS\",\"value\":\"Unreachable\"}]}"
+    if should_write_fallback; then
+        write_json "{\"id\":\"shelly_em\",\"layout\":\"stat\",\"title\":\"SHELLY EM\",\"status_badge\":\"OFFLINE\",\"status_color\":\"red\",\"timestamp\":\"$NOW_ISO\",\"primary\":{\"value\":\"OFFLINE\",\"unit\":\"\",\"label\":\"STATUS\"},\"secondary_metrics\":[{\"label\":\"HOST\",\"value\":\"$SHELLY_HOST_LABEL\"},{\"label\":\"STATUS\",\"value\":\"Unreachable\"}]}"
     fi
     exit 0
 fi
@@ -121,6 +142,10 @@ END {
     total = ""; pa = ""; pb = ""; pc = ""
     if (gen == 2) {
         if (match(buf, /"total_act_power"[[:space:]]*:[[:space:]]*-?[0-9]+(\.[0-9]+)?/)) {
+            s = substr(buf, RSTART, RLENGTH)
+            sub(/^[^:]*:[[:space:]]*/, "", s)
+            total = s
+        } else if (match(buf, /"act_power"[[:space:]]*:[[:space:]]*-?[0-9]+(\.[0-9]+)?/)) {
             s = substr(buf, RSTART, RLENGTH)
             sub(/^[^:]*:[[:space:]]*/, "", s)
             total = s
@@ -155,7 +180,7 @@ END {
 }')
 
 if [ -z "$PARSED" ]; then
-    if [ ! -f "$OUT_FILE" ]; then
+    if should_write_fallback; then
         write_json "{\"id\":\"shelly_em\",\"layout\":\"stat\",\"title\":\"SHELLY EM\",\"status_badge\":\"OFFLINE\",\"status_color\":\"neutral\",\"timestamp\":\"$NOW_ISO\",\"primary\":{\"value\":\"--\",\"unit\":\"W\",\"label\":\"GRID POWER\"},\"secondary_metrics\":[{\"label\":\"STATUS\",\"value\":\"Parse error\"}]}"
     fi
     exit 0
