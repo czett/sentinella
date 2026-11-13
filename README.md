@@ -380,7 +380,7 @@ python3 tests/integration.py
 
 | Metric | Measured | Budget |
 | :--- | :---: | :---: |
-| Release tarball (`dist/sentinella-1.2.1.tar.gz`) | **115 KB** (117,525 B) | `<= 200 KB` |
+| Release tarball (`dist/sentinella-1.2.1.tar.gz`) | **118 KB** (120,639 B) | `<= 200 KB` |
 | Installed add-on footprint | **281 KB** (286,894 B) | `<= 400 KB` |
 | `bin/check_soc.sh --dry-run` (avg of 5) | **21 ms** | `<= 150 ms` |
 | `plugins.d/20_renault_zoe.sh` (avg of 5) | **30 ms** | `<= 250 ms` |
