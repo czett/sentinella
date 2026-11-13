@@ -2,6 +2,12 @@
 
 ![Sentinella: modular CCU3 energy and system monitor](docs/assets/readme-hero-banner.png)
 
+<!-- Uncomment once live captures are saved in docs/screenshots/ (see docs/screenshots/README.md):
+![Sentinella Desktop Light](docs/screenshots/desktop-light.png)
+![Sentinella Settings Drawer](docs/screenshots/settings-drawer.png)
+![Sentinella Mobile View](docs/screenshots/mobile-view.png)
+-->
+
 **Sentinella: a low-footprint energy and system monitor for the HomeMatic CCU3.**
 
 Sentinella is a POSIX-shell monitoring platform for CCU3 and RaspberryMatic. A single cron-driven engine collects telemetry from SMA storage, Shelly EM meters, Renault E-Tech vehicles, dynamic electricity tariffs, the CCU3 host, and Open-Meteo weather, then writes `status.json`, updates CCU3 system variables, and dispatches stateful push alerts. No daemon, Node.js, Python, `jq`, or external CDN runs on the CCU3.
@@ -118,7 +124,7 @@ Build the HomeMatic add-on archive, including `update_script` and `rc.d/sentinel
 
 ```sh
 ./tools/build_addon.sh
-# Outputs: dist/sentinella-1.2.0.tar.gz
+# Outputs: dist/sentinella-1.2.1.tar.gz
 ```
 
 Upload the archive in the CCU3 WebUI under **Settings → Control Panel → Additional Software**, or deploy over SSH with `./deploy.sh`.
@@ -154,6 +160,39 @@ The cron entry (`crontab -e`, see [`examples/crontab.txt`](examples/crontab.txt)
 ```
 */2 * * * * /usr/local/addons/sentinella/bin/check_soc.sh >/dev/null 2>&1
 ```
+
+## First 3 Minutes on CCU3 / RaspberryMatic
+
+See [docs/QUICKSTART.md](docs/QUICKSTART.md) for the standalone quickstart guide.
+
+### Quick setup by mode
+
+Configure in the browser (**Settings `+`**) after installation, or in `.env`:
+
+| Mode | Required Settings | Hero Tile (`HERO_SOURCE`) | Behavior |
+|---|---|---|---|
+| **SMA + CCU3** | `SMA_ENABLED=1`, `SMA_IP`, `SMA_PASS` | `auto` (`sma`) | Battery SoC hero, thresholds rail, history (`03`), system register (`04`) |
+| **CCU3-Only (Zero Inverter)** | Leave `SMA_IP` empty or set `SMA_ENABLED=0` | `auto` (`ccu`) or `ccu` | CCU3 Duty Cycle hero; battery tiles `03` and `04` automatically hidden |
+| **Shelly EM + Dynamic Tariff (aWATTar Zero-Config)** | `SHELLY_ENABLED=true`, `SHELLY_IP`, `TARIFF_ENABLED=true`, `TARIFF_PROVIDER=awattar_de` / `awattar_at` | `auto` (`shelly` if SMA off) or `shelly` | Live grid power hero + hourly spot price card in `05 Extensions` |
+
+### Automatic system variables
+
+Sentinella automatically creates and updates two CCU3 system variables via `setup_variables.sh` and `bin/check_soc.sh`:
+
+- `SV_Batterie_SoC` (number `0..100 %`): current battery state of charge.
+- `SV_Batterie_95_Signal` (boolean `true`/`false`): switches `true` at `THRESHOLD_TRIGGER` (default `95 %`) and `false` at `THRESHOLD_RESET` (default `90 %`).
+
+### CCU3 WebUI program recipe (`Programme & Verknüpfungen`)
+
+Switch a Homematic socket (`HmIP-PSM`), immersion heater relay, or wallbox release automatically when battery surplus is available:
+
+1. In the CCU3 WebUI, open **Programme & Verknüpfungen → Programme → Neu**.
+2. **Wenn…** (`If…`): **Systemzustand** → `SV_Batterie_95_Signal` → `bei wahr` → **`bei Änderung auslösen`** (*trigger on change*).
+3. **Dann…** (`Then…`): **Geräteauswahl** → e.g. `HmIP-PSM` / immersion heater / wallbox relay → `sofort` → `Schaltzustand: Ein`.
+4. **Sonst, wenn…** (`Else, if…`): **Systemzustand** → `SV_Batterie_95_Signal` → `bei falsch` → **`bei Änderung auslösen`** (*trigger on change*).
+5. **Dann…** (`Then…`): **Geräteauswahl** → `HmIP-PSM` → `sofort` → `Schaltzustand: Aus`.
+
+Using **`bei Änderung auslösen`** (*trigger on change*) ensures the CCU3 only sends an RF command when the hysteresis state flips, keeping your RF Duty Cycle near 0%.
 
 ## Dashboard and settings
 
@@ -296,7 +335,7 @@ The card reports battery SoC, remaining range, plug status, charging state, and 
 
 ## Writing a plugin
 
-See [**CONTRIBUTING.md**](CONTRIBUTING.md) for the full developer guide, i18n rules, and security requirements.
+See [**CONTRIBUTING.md**](CONTRIBUTING.md) for the full developer guide, i18n rules, and security requirements, or start directly from the copy-pasteable POSIX `/bin/sh` template in [`docs/PLUGIN_TEMPLATE.sh`](docs/PLUGIN_TEMPLATE.sh).
 
 A minimal POSIX shell plugin that publishes a `stat` card atomically:
 

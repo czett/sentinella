@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-13
+
+### Added
+
+- **First-3-Minutes Onboarding & CCU3 Program Guide (`README.md`, `README.de.md`, `docs/QUICKSTART.md`)**: Step-by-step CCU3 WebUI program recipe (`SV_Batterie_95_Signal` on change for `HmIP-PSM` / immersion heater / wallbox), 3-mode quick setup table, and `docs/screenshots/README.md`.
+- **Custom Plugin Starter Template (`docs/PLUGIN_TEMPLATE.sh`)**: Copy-pasteable POSIX `/bin/sh` template with BusyBox `ash` compatibility, strict `curl` timeouts, and atomic `.tmp` + `mv -f` JSON output (`stat` layout), linked from `docs/PROTOCOL.md` and `CONTRIBUTING.md`.
+- **Integration test coverage (`tests/integration.py`)**: Host URL normalization in `config.cgi` and `web/app.js`, CGI security header verification across all endpoints, and standalone `docs/PLUGIN_TEMPLATE.sh` validation.
+
+### Changed
+
+- **Automatic Host / IP Normalization (`web/app.js`, `web/api/config.cgi`)**: Strips accidental `http://` / `https://` prefixes, path segments, and trailing slashes from `#sma-ip` and `#shelly-ip` on `blur`/`change` and defensively inside `config.cgi`; fixes `validateSettings()` to allow empty `sma_ip` in CCU-Only mode (`sma_enabled=false`).
+- **Hardened CGI headers & plugin input parsing**: Added `Pragma: no-cache` and `Referrer-Policy: same-origin` to `web/api/plugin_manager.cgi` and defensive validation for Shelly/tariff fields (including decimal `tariff_surcharge_ct`) in `web/api/config.cgi`.
+
 ## [1.2.0] - 2026-11-12
 
 ### Added

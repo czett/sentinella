@@ -25,6 +25,8 @@ All scripts in `bin/`, `lib/`, `plugins.d/`, `web/api/`, and `tools/benchmark_fo
 
 Plugins live in `plugins.d/` (mode `755`). Each plugin runs independently, reads optional configuration from `config/plugins/<name>.env`, and atomically writes one JSON object to `state/plugins/<id>.json`.
 
+Start from the copy-pasteable POSIX `/bin/sh` template in [`docs/PLUGIN_TEMPLATE.sh`](docs/PLUGIN_TEMPLATE.sh).
+
 ### `/state/plugins/*.json` schema
 
 `web/api/plugins.cgi` validates each file with a strict RFC 8259 object validator and streams the array to `web/app.js`. Every card emits:

@@ -3759,6 +3759,150 @@ if (JSON.stringify(allOn) !== JSON.stringify(["ccu_health","weather","forecast_s
         check(cfg_wf.get("forecast_lat") == "51.96", f"forecast_lat persisted (got {cfg_wf.get('forecast_lat')!r})", failures)
         check(cfg_wf.get("forecast_lon") == "7.62", f"forecast_lon persisted (got {cfg_wf.get('forecast_lon')!r})", failures)
 
+        print("\n31. v1.2.1 host normalization, CGI security headers & plugin template")
+        # 31a. Host / IP normalization in config.cgi (sma_ip & shelly_ip)
+        for raw_host, exp_host in [
+            ("http://192.168.1.50/", "192.168.1.50"),
+            ("https://192.168.178.50/rpc", "192.168.178.50"),
+            ("  http://shelly.local/status?foo=1  ", "shelly.local"),
+            ("10.0.0.5///", "10.0.0.5"),
+        ]:
+            st_norm, cfg_norm = parse_cgi(run_cgi(
+                addon2, "POST", "config",
+                body=json.dumps({"sma_ip": raw_host, "shelly_ip": raw_host}),
+            ))
+            check(
+                st_norm == "200 OK"
+                and cfg_norm.get("sma_ip") == exp_host
+                and cfg_norm.get("shelly_ip") == exp_host,
+                f"config.cgi normalizes {raw_host!r} -> {exp_host!r} (got sma={cfg_norm.get('sma_ip')!r}, shelly={cfg_norm.get('shelly_ip')!r})",
+                failures,
+            )
+
+        for bad_host in ("http://", "/", "192.168.1.1/24", "http://192.168.1.50:8080/rpc"):
+            st_bad, err_bad = parse_cgi(run_cgi(
+                addon2, "POST", "config",
+                body=json.dumps({"shelly_ip": bad_host}),
+            ))
+            check(
+                st_bad == "400 Bad Request" and err_bad.get("field") == "shelly_ip",
+                f"config.cgi rejects invalid shelly_ip={bad_host!r} (got {st_bad})",
+                failures,
+            )
+
+        # Decimal tariff_surcharge_ct is preserved cleanly
+        st_sur, cfg_sur = parse_cgi(run_cgi(
+            addon2, "POST", "config",
+            body=json.dumps({"tariff_surcharge_ct": 12.5}),
+        ))
+        check(
+            st_sur == "200 OK" and cfg_sur.get("tariff_surcharge_ct") == 12.5,
+            f"config.cgi preserves decimal tariff_surcharge_ct=12.5 (got {cfg_sur.get('tariff_surcharge_ct')!r})",
+            failures,
+        )
+
+        # 31b. Frontend normalizeHostInput in web/app.js
+        if shutil.which("node"):
+            host_norm_script = r"""
+const fs = require("fs");
+const code = fs.readFileSync(process.argv[1], "utf8");
+const normMatch = code.match(/function normalizeHostInput\([\s\S]*?\n    \}/);
+const validMatch = code.match(/function isValidHost\([\s\S]*?\n    \}/);
+if (!normMatch || !validMatch) process.exit(2);
+const runner = new Function(normMatch[0] + "\n" + validMatch[0] + "\nreturn { normalizeHostInput, isValidHost };")();
+const cases = [
+    ["http://192.168.178.50/rpc", "192.168.178.50", true],
+    ["HTTPS://shelly-em.local/", "shelly-em.local", true],
+    ["  192.168.1.50/  ", "192.168.1.50", true],
+    ["192.168.1.1/24", "192.168.1.1/24", false],
+    ["http://", "", false],
+];
+for (const [raw, exp, valid] of cases) {
+    const out = runner.normalizeHostInput(raw);
+    if (out !== exp || runner.isValidHost(out) !== valid) {
+        console.error("Host mismatch for " + raw + ": got " + out + " valid=" + runner.isValidHost(out));
+        process.exit(1);
+    }
+}
+if (!code.includes('addEventListener("blur"') || !code.includes("syncNormalizedHostField(el.smaIp)")) {
+    console.error("Missing blur/sync handler for #sma-ip");
+    process.exit(1);
+}
+"""
+            host_res = subprocess.run(
+                ["node", "-e", host_norm_script, str(ROOT / "web" / "app.js")],
+                capture_output=True, text=True, timeout=10,
+            )
+            check(
+                host_res.returncode == 0,
+                f"web/app.js normalizeHostInput & blur/change wiring pass ({host_res.stderr.strip() or 'ok'})",
+                failures,
+            )
+
+        # 31c. Security headers across all CGI endpoints
+        for endpoint, method, body in [
+            ("config", "GET", ""),
+            ("settings", "GET", ""),
+            ("test_signal", "GET", ""),
+            ("test_renault", "GET", ""),
+            ("plugins", "GET", ""),
+            ("plugin_manager", "GET", ""),
+            ("update_check", "GET", ""),
+            ("action_zoe", "GET", ""),
+        ]:
+            cgi_env = os.environ.copy()
+            cgi_env.update({
+                "REQUEST_METHOD": method,
+                "SCRIPT_NAME": f"/addons/sentinella/api/{endpoint}.cgi",
+                "PATH_INFO": "",
+                "CONTENT_LENGTH": str(len(body.encode())),
+                "CONTENT_TYPE": "application/json",
+                "SMA_MONITOR_ADDON_DIR": str(addon2),
+                "SMA_MONITOR_ENV": str(addon2 / ".env"),
+                "SENTINELLA_OFFLINE": "1",
+            })
+            res_hdr = subprocess.run(
+                ["sh", str(ROOT / "web" / "api" / f"{endpoint}.cgi")],
+                input=body, env=cgi_env, capture_output=True, text=True, timeout=15,
+            )
+            head_block = res_hdr.stdout.partition("\n\n")[0].lower()
+            check(
+                "cache-control: no-store" in head_block
+                and "x-content-type-options: nosniff" in head_block,
+                f"{endpoint}.cgi emits Cache-Control: no-store and X-Content-Type-Options: nosniff",
+                failures,
+            )
+
+        # 31d. Custom plugin starter template (docs/PLUGIN_TEMPLATE.sh)
+        tmpl_path = ROOT / "docs" / "PLUGIN_TEMPLATE.sh"
+        check(tmpl_path.is_file(), "docs/PLUGIN_TEMPLATE.sh exists", failures)
+        check(os.access(tmpl_path, os.X_OK), "docs/PLUGIN_TEMPLATE.sh is executable", failures)
+        tmpl_syntax = subprocess.run(["sh", "-n", str(tmpl_path)], capture_output=True, text=True, timeout=10)
+        check(tmpl_syntax.returncode == 0, "docs/PLUGIN_TEMPLATE.sh passes sh -n", failures)
+        tmpl_state = tmp / "tmpl_state"
+        tmpl_env = os.environ.copy()
+        tmpl_env["PLUGIN_STATE_DIR"] = str(tmpl_state)
+        tmpl_res = subprocess.run([str(tmpl_path)], env=tmpl_env, capture_output=True, text=True, timeout=10)
+        check(tmpl_res.returncode == 0, f"docs/PLUGIN_TEMPLATE.sh standalone execution exits 0 (got {tmpl_res.returncode})", failures)
+        tmpl_json_file = tmpl_state / "my_plugin.json"
+        check(tmpl_json_file.is_file(), "docs/PLUGIN_TEMPLATE.sh writes my_plugin.json", failures)
+        tmpl_data = json.loads(tmpl_json_file.read_text()) if tmpl_json_file.is_file() else {}
+        check(
+            tmpl_data.get("id") == "my_plugin"
+            and tmpl_data.get("layout") == "stat"
+            and isinstance(tmpl_data.get("primary"), dict)
+            and tmpl_data["primary"].get("value") == 42,
+            f"docs/PLUGIN_TEMPLATE.sh emits valid stat JSON (got {tmpl_data})",
+            failures,
+        )
+        check(not list(tmpl_state.glob("*.tmp.*")), "docs/PLUGIN_TEMPLATE.sh leaves no temporary files behind", failures)
+        check(
+            (ROOT / "docs" / "screenshots" / "README.md").is_file()
+            and (ROOT / "docs" / "QUICKSTART.md").is_file(),
+            "docs/QUICKSTART.md and docs/screenshots/README.md exist",
+            failures,
+        )
+
 
     finally:
         sma.shutdown()

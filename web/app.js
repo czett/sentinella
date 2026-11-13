@@ -291,6 +291,7 @@
             phoneRequired: "A Signal Account UUID is required when alerts are enabled.",
             apikeyRequired: "A CallMeBot API key is required when alerts are enabled.",
             ipInvalid: "Enter a valid inverter IPv4 address or hostname.",
+            shellyIpInvalid: "Enter a valid Shelly IPv4 address or hostname.",
             portInvalid: "Inverter port must be a whole number between 1 and 65535."
         },
         de: {
@@ -507,6 +508,7 @@
             phoneRequired: "Wenn Benachrichtigungen aktiviert sind, ist eine Signal Account UUID erforderlich.",
             apikeyRequired: "Wenn Benachrichtigungen aktiviert sind, ist ein CallMeBot-API-Schlüssel erforderlich.",
             ipInvalid: "Geben Sie eine gültige IPv4-Adresse oder einen Hostnamen des Wechselrichters ein.",
+            shellyIpInvalid: "Geben Sie eine gültige IPv4-Adresse oder einen Hostnamen des Shelly ein.",
             portInvalid: "Der Wechselrichter-Port muss eine ganze Zahl zwischen 1 und 65535 sein."
         }
     };
@@ -2972,6 +2974,37 @@
         }
     }
 
+    function normalizeHostInput(raw) {
+        var val = String(raw || "").trim();
+        if (!val) {
+            return "";
+        }
+        if (/^https?:\/\//i.test(val)) {
+            val = val.replace(/^https?:\/\//i, "").split(/[/?#]/)[0];
+        } else {
+            val = val.replace(/\/+$/, "");
+        }
+        return val.trim();
+    }
+
+    function syncNormalizedHostField(input) {
+        if (!input) {
+            return "";
+        }
+        var normalized = normalizeHostInput(input.value);
+        if (input.value !== normalized) {
+            input.value = normalized;
+        }
+        return normalized;
+    }
+
+    function isValidHost(value) {
+        return /^[A-Za-z0-9._-]+$/.test(value) &&
+            value.indexOf("..") < 0 &&
+            value.charAt(0) !== "." &&
+            value.charAt(value.length - 1) !== ".";
+    }
+
     function validateSettings() {
         var triggerRaw = el.triggerSoc.value.trim();
         var resetRaw = el.resetSoc.value.trim();
@@ -3023,12 +3056,23 @@
             }
         }
 
-        var ip = el.smaIp.value.trim();
-        if (!ip || !/^[A-Za-z0-9._-]+$/.test(ip) || ip.indexOf("..") >= 0) {
+        var ip = syncNormalizedHostField(el.smaIp);
+        var smaEnabled = !el.smaEnabled || el.smaEnabled.checked;
+        if (smaEnabled ? (!ip || !isValidHost(ip)) : (ip && !isValidHost(ip))) {
             return {
                 field: "sma-ip",
                 text: t("ipInvalid")
             };
+        }
+
+        if (el.shellyIp) {
+            var shellyIp = syncNormalizedHostField(el.shellyIp);
+            if (shellyIp && !isValidHost(shellyIp)) {
+                return {
+                    field: "shelly-ip",
+                    text: t("shellyIpInvalid")
+                };
+            }
         }
 
         var portRaw = el.smaPort.value.trim();
@@ -3175,10 +3219,12 @@
     function buildPayload() {
         var phone = el.signalPhone.value.trim();
         el.signalPhone.value = phone;
+        var smaIp = syncNormalizedHostField(el.smaIp);
+        var shellyIp = syncNormalizedHostField(el.shellyIp);
         var payload = {
             hero_source: el.heroSource ? el.heroSource.value : "auto",
             shelly_enabled: el.shellyEnabled ? el.shellyEnabled.checked : false,
-            shelly_ip: el.shellyIp ? el.shellyIp.value.trim() : "",
+            shelly_ip: shellyIp,
             shelly_user: el.shellyUser ? el.shellyUser.value.trim() : "",
             tariff_enabled: el.tariffEnabled ? el.tariffEnabled.checked : false,
             tariff_provider: el.tariffProvider ? el.tariffProvider.value : "awattar_de",
@@ -3189,7 +3235,7 @@
             signal_phone: phone,
             notify_disabled: el.notifyDisabled ? el.notifyDisabled.checked : false,
             sma_enabled: el.smaEnabled ? el.smaEnabled.checked : false,
-            sma_ip: el.smaIp.value.trim(),
+            sma_ip: smaIp,
             sma_port: Number(el.smaPort.value.trim())
         };
 
@@ -3839,7 +3885,14 @@
         });
     }
 
-    bindAutoSave(el.shellyIp, function (i) { return { shelly_ip: i.value.trim() }; });
+    if (el.smaIp) {
+        el.smaIp.addEventListener("blur", function () { syncNormalizedHostField(el.smaIp); });
+        el.smaIp.addEventListener("change", function () { syncNormalizedHostField(el.smaIp); });
+    }
+    if (el.shellyIp) {
+        el.shellyIp.addEventListener("blur", function () { syncNormalizedHostField(el.shellyIp); });
+    }
+    bindAutoSave(el.shellyIp, function (i) { return { shelly_ip: syncNormalizedHostField(i) }; });
     bindAutoSave(el.shellyUser, function (i) { return { shelly_user: i.value.trim() }; });
     bindAutoSave(el.shellyPass, function (i) {
         return (i.value && !isMaskedApiKey(i.value)) ? { shelly_pass: i.value } : null;

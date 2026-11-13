@@ -234,3 +234,7 @@ WriteLine("SMA_SOC_OK");
 `WriteLine` output is used as a confirmation marker. Some firmware versions execute the script but do not return the marker; the monitor logs a warning but still treats the HTTP success as a successful write. A missing variable is ignored by the `if(s)`/`if(b)` guards rather than aborting the run.
 
 The setup script creates the variables with `OT_VARDP`, `ivtFloat`/`istGeneric` for the number and `ivtBinary`/`istBool` for the boolean, and registers both under `ID_SYSTEM_VARIABLES`.
+
+## Custom plugin starter template
+
+For writing your own `plugins.d/*.sh` telemetry card, see the minimal POSIX `/bin/sh` template in [docs/PLUGIN_TEMPLATE.sh](PLUGIN_TEMPLATE.sh). It demonstrates atomic `.tmp` + `mv -f` JSON output in the `"layout": "stat"` format, strict `curl --connect-timeout 5 --max-time 12 </dev/null` timeouts, and BusyBox `ash` compatibility. Full schema and security rules are documented in [CONTRIBUTING.md](../CONTRIBUTING.md).

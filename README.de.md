@@ -2,6 +2,12 @@
 
 ![Sentinella: modularer Energie- und Systemmonitor für die CCU3](docs/assets/readme-hero-banner.png)
 
+<!-- Einkommentieren, sobald Live-Screenshots in docs/screenshots/ liegen (siehe docs/screenshots/README.md):
+![Sentinella Desktop Light](docs/screenshots/desktop-light.png)
+![Sentinella Settings Drawer](docs/screenshots/settings-drawer.png)
+![Sentinella Mobile View](docs/screenshots/mobile-view.png)
+-->
+
 **Sentinella: ein schlanker Energie- und Systemmonitor für die HomeMatic CCU3.**
 
 Sentinella ist eine POSIX-Shell-Monitoring-Plattform für CCU3 und RaspberryMatic. Eine einzige cron-gesteuerte Engine sammelt Telemetrie von SMA-Speichern, Shelly-EM-Zählern, Renault-E-Tech-Fahrzeugen, dynamischen Stromtarifen, dem CCU3-Host und Open-Meteo-Wetterdaten. Sie veröffentlicht `status.json`, schreibt CCU3-Systemvariablen und versendet zustandsbehaftete Push-Benachrichtigungen. Auf der CCU3 laufen kein Daemon, kein Node.js, kein Python, kein `jq` und kein externes CDN.
@@ -104,7 +110,7 @@ Die Tabelle zeigt Budgets, keine Momentaufnahme. Aktuelle Byte-Zahlen werden mit
 
 ```sh
 ./tools/build_addon.sh
-# Ausgabe: dist/sentinella-1.2.0.tar.gz
+# Ausgabe: dist/sentinella-1.2.1.tar.gz
 ```
 
 Das Archiv in der CCU3-WebUI unter **Einstellungen → Systemsteuerung → Zusatzsoftware** hochladen oder per SSH mit `./deploy.sh` installieren.
@@ -140,6 +146,39 @@ Cron-Eintrag (`crontab -e`, Vorlage in [`examples/crontab.txt`](examples/crontab
 ```
 */2 * * * * /usr/local/addons/sentinella/bin/check_soc.sh >/dev/null 2>&1
 ```
+
+## Die ersten 3 Minuten auf CCU3 / RaspberryMatic
+
+Eine kompakte Schritt-für-Schritt-Übersicht steht auch unter [docs/QUICKSTART.md](docs/QUICKSTART.md).
+
+### Schnellstart nach Betriebsmodus
+
+Alle Werte lassen sich nach der Installation direkt im Browser über **Einstellungen (`+`)** oder vorab in `.env` konfigurieren:
+
+| Modus | Benötigte Einstellungen | Hero-Kachel (`HERO_SOURCE`) | Verhalten |
+|---|---|---|---|
+| **SMA + CCU3** | `SMA_ENABLED=1`, `SMA_IP`, `SMA_PASS` | `auto` (`sma`) | Batterie-SoC-Hero, Schaltschwellen-Leiste, Verlauf (`03`), Systemregister (`04`) |
+| **CCU3-Only (ohne Wechselrichter)** | `SMA_IP` leer lassen oder `SMA_ENABLED=0` | `auto` (`ccu`) oder `ccu` | CCU3 Duty-Cycle-Hero; Batteriekacheln `03` und `04` werden ausgeblendet |
+| **Shelly EM + Dynamischer Tarif (aWATTar Zero-Config)** | `SHELLY_ENABLED=true`, `SHELLY_IP`, `TARIFF_ENABLED=true`, `TARIFF_PROVIDER=awattar_de` / `awattar_at` | `auto` (`shelly` ohne SMA) oder `shelly` | Live-Netzleistung als Hero + stündlicher Börsenstrompreis unter `05 Erweiterungen` |
+
+### Automatische Systemvariablen
+
+Sentinella legt über `setup_variables.sh` automatisch zwei ReGaHSS-Systemvariablen auf der CCU3 an und aktualisiert sie alle zwei Minuten über `bin/check_soc.sh`:
+
+- `SV_Batterie_SoC` (Zahl `0..100 %`): aktueller Ladezustand der Batterie.
+- `SV_Batterie_95_Signal` (Logikwert `wahr`/`falsch`): schaltet ab `THRESHOLD_TRIGGER` (Standard `95 %`) auf `wahr` und ab `THRESHOLD_RESET` (Standard `90 %`) zurück auf `falsch`.
+
+### CCU3-WebUI-Programm (`Programme & Verknüpfungen`)
+
+So schaltet die CCU3 bei Batterie-Überschuss automatisch eine Schaltsteckdose (`HmIP-PSM`), einen Heizstab oder ein Wallbox-Freigaberelais:
+
+1. In der CCU3-WebUI **Programme & Verknüpfungen → Programme → Neu** öffnen.
+2. **Bedingung: Wenn…**: **Systemzustand** → `SV_Batterie_95_Signal` → `bei wahr` → **`bei Änderung auslösen`**.
+3. **Aktivität: Dann…**: **Geräteauswahl** → z. B. `HmIP-PSM` / Heizstab-Relais / Wallbox-Freigabe → `sofort` → `Schaltzustand: Ein`.
+4. **Sonst, wenn…**: **Systemzustand** → `SV_Batterie_95_Signal` → `bei falsch` → **`bei Änderung auslösen`**.
+5. **Aktivität: Dann…**: **Geräteauswahl** → `HmIP-PSM` → `sofort` → `Schaltzustand: Aus`.
+
+Durch **`bei Änderung auslösen`** sendet die CCU3 nur dann einen Funkbefehl, wenn das Hysteresesignal tatsächlich umschaltet; der Funk-Duty-Cycle bleibt dadurch minimal.
 
 ## Dashboard und Einstellungen
 
@@ -279,6 +318,10 @@ Schreibgeschützte Telemetrie für MY-Renault-E-Tech-Modelle, darunter Megane, Z
 ```
 
 Die Karte zeigt Batterie-SoC, Reichweite, Steckerstatus, Ladestatus und, wenn der Cockpit-Endpunkt ihn liefert, den Kilometerstand. Aktive HVAC-Befehle (`--start-hvac`, `--stop-hvac`, `api/action_zoe.cgi`) liefern derzeit `HVAC feature temporarily disabled`; das Plugin ist schreibgeschützt.
+
+## Eigenes Plugin schreiben
+
+Die vollständige Entwickler-Anleitung steht in [**CONTRIBUTING.md**](CONTRIBUTING.md); als Startpunkt dient die kopierfertige POSIX-`/bin/sh`-Vorlage [`docs/PLUGIN_TEMPLATE.sh`](docs/PLUGIN_TEMPLATE.sh).
 
 ## Fehlerbehebung
 

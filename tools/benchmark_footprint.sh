@@ -63,7 +63,9 @@ cp -f "$ROOT_DIR/setup_variables.sh" "$STAGE_DIR/setup_variables.sh"
 cp -f "$ROOT_DIR/plugins.d/10_ccu_health.sh" "$STAGE_DIR/plugins.d/10_ccu_health.sh"
 cp -f "$ROOT_DIR/plugins.d/15_weather.sh" "$STAGE_DIR/plugins.d/15_weather.sh"
 cp -f "$ROOT_DIR/plugins.d/20_renault_zoe.sh" "$STAGE_DIR/plugins.d/20_renault_zoe.sh"
+cp -f "$ROOT_DIR/plugins.d/25_shelly_em.sh" "$STAGE_DIR/plugins.d/25_shelly_em.sh"
 cp -f "$ROOT_DIR/plugins.d/30_forecast_solar.sh" "$STAGE_DIR/plugins.d/30_forecast_solar.sh"
+cp -f "$ROOT_DIR/plugins.d/35_tibber.sh" "$STAGE_DIR/plugins.d/35_tibber.sh"
 cp -f "$ROOT_DIR/config/plugins/weather.env.example" "$STAGE_DIR/config/plugins/weather.env.example"
 cp -f "$ROOT_DIR/config/plugins/renault.env.example" "$STAGE_DIR/config/plugins/renault.env.example"
 cp -f "$ROOT_DIR/config/plugins/ccu_health.env.example" "$STAGE_DIR/config/plugins/ccu_health.env.example"
@@ -90,7 +92,9 @@ chmod 755 \
     "$STAGE_DIR/plugins.d/10_ccu_health.sh" \
     "$STAGE_DIR/plugins.d/15_weather.sh" \
     "$STAGE_DIR/plugins.d/20_renault_zoe.sh" \
+    "$STAGE_DIR/plugins.d/25_shelly_em.sh" \
     "$STAGE_DIR/plugins.d/30_forecast_solar.sh" \
+    "$STAGE_DIR/plugins.d/35_tibber.sh" \
     "$STAGE_DIR/web/api/"*.cgi 2>/dev/null || true
 
 tar -czf "$TARBALL" -C "$STAGE_DIR" . 2>/dev/null || exit 1

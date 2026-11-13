@@ -205,6 +205,27 @@ trim_ws() {
     printf '%s' "${1:-}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
 }
 
+normalize_host() {
+    _nh=$(trim_ws "${1:-}")
+    case "$_nh" in
+        [Hh][Tt][Tt][Pp]://*|[Hh][Tt][Tt][Pp][Ss]://*)
+            _nh=${_nh#*://}
+            _nh=${_nh%%/*}
+            _nh=${_nh%%\?*}
+            _nh=${_nh%%\#*}
+            ;;
+        *)
+            while :; do
+                case "$_nh" in
+                    */) _nh=${_nh%/} ;;
+                    *) break ;;
+                esac
+            done
+            ;;
+    esac
+    trim_ws "$_nh"
+}
+
 is_signal_uuid() {
     printf '%s' "$1" | grep -Eq \
         '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
@@ -490,6 +511,10 @@ msg() {
         en:forecast_lon_invalid) printf 'Enter a valid longitude (-180 to 180).' ;;
         de:write_forecast) printf 'Die PV-Prognose-Konfiguration kann nicht geschrieben werden.' ;;
         en:write_forecast) printf 'Cannot write the PV forecast configuration.' ;;
+        de:write_failed) printf 'Die Konfiguration konnte nicht geschrieben werden.' ;;
+        en:write_failed) printf 'Could not write the configuration.' ;;
+        de:shelly_ip_invalid) printf 'Geben Sie eine gültige IPv4-Adresse oder einen Hostnamen des Shelly ein.' ;;
+        en:shelly_ip_invalid) printf 'Enter a valid Shelly IPv4 address or hostname.' ;;
         *) printf 'Request failed.' ;;
     esac
 }
@@ -501,6 +526,8 @@ cleanup() {
     [ -n "${CCU_HEALTH_TMP_FILE:-}" ] && rm -f "$CCU_HEALTH_TMP_FILE" 2>/dev/null
     [ -n "${WEATHER_TMP_FILE:-}" ] && rm -f "$WEATHER_TMP_FILE" 2>/dev/null
     [ -n "${FORECAST_TMP_FILE:-}" ] && rm -f "$FORECAST_TMP_FILE" 2>/dev/null
+    [ -n "${SHELLY_TMP_FILE:-}" ] && rm -f "$SHELLY_TMP_FILE" 2>/dev/null
+    [ -n "${TIBBER_TMP_FILE:-}" ] && rm -f "$TIBBER_TMP_FILE" 2>/dev/null
     [ -n "$TEST_WRAPPER" ] && rm -f "$TEST_WRAPPER" 2>/dev/null
     if [ "${CONFIG_LOCK_OWNED:-0}" = "1" ]; then
         rm -rf "$CONFIG_LOCK" 2>/dev/null
@@ -1623,7 +1650,11 @@ save_config() {
     fi
 
     if body_has sma_ip; then
-        _ip=$(body_str sma_ip)
+        _raw_ip=$(body_str sma_ip)
+        _ip=$(normalize_host "$_raw_ip")
+        if [ -n "$(trim_ws "$_raw_ip")" ] && [ -z "$_ip" ]; then
+            fail "400 Bad Request" "$(msg ip_invalid)" "sma_ip"
+        fi
         if [ -n "$_ip" ]; then
             is_safe_host "$_ip" || fail "400 Bad Request" \
                 "$(msg ip_invalid)" "sma_ip"
@@ -1784,19 +1815,36 @@ save_config() {
         _want_shelly=1
     fi
     if body_has shelly_ip; then
-        _s_ip_val=$(body_str shelly_ip)
+        _raw_s_ip=$(body_str shelly_ip)
+        _s_ip_val=$(normalize_host "$_raw_s_ip")
+        if [ -n "$(trim_ws "$_raw_s_ip")" ] && [ -z "$_s_ip_val" ]; then
+            fail "400 Bad Request" "$(msg shelly_ip_invalid)" "shelly_ip"
+        fi
         if [ -n "$_s_ip_val" ]; then
-            is_safe_host "$_s_ip_val" || fail "400 Bad Request" "$(msg ip_invalid)" "shelly_ip"
+            is_safe_host "$_s_ip_val" || fail "400 Bad Request" "$(msg shelly_ip_invalid)" "shelly_ip"
         fi
         _want_shelly=1
     fi
-    if body_has shelly_user; then _s_user_val=$(body_str shelly_user); _want_shelly=1; fi
-    if body_has shelly_pass; then
-        _sp_new=$(body_str shelly_pass)
-        [ -n "$_sp_new" ] && _s_pass_val=$_sp_new
+    if body_has shelly_user; then
+        _s_user_val=$(trim_ws "$(body_str shelly_user)")
+        if [ -n "$_s_user_val" ] && ! is_safe_label "$_s_user_val"; then
+            fail "400 Bad Request" "$(msg password_invalid)" "shelly_user"
+        fi
         _want_shelly=1
     fi
-    if body_has shelly_interval; then _s_int_val=$(body_num shelly_interval); _want_shelly=1; fi
+    if body_has shelly_pass; then
+        _sp_new=$(body_str shelly_pass)
+        if [ -n "$_sp_new" ] && ! is_masked_secret "$_sp_new"; then
+            is_password "$_sp_new" || fail "400 Bad Request" "$(msg password_invalid)" "shelly_pass"
+            _s_pass_val=$_sp_new
+        fi
+        _want_shelly=1
+    fi
+    if body_has shelly_interval; then
+        _s_int_val=$(body_num shelly_interval)
+        is_uint "$_s_int_val" && [ "$_s_int_val" -ge 10 ] || fail "400 Bad Request" "Invalid shelly_interval" "shelly_interval"
+        _want_shelly=1
+    fi
     if [ "$_want_shelly" = "1" ]; then
         save_shelly_env "$_s_en_val" "$_s_ip_val" "$_s_user_val" "$_s_pass_val" "$_s_int_val" \
             || fail "500 Internal Server Error" "$(msg write_failed)"
@@ -1829,12 +1877,24 @@ save_config() {
         _want_tariff=1
     fi
     if body_has tibber_token; then
-        _tt_new=$(body_str tibber_token)
-        [ -n "$_tt_new" ] && _t_tok_val=$_tt_new
+        _tt_new=$(trim_ws "$(body_str tibber_token)")
+        if [ -n "$_tt_new" ] && ! is_masked_secret "$_tt_new"; then
+            is_apikey_token "$_tt_new" || fail "400 Bad Request" "$(msg apikey_invalid)" "tibber_token"
+            _t_tok_val=$_tt_new
+        fi
         _want_tariff=1
     fi
-    if body_has tariff_surcharge_ct; then _t_sur_val=$(body_num tariff_surcharge_ct); _want_tariff=1; fi
-    if body_has tariff_interval; then _t_int_val=$(body_num tariff_interval); _want_tariff=1; fi
+    if body_has tariff_surcharge_ct; then
+        _t_sur_val=$(trim_ws "$(body_float tariff_surcharge_ct)")
+        [ -n "$_t_sur_val" ] || _t_sur_val=0
+        is_float_in_range "$_t_sur_val" -1000 1000 || fail "400 Bad Request" "Invalid tariff_surcharge_ct" "tariff_surcharge_ct"
+        _want_tariff=1
+    fi
+    if body_has tariff_interval; then
+        _t_int_val=$(body_num tariff_interval)
+        is_uint "$_t_int_val" && [ "$_t_int_val" -ge 10 ] || fail "400 Bad Request" "Invalid tariff_interval" "tariff_interval"
+        _want_tariff=1
+    fi
     if [ "$_want_tariff" = "1" ]; then
         save_tibber_env "$_t_en_val" "$_t_prov_val" "$_t_tok_val" "$_t_sur_val" "$_t_int_val" \
             || fail "500 Internal Server Error" "$(msg write_failed)"

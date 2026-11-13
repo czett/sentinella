@@ -59,7 +59,9 @@ headers() {
     [ -n "$1" ] && printf 'Status: %s\r\n' "$1"
     printf 'Content-Type: application/json; charset=utf-8\r\n'
     printf 'Cache-Control: no-store, max-age=0\r\n'
-    printf 'X-Content-Type-Options: nosniff\r\n\r\n'
+    printf 'Pragma: no-cache\r\n'
+    printf 'X-Content-Type-Options: nosniff\r\n'
+    printf 'Referrer-Policy: same-origin\r\n\r\n'
 }
 
 fail() {
