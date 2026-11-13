@@ -85,10 +85,10 @@ Gemessen mit `BENCHMARK_RUNS=20 ./tools/benchmark_footprint.sh` auf dem Entwickl
 
 | Metrik | Messwert / Grenze | Budget | Status |
 | :--- | :---: | :---: | :---: |
-| **Release-Tarball** (`sentinella-<version>.tar.gz`) | **111 KB** (112.806 B) | `<= 200 KB` | Informational |
-| **Installationsgröße** | **258 KB** (263.399 B) | `<= 400 KB` | **PASS** |
-| **Kern-Laufzeit** (`bin/check_soc.sh --dry-run`) | **17 ms** (Mittel aus 5 Läufen) | `<= 150 ms` | **PASS** |
-| **Plugin-Laufzeit** (`plugins.d/20_renault_zoe.sh`) | **28 ms** (Mittel aus 5 Läufen) | `<= 250 ms` | **PASS** |
+| **Release-Tarball** (`sentinella-<version>.tar.gz`) | **118 KB** (120.639 B) | `<= 200 KB` | Informational |
+| **Installationsgröße** | **281 KB** (286.894 B) | `<= 400 KB` | **PASS** |
+| **Kern-Laufzeit** (`bin/check_soc.sh --dry-run`) | **21 ms** (Mittel aus 5 Läufen) | `<= 150 ms` | **PASS** |
+| **Plugin-Laufzeit** (`plugins.d/20_renault_zoe.sh`) | **30 ms** (Mittel aus 5 Läufen) | `<= 250 ms` | **PASS** |
 | **Peak-RSS** | **~1,2 MB** auf ash (< 0,25 % von 1 GB) | `<= 2,5 MB` | **PASS** |
 | **Funk-/RF-Duty-Cycle** | **0 %** (nur HTTPS und lokales XML-RPC) | `0 % Hard Cap` | **PASS** |
 
@@ -374,16 +374,6 @@ node --check web/app.js
 # Integrations- und Sicherheitssuite (32 Abschnitte: SEN-01..SEN-11, Plugins, Packaging)
 python3 tests/integration.py
 ```
-
-### Benchmark & Footprint (`v1.2.1`)
-
-| Metrik | Gemessen | Budget |
-| :--- | :---: | :---: |
-| Release-Tarball (`dist/sentinella-1.2.1.tar.gz`) | **118 KB** (120.639 B) | `<= 200 KB` |
-| Installierter Add-on-Footprint | **281 KB** (286.894 B) | `<= 400 KB` |
-| `bin/check_soc.sh --dry-run` (Ø 5 Läufe) | **21 ms** | `<= 150 ms` |
-| `plugins.d/20_renault_zoe.sh` (Ø 5 Läufe) | **30 ms** | `<= 250 ms` |
-| Integrationssuite (`tests/integration.py`) | **32 Abschnitte** | PASS |
 
 Optionaler Speedwire-Multicast-Sniffer für den Arbeitsplatz (`239.12.255.254:9524`):
 
