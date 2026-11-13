@@ -36,8 +36,8 @@ info() {
 case "$0" in
     "$ADDON_DIR"/*)
         if [ -z "${SENTINELLA_UNINSTALL_RELAY:-}" ]; then
-            _relay="${TMPDIR:-/tmp}/sentinella-uninstall.$$"
-            if cp -f "$0" "$_relay" 2>/dev/null; then
+            _relay=$(mktemp "${TMPDIR:-/tmp}/sentinella-uninstall.XXXXXX" 2>/dev/null || true)
+            if [ -n "$_relay" ] && cp -f "$0" "$_relay" 2>/dev/null; then
                 chmod 700 "$_relay" 2>/dev/null || true
                 SENTINELLA_UNINSTALL_RELAY=$_relay
                 export SENTINELLA_UNINSTALL_RELAY
@@ -126,7 +126,8 @@ info "uninstalling Sentinella from ${ROOT_PREFIX:-/}"
 # 1. Stop cron-driven and background workers. All patterns are specific to
 #    Sentinella, so unrelated CCU3 processes stay untouched.
 for _worker in check_soc.sh notify_signal.sh plugin_notify.sh \
-              10_ccu_health.sh 15_weather.sh 20_renault_zoe.sh 30_forecast_solar.sh; do
+              10_ccu_health.sh 15_weather.sh 20_renault_zoe.sh \
+              25_shelly_em.sh 30_forecast_solar.sh 35_tibber.sh; do
     kill_worker "$_worker"
 done
 

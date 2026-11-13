@@ -77,6 +77,17 @@ fi
 mkdir -p "$STATE_DIR" 2>/dev/null || exit 0
 chmod 755 "$STATE_DIR" 2>/dev/null || true
 
+is_safe_host() {
+    case "$1" in
+        ''|*[!A-Za-z0-9._-]*|-*|*-|*..*|.*|*.) return 1 ;;
+    esac
+    return 0
+}
+
+curl_config_escape() {
+    printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
 write_json() {
     _tmp="$OUT_FILE.tmp.$$"
     printf '%s\n' "$1" > "$_tmp" 2>/dev/null || { rm -f "$_tmp" 2>/dev/null || true; return 1; }
@@ -99,30 +110,47 @@ fi
 if [ -n "${SHELLY_BASE_URL:-}" ]; then
     BASE_URL=$SHELLY_BASE_URL
 else
+    _raw_host=$(printf '%s' "$SHELLY_IP" | sed -e 's#^https\{0,1\}://##' -e 's#/.*$##')
+    if ! is_safe_host "$_raw_host"; then
+        write_json "{\"id\":\"shelly_em\",\"layout\":\"stat\",\"title\":\"SHELLY EM\",\"status_badge\":\"SETUP\",\"status_color\":\"blue\",\"timestamp\":\"$NOW_ISO\",\"primary\":{\"value\":\"SETUP\",\"unit\":\"\",\"label\":\"STATUS\"},\"secondary_metrics\":[{\"label\":\"STATUS\",\"value\":\"Invalid IP\"}]}"
+        exit 0
+    fi
     case "$SHELLY_IP" in
-        http://*|https://*) BASE_URL=$SHELLY_IP ;;
-        *) BASE_URL="http://$SHELLY_IP" ;;
+        https://*) BASE_URL="https://$_raw_host" ;;
+        *) BASE_URL="http://$_raw_host" ;;
     esac
 fi
 BASE_URL=$(printf '%s' "$BASE_URL" | sed 's:/*$::')
 
-if [ -n "$SHELLY_PASS" ]; then
-    _auth_user=${SHELLY_USER:-admin}
-    set -- --anyauth -u "$_auth_user:$SHELLY_PASS"
-else
-    set --
+_tls_flag=""
+if [ "${SHELLY_TLS_VERIFY:-false}" = "false" ]; then
+    _tls_flag="-k"
 fi
 
 SHELLY_CONNECT_TIMEOUT=${SHELLY_CONNECT_TIMEOUT:-5}
 SHELLY_MAX_TIME=${SHELLY_MAX_TIME:-12}
-SHELLY_HOST_LABEL=$(printf '%s' "${SHELLY_IP:-${SHELLY_BASE_URL:-}}" | tr -d '"\\')
+SHELLY_HOST_LABEL=$(printf '%s' "${SHELLY_IP:-${SHELLY_BASE_URL:-}}" | tr -d '\000-\037"\\')
+
+shelly_get() {
+    _url=$1
+    if [ -n "$SHELLY_PASS" ]; then
+        _auth_user=${SHELLY_USER:-admin}
+        _esc_auth=$(curl_config_escape "$_auth_user:$SHELLY_PASS")
+        printf 'anyauth\nuser = "%s"\n' "$_esc_auth" | \
+            curl $_tls_flag -fsS --connect-timeout "$SHELLY_CONNECT_TIMEOUT" --max-time "$SHELLY_MAX_TIME" \
+                --config - "$_url" 2>/dev/null || true
+    else
+        curl $_tls_flag -fsS --connect-timeout "$SHELLY_CONNECT_TIMEOUT" --max-time "$SHELLY_MAX_TIME" \
+            "$_url" </dev/null 2>/dev/null || true
+    fi
+}
 
 # Try Gen2/Pro first
-RAW=$(curl -kfsS --connect-timeout "$SHELLY_CONNECT_TIMEOUT" --max-time "$SHELLY_MAX_TIME" "$@" "$BASE_URL/rpc/Shelly.GetStatus" </dev/null 2>/dev/null || true)
+RAW=$(shelly_get "$BASE_URL/rpc/Shelly.GetStatus")
 GEN=2
 if [ -z "$RAW" ]; then
     # Fallback to Gen1
-    RAW=$(curl -kfsS --connect-timeout "$SHELLY_CONNECT_TIMEOUT" --max-time "$SHELLY_MAX_TIME" "$@" "$BASE_URL/status" </dev/null 2>/dev/null || true)
+    RAW=$(shelly_get "$BASE_URL/status")
     GEN=1
 fi
 

@@ -73,6 +73,10 @@ fi
 mkdir -p "$STATE_DIR" 2>/dev/null || exit 0
 chmod 755 "$STATE_DIR" 2>/dev/null || true
 
+curl_config_escape() {
+    printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
 write_json() {
     _tmp="$OUT_FILE.tmp.$$"
     printf '%s\n' "$1" > "$_tmp" 2>/dev/null || { rm -f "$_tmp" 2>/dev/null || true; return 1; }
@@ -95,11 +99,13 @@ if [ "$TARIFF_PROVIDER" = "tibber" ]; then
     fi
     TIBBER_URL=${TIBBER_API_URL:-https://api.tibber.com/v1-beta/gql}
     GQL='{"query":"{ viewer { homes { currentSubscription { priceInfo { current { total level } } } } } }"}'
-    RAW=$(curl -kfsS --connect-timeout 5 --max-time 12 \
-        -H "Authorization: Bearer $TIBBER_TOKEN" \
-        -H "Content-Type: application/json" \
-        -d "$GQL" \
-        "$TIBBER_URL" </dev/null 2>/dev/null || true)
+    _esc_tok=$(curl_config_escape "$TIBBER_TOKEN")
+    RAW=$(printf 'header = "Authorization: Bearer %s"\n' "$_esc_tok" | \
+        curl -fsS --connect-timeout 5 --max-time 12 \
+            --config - \
+            -H "Content-Type: application/json" \
+            -d "$GQL" \
+            "$TIBBER_URL" 2>/dev/null || true)
     if [ -n "$RAW" ]; then
         PRICE_CT=$(printf '%s' "$RAW" | awk -v sur="${TARIFF_SURCHARGE_CT:-0}" '
         { buf = buf $0 " " }
@@ -122,7 +128,7 @@ else
             AWATTAR_URL=${AWATTAR_API_URL:-https://api.awattar.de/v1/marketdata}
             ;;
     esac
-    RAW=$(curl -kfsS --connect-timeout 5 --max-time 12 "$AWATTAR_URL" </dev/null 2>/dev/null || true)
+    RAW=$(curl -fsS --connect-timeout 5 --max-time 12 "$AWATTAR_URL" </dev/null 2>/dev/null || true)
     if [ -n "$RAW" ]; then
         PRICE_CT=$(printf '%s' "$RAW" | awk -v hms="$HOUR_START_MS" -v sur="${TARIFF_SURCHARGE_CT:-0}" '
         { buf = buf $0 " " }

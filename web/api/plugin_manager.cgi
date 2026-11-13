@@ -150,14 +150,38 @@ case "$_ct" in
     *) fail "400 Bad Request" "Content-Type must be application/json." ;;
 esac
 _host=$(printf '%s' "${HTTP_HOST:-}" | tr '[:upper:]' '[:lower:]')
+case "$_host" in
+    *:80) _host_http=${_host%:80}; _host_https=$_host ;;
+    *:443) _host_http=$_host; _host_https=${_host%:443} ;;
+    *) _host_http=$_host; _host_https=$_host ;;
+esac
 if [ -n "${HTTP_ORIGIN:-}" ]; then
+    [ -n "$_host" ] || fail "403 Forbidden" "Cross-origin request rejected."
     _origin=$(printf '%s' "$HTTP_ORIGIN" | tr '[:upper:]' '[:lower:]')
-    case "${_origin%/}" in
-        "http://$_host"|"https://$_host") [ -n "$_host" ] || fail "403 Forbidden" "Cross-origin request rejected." ;;
+    _origin=${_origin%/}
+    case "$_origin" in
+        http://*:80) _origin=${_origin%:80} ;;
+        https://*:443) _origin=${_origin%:443} ;;
+    esac
+    case "$_origin" in
+        "http://$_host"|"http://$_host_http"|"https://$_host"|"https://$_host_https") ;;
         *) fail "403 Forbidden" "Cross-origin request rejected." ;;
     esac
-fi
-if [ -n "$_host" ] && [ "${HTTP_X_REQUESTED_WITH:-}" != "XMLHttpRequest" ]; then
+elif [ -n "${HTTP_REFERER:-}" ]; then
+    [ -n "$_host" ] || fail "403 Forbidden" "Cross-origin request rejected."
+    _ref=$(printf '%s' "$HTTP_REFERER" | tr '[:upper:]' '[:lower:]')
+    _ref_scheme=${_ref%%://*}
+    _ref_auth=${_ref#*://}
+    _ref_auth=${_ref_auth%%/*}
+    case "$_ref_scheme:$_ref_auth" in
+        http:*:80) _ref_auth=${_ref_auth%:80} ;;
+        https:*:443) _ref_auth=${_ref_auth%:443} ;;
+    esac
+    case "$_ref_scheme:$_ref_auth" in
+        "http:$_host"|"http:$_host_http"|"https:$_host"|"https:$_host_https") ;;
+        *) fail "403 Forbidden" "Cross-origin request rejected." ;;
+    esac
+elif [ -n "${HTTP_HOST:-}${GATEWAY_INTERFACE:-}" ] && [ "${HTTP_X_REQUESTED_WITH:-}" != "XMLHttpRequest" ]; then
     fail "403 Forbidden" "Cross-origin request rejected."
 fi
 
@@ -198,9 +222,8 @@ until mkdir "$LOCK_DIR" 2>/dev/null; do
     [ "$_tries" -lt 20 ] || fail "503 Service Unavailable" "Plugin config is locked."
     sleep 1
 done
-trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT INT TERM
-
 TMP=$PLUGINS_ENV.tmp.$$
+trap 'rm -f "$TMP" 2>/dev/null; rmdir "$LOCK_DIR" 2>/dev/null' EXIT INT TERM
 {
     printf '# =============================================================================\n'
     printf '#  Sentinella - Master Plugin State Configuration\n'

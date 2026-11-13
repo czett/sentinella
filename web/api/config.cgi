@@ -193,10 +193,27 @@ is_safe_label() {
 
 is_safe_host() {
     case "$1" in
-        ''|*[!A-Za-z0-9._-]*) return 1 ;;
+        ''|*[!A-Za-z0-9._-]*|-*|*-|*..*|.*|*.) return 1 ;;
+    esac
+    _ish_lower=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+    case "$_ish_lower" in
+        localhost|localhost.*|0.0.0.0|127.*|169.254.*) return 1 ;;
     esac
     case "$1" in
-        *..*|.*|*.) return 1 ;;
+        *[!0-9.]*) ;;
+        *.*.*.*)
+            _ish_ifs=$IFS
+            IFS=.
+            set -- $1
+            IFS=$_ish_ifs
+            [ "$#" -eq 4 ] || return 1
+            for _ish_oct in "$1" "$2" "$3" "$4"; do
+                case "$_ish_oct" in
+                    ''|*[!0-9]*) return 1 ;;
+                esac
+                [ "$_ish_oct" -le 255 ] 2>/dev/null || return 1
+            done
+            ;;
     esac
     return 0
 }
@@ -319,11 +336,35 @@ is_renault_vin() {
 # list for the same recipient.
 SECRET_MASK='********'
 
+mask_phone_item() {
+    _mpi_rec=$1
+    case "$_mpi_rec" in
+        +*)
+            if [ "${#_mpi_rec}" -ge 8 ]; then
+                _mpi_head=$(printf '%s' "$_mpi_rec" | cut -c1-3)
+                _mpi_tail=$(printf '%s' "$_mpi_rec" | sed 's/.*\(....\)$/\1/')
+                printf '%s****%s' "$_mpi_head" "$_mpi_tail"
+            else
+                printf '+****'
+            fi
+            ;;
+        *)
+            printf '%s' "$_mpi_rec"
+            ;;
+    esac
+}
+
 mask_phone_list() {
     _mpl_out=
     for _mpl_item in $(printf '%s' "${1:-}" | tr ',;' '  '); do
         case "$_mpl_item" in
-            *:*) _mpl_item="${_mpl_item%%:*}:$SECRET_MASK" ;;
+            *:*)
+                _mpl_rec=$(mask_phone_item "${_mpl_item%%:*}")
+                _mpl_item="$_mpl_rec:$SECRET_MASK"
+                ;;
+            *)
+                _mpl_item=$(mask_phone_item "$_mpl_item")
+                ;;
         esac
         _mpl_out="${_mpl_out:+$_mpl_out,}$_mpl_item"
     done
@@ -333,19 +374,47 @@ mask_phone_list() {
 restore_phone_list() {
     _rpl_out=
     for _rpl_item in $(printf '%s' "${1:-}" | tr ',;' '  '); do
+        _rpl_has_colon=0
+        _rpl_rec=$_rpl_item
+        _rpl_key=
         case "$_rpl_item" in
             *:*)
-                _rpl_u=${_rpl_item%%:*}
-                if is_masked_secret "${_rpl_item#*:}"; then
-                    _rpl_item=$_rpl_u
-                    for _rpl_old in $(printf '%s' "${2:-}" | tr ',;' '  '); do
-                        case "$_rpl_old" in
-                            "$_rpl_u":?*) _rpl_item=$_rpl_old; break ;;
-                        esac
-                    done
-                fi
+                _rpl_has_colon=1
+                _rpl_rec=${_rpl_item%%:*}
+                _rpl_key=${_rpl_item#*:}
                 ;;
         esac
+        case "$_rpl_rec" in
+            +*'****'*|+*'••••'*)
+                _rpl_prefix=${_rpl_rec%%\**}
+                _rpl_prefix=${_rpl_prefix%%•*}
+                _rpl_suffix=${_rpl_rec##*\*}
+                _rpl_suffix=${_rpl_suffix##*•}
+                for _rpl_old in $(printf '%s' "${2:-}" | tr ',;' '  '); do
+                    _rpl_old_rec=${_rpl_old%%:*}
+                    case "$_rpl_old_rec" in
+                        "$_rpl_prefix"*"$_rpl_suffix")
+                            _rpl_rec=$_rpl_old_rec
+                            break
+                            ;;
+                    esac
+                done
+                ;;
+        esac
+        if [ "$_rpl_has_colon" = "1" ]; then
+            if is_masked_secret "$_rpl_key"; then
+                _rpl_item=$_rpl_rec
+                for _rpl_old in $(printf '%s' "${2:-}" | tr ',;' '  '); do
+                    case "$_rpl_old" in
+                        "$_rpl_rec":?*) _rpl_item=$_rpl_old; break ;;
+                    esac
+                done
+            else
+                _rpl_item="$_rpl_rec:$_rpl_key"
+            fi
+        else
+            _rpl_item=$_rpl_rec
+        fi
         _rpl_out="${_rpl_out:+$_rpl_out,}$_rpl_item"
     done
     printf '%s' "$_rpl_out"
@@ -641,7 +710,7 @@ check_origin() {
     # Over HTTP (a Host header is present) require either the custom header set
     # by app.js or one of the two origin headers above. CLI test harnesses do
     # not set HTTP_HOST and remain allowed.
-    if [ -n "${HTTP_HOST:-}" ] && [ "${HTTP_X_REQUESTED_WITH:-}" != "XMLHttpRequest" ]; then
+    if [ -n "${HTTP_HOST:-}${GATEWAY_INTERFACE:-}" ] && [ "${HTTP_X_REQUESTED_WITH:-}" != "XMLHttpRequest" ]; then
         fail "403 Forbidden" "$(msg cross_origin)"
     fi
     return 0
@@ -930,7 +999,10 @@ config_payload() {
     printf ',"reset_soc":%s' "$_reset"
     printf ',"signal_enabled":%s' "$(json_bool_str "$_enabled")"
     printf ',"notify_disabled":%s' "$_notify_disabled"
+    _phone_set=false
+    [ -n "$SIGNAL_PHONE" ] && _phone_set=true
     printf ',"signal_phone":%s' "$(json_str "$(mask_phone_list "$SIGNAL_PHONE")")"
+    printf ',"signal_phone_set":%s' "$_phone_set"
     printf ',"signal_apikey_set":%s' "$_apikey_set"
     _sma_enabled=false
     [ "$SMA_ENABLED" = "1" ] && _sma_enabled=true
@@ -1599,9 +1671,7 @@ save_config() {
 
     if body_has signal_phone; then
         _phone=$(trim_ws "$(body_str signal_phone)")
-        case "$_phone" in
-            *:*) _phone=$(restore_phone_list "$_phone" "$SIGNAL_PHONE") ;;
-        esac
+        _phone=$(restore_phone_list "$_phone" "$SIGNAL_PHONE")
         if [ -n "$_phone" ] && ! is_signal_phone_list "$_phone"; then
             fail "400 Bad Request" \
                 "$(msg phone_invalid)" \
@@ -1673,7 +1743,7 @@ save_config() {
 
     if body_has sma_password; then
         _newpw=$(body_str sma_password)
-        if [ -n "$_newpw" ]; then
+        if [ -n "$_newpw" ] && ! is_masked_secret "$_newpw"; then
             is_password "$_newpw" || fail "400 Bad Request" \
                 "$(msg password_invalid)" \
                 "sma_password"
@@ -1682,10 +1752,110 @@ save_config() {
         fi
     fi
 
+    # Prevent host-redirection credential theft: changing SMA_IP away from an
+    # already configured host without supplying a new password clears SMA_PASS.
+    if [ "$_want_ip" = "1" ] && [ "$_want_password" = "0" ] \
+        && [ -n "$SMA_IP" ] && [ "$_ip" != "$SMA_IP" ]; then
+        _password=
+        _want_password=1
+    fi
+
     parse_and_validate_renault
     parse_and_validate_ccu_health
     parse_and_validate_weather
     parse_and_validate_forecast
+
+    _s_en_val=$SHELLY_ENABLED
+    _s_ip_val=$SHELLY_IP
+    _s_user_val=$SHELLY_USER
+    _s_pass_val=$SHELLY_PASS
+    _s_int_val=$SHELLY_INTERVAL
+    _want_shelly=0
+    _want_shelly_pass=0
+    if body_has shelly_enabled; then
+        case "$(body_bool shelly_enabled)" in
+            true|1) _s_en_val=true ;;
+            *) _s_en_val=false ;;
+        esac
+        _want_shelly=1
+    fi
+    if body_has shelly_ip; then
+        _raw_s_ip=$(body_str shelly_ip)
+        _s_ip_val=$(normalize_host "$_raw_s_ip")
+        if [ -n "$(trim_ws "$_raw_s_ip")" ] && [ -z "$_s_ip_val" ]; then
+            fail "400 Bad Request" "$(msg shelly_ip_invalid)" "shelly_ip"
+        fi
+        if [ -n "$_s_ip_val" ]; then
+            is_safe_host "$_s_ip_val" || fail "400 Bad Request" "$(msg shelly_ip_invalid)" "shelly_ip"
+        fi
+        _want_shelly=1
+    fi
+    if body_has shelly_user; then
+        _s_user_val=$(trim_ws "$(body_str shelly_user)")
+        if [ -n "$_s_user_val" ] && ! is_safe_label "$_s_user_val"; then
+            fail "400 Bad Request" "$(msg password_invalid)" "shelly_user"
+        fi
+        _want_shelly=1
+    fi
+    if body_has shelly_pass; then
+        _sp_new=$(body_str shelly_pass)
+        if [ -n "$_sp_new" ] && ! is_masked_secret "$_sp_new"; then
+            is_password "$_sp_new" || fail "400 Bad Request" "$(msg password_invalid)" "shelly_pass"
+            _s_pass_val=$_sp_new
+            _want_shelly_pass=1
+        fi
+        _want_shelly=1
+    fi
+    if [ "$_want_shelly" = "1" ] && [ "$_want_shelly_pass" = "0" ] \
+        && [ -n "$SHELLY_IP" ] && [ "$_s_ip_val" != "$SHELLY_IP" ]; then
+        _s_pass_val=
+    fi
+    if body_has shelly_interval; then
+        _s_int_val=$(body_num shelly_interval)
+        is_uint "$_s_int_val" && [ "$_s_int_val" -ge 10 ] || fail "400 Bad Request" "Invalid shelly_interval" "shelly_interval"
+        _want_shelly=1
+    fi
+
+    _t_en_val=$TARIFF_ENABLED
+    _t_prov_val=$TARIFF_PROVIDER
+    _t_tok_val=$TIBBER_TOKEN
+    _t_sur_val=$TARIFF_SURCHARGE_CT
+    _t_int_val=$TARIFF_INTERVAL
+    _want_tariff=0
+    if body_has tariff_enabled; then
+        case "$(body_bool tariff_enabled)" in
+            true|1) _t_en_val=true ;;
+            *) _t_en_val=false ;;
+        esac
+        _want_tariff=1
+    fi
+    if body_has tariff_provider; then
+        _t_prov_val=$(body_str tariff_provider)
+        case "$_t_prov_val" in
+            awattar_de|awattar_at|tibber) ;;
+            *) fail "400 Bad Request" "Invalid tariff_provider" "tariff_provider" ;;
+        esac
+        _want_tariff=1
+    fi
+    if body_has tibber_token; then
+        _tt_new=$(trim_ws "$(body_str tibber_token)")
+        if [ -n "$_tt_new" ] && ! is_masked_secret "$_tt_new"; then
+            is_apikey_token "$_tt_new" || fail "400 Bad Request" "$(msg apikey_invalid)" "tibber_token"
+            _t_tok_val=$_tt_new
+        fi
+        _want_tariff=1
+    fi
+    if body_has tariff_surcharge_ct; then
+        _t_sur_val=$(trim_ws "$(body_float tariff_surcharge_ct)")
+        [ -n "$_t_sur_val" ] || _t_sur_val=0
+        is_float_in_range "$_t_sur_val" -1000 1000 || fail "400 Bad Request" "Invalid tariff_surcharge_ct" "tariff_surcharge_ct"
+        _want_tariff=1
+    fi
+    if body_has tariff_interval; then
+        _t_int_val=$(body_num tariff_interval)
+        is_uint "$_t_int_val" && [ "$_t_int_val" -ge 10 ] || fail "400 Bad Request" "Invalid tariff_interval" "tariff_interval"
+        _want_tariff=1
+    fi
 
     acquire_config_lock || fail "409 Conflict" \
         "$(msg config_busy)"
@@ -1801,50 +1971,6 @@ save_config() {
             || fail "500 Internal Server Error" "$(msg write_forecast)"
     fi
 
-    _s_en_val=$SHELLY_ENABLED
-    _s_ip_val=$SHELLY_IP
-    _s_user_val=$SHELLY_USER
-    _s_pass_val=$SHELLY_PASS
-    _s_int_val=$SHELLY_INTERVAL
-    _want_shelly=0
-    if body_has shelly_enabled; then
-        case "$(body_bool shelly_enabled)" in
-            true|1) _s_en_val=true ;;
-            *) _s_en_val=false ;;
-        esac
-        _want_shelly=1
-    fi
-    if body_has shelly_ip; then
-        _raw_s_ip=$(body_str shelly_ip)
-        _s_ip_val=$(normalize_host "$_raw_s_ip")
-        if [ -n "$(trim_ws "$_raw_s_ip")" ] && [ -z "$_s_ip_val" ]; then
-            fail "400 Bad Request" "$(msg shelly_ip_invalid)" "shelly_ip"
-        fi
-        if [ -n "$_s_ip_val" ]; then
-            is_safe_host "$_s_ip_val" || fail "400 Bad Request" "$(msg shelly_ip_invalid)" "shelly_ip"
-        fi
-        _want_shelly=1
-    fi
-    if body_has shelly_user; then
-        _s_user_val=$(trim_ws "$(body_str shelly_user)")
-        if [ -n "$_s_user_val" ] && ! is_safe_label "$_s_user_val"; then
-            fail "400 Bad Request" "$(msg password_invalid)" "shelly_user"
-        fi
-        _want_shelly=1
-    fi
-    if body_has shelly_pass; then
-        _sp_new=$(body_str shelly_pass)
-        if [ -n "$_sp_new" ] && ! is_masked_secret "$_sp_new"; then
-            is_password "$_sp_new" || fail "400 Bad Request" "$(msg password_invalid)" "shelly_pass"
-            _s_pass_val=$_sp_new
-        fi
-        _want_shelly=1
-    fi
-    if body_has shelly_interval; then
-        _s_int_val=$(body_num shelly_interval)
-        is_uint "$_s_int_val" && [ "$_s_int_val" -ge 10 ] || fail "400 Bad Request" "Invalid shelly_interval" "shelly_interval"
-        _want_shelly=1
-    fi
     _run_shelly=0
     if [ "$_want_shelly" = "1" ]; then
         save_shelly_env "$_s_en_val" "$_s_ip_val" "$_s_user_val" "$_s_pass_val" "$_s_int_val" \
@@ -1892,46 +2018,6 @@ save_config() {
         } || rm -f "$_sh_tmp" 2>/dev/null || true
     fi
 
-    _t_en_val=$TARIFF_ENABLED
-    _t_prov_val=$TARIFF_PROVIDER
-    _t_tok_val=$TIBBER_TOKEN
-    _t_sur_val=$TARIFF_SURCHARGE_CT
-    _t_int_val=$TARIFF_INTERVAL
-    _want_tariff=0
-    if body_has tariff_enabled; then
-        case "$(body_bool tariff_enabled)" in
-            true|1) _t_en_val=true ;;
-            *) _t_en_val=false ;;
-        esac
-        _want_tariff=1
-    fi
-    if body_has tariff_provider; then
-        _t_prov_val=$(body_str tariff_provider)
-        case "$_t_prov_val" in
-            awattar_de|awattar_at|tibber) ;;
-            *) fail "400 Bad Request" "Invalid tariff_provider" "tariff_provider" ;;
-        esac
-        _want_tariff=1
-    fi
-    if body_has tibber_token; then
-        _tt_new=$(trim_ws "$(body_str tibber_token)")
-        if [ -n "$_tt_new" ] && ! is_masked_secret "$_tt_new"; then
-            is_apikey_token "$_tt_new" || fail "400 Bad Request" "$(msg apikey_invalid)" "tibber_token"
-            _t_tok_val=$_tt_new
-        fi
-        _want_tariff=1
-    fi
-    if body_has tariff_surcharge_ct; then
-        _t_sur_val=$(trim_ws "$(body_float tariff_surcharge_ct)")
-        [ -n "$_t_sur_val" ] || _t_sur_val=0
-        is_float_in_range "$_t_sur_val" -1000 1000 || fail "400 Bad Request" "Invalid tariff_surcharge_ct" "tariff_surcharge_ct"
-        _want_tariff=1
-    fi
-    if body_has tariff_interval; then
-        _t_int_val=$(body_num tariff_interval)
-        is_uint "$_t_int_val" && [ "$_t_int_val" -ge 10 ] || fail "400 Bad Request" "Invalid tariff_interval" "tariff_interval"
-        _want_tariff=1
-    fi
     _run_tariff=0
     if [ "$_want_tariff" = "1" ]; then
         save_tibber_env "$_t_en_val" "$_t_prov_val" "$_t_tok_val" "$_t_sur_val" "$_t_int_val" \

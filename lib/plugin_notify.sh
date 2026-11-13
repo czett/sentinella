@@ -164,6 +164,7 @@ notify_plugin_threshold() {
 
                 # Dispatch notification via existing Signal gateway
                 _notify_script=
+                _notify_use_sh=0
                 for _cand in \
                     "${NOTIFY_SIGNAL_SCRIPT:-}" \
                     "${APP_DIR:-}/lib/notify_signal.sh" \
@@ -174,18 +175,28 @@ notify_plugin_threshold() {
                 do
                     if [ -n "$_cand" ] && [ -x "$_cand" ]; then
                         _notify_script=$_cand
+                        _notify_use_sh=0
                         break
                     elif [ -n "$_cand" ] && [ -f "$_cand" ]; then
-                        _notify_script="sh $_cand"
+                        _notify_script=$_cand
+                        _notify_use_sh=1
                         break
                     fi
                 done
 
                 if [ -n "$_notify_script" ]; then
                     if [ "${NOTIFY_ASYNC:-1}" = "0" ]; then
-                        $_notify_script --message "$_message"
+                        if [ "$_notify_use_sh" = "1" ]; then
+                            sh "$_notify_script" --message "$_message"
+                        else
+                            "$_notify_script" --message "$_message"
+                        fi
                     else
-                        $_notify_script --message "$_message" >/dev/null 2>&1 &
+                        if [ "$_notify_use_sh" = "1" ]; then
+                            sh "$_notify_script" --message "$_message" >/dev/null 2>&1 &
+                        else
+                            "$_notify_script" --message "$_message" >/dev/null 2>&1 &
+                        fi
                     fi
                 fi
                 return 0

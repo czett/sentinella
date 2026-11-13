@@ -279,6 +279,17 @@ acquire_lock() {
     return 1
 }
 
+mask_recipient() {
+    _mr_len=${#1}
+    if [ "$_mr_len" -le 6 ]; then
+        printf '***'
+        return
+    fi
+    _mr_head=$(printf '%s' "$1" | cut -c1-3)
+    _mr_tail=$(printf '%s' "$1" | sed 's/.*\(....\)$/\1/')
+    printf '%s****%s' "$_mr_head" "$_mr_tail"
+}
+
 send_to_recipient() {
     _phone=$1
     _apikey=$2
@@ -317,7 +328,8 @@ send_to_recipient() {
     _resp=$(printf '%s' "$_resp" | tr -d '\r\n' | awk -v k="$_apikey" '{
         if (k != "") while ((i = index($0, k)) > 0) $0 = substr($0, 1, i - 1) "***" substr($0, i + length(k))
         print }' | cut -c1-160)
-    log "ERROR: notification failed for recipient $_phone ($EVENT, SoC ${SOC}%): $_resp"
+    _masked_phone=$(mask_recipient "$_phone")
+    log "ERROR: notification failed for recipient $_masked_phone ($EVENT, SoC ${SOC}%): $_resp"
     return 1
 }
 

@@ -146,7 +146,7 @@ check_origin() {
         fail "403 Forbidden" "$(msg cross_origin)"
     fi
 
-    if [ -n "${HTTP_HOST:-}" ] && [ "${HTTP_X_REQUESTED_WITH:-}" != "XMLHttpRequest" ]; then
+    if [ -n "${HTTP_HOST:-}${GATEWAY_INTERFACE:-}" ] && [ "${HTTP_X_REQUESTED_WITH:-}" != "XMLHttpRequest" ]; then
         fail "403 Forbidden" "$(msg cross_origin)"
     fi
     return 0

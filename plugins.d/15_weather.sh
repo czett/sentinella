@@ -220,19 +220,24 @@ load_forecast_fallback() {
 
 # Sets key=value in an env-style file while preserving unrelated comments and
 # settings. The key is always one of the fixed WEATHER_* names.
+shquote() {
+    printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
 cache_set() {
     _cs_file=$1
     _cs_key=$2
     _cs_val=$3
-    awk -v key="$_cs_key" -v val="$_cs_val" '
+    _cs_quoted=$(shquote "$_cs_val")
+    awk -v key="$_cs_key" -v qval="$_cs_quoted" '
         BEGIN { done = 0 }
         $0 ~ "^[[:space:]]*" key "[[:space:]]*=" && !done {
-            print key "=\"" val "\""
+            print key "=" qval
             done = 1
             next
         }
         { print }
-        END { if (!done) print key "=\"" val "\"" }
+        END { if (!done) print key "=" qval }
     ' "$_cs_file" > "$_cs_file.next" 2>/dev/null || return 1
     mv -f "$_cs_file.next" "$_cs_file" 2>/dev/null || return 1
     return 0

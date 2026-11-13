@@ -3,38 +3,13 @@
 <head>
     <meta charset="utf-8">
     <meta http-equiv="Content-Security-Policy"
-          content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'">
+          content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="color-scheme" content="light">
     <meta name="theme-color" content="#f8f8f9">
     <meta name="description" content="Sentinella — modular energy and system monitor for the HomeMatic CCU3.">
     <title>SENTINELLA · CCU3 Energie- &amp; Systemwächter</title>
-    <script>
-        (function () {
-            var theme = "light";
-            try {
-                if (window.localStorage.getItem("sentinella_theme") === "dark") {
-                    theme = "dark";
-                }
-            } catch (error) {
-                theme = "light";
-            }
-            document.documentElement.setAttribute("data-theme", theme);
-            var meta = document.querySelector('meta[name="theme-color"]');
-            if (meta) {
-                meta.setAttribute("content", theme === "dark" ? "#09090b" : "#f8f8f9");
-            }
-            var scheme = document.querySelector('meta[name="color-scheme"]');
-            if (scheme) {
-                scheme.setAttribute("content", theme);
-            }
-            try {
-                if (window.localStorage.getItem("sentinella_animations") === "off") {
-                    document.documentElement.classList.add("disable-animations");
-                }
-            } catch (error) {}
-        })();
-    </script>
+    <script src="./theme-init.js?v=1.2.1"></script>
     <link rel="stylesheet" href="./style.css?v=1.2.1">
     <link rel="icon" href="./favicon.svg" type="image/svg+xml">
     <link rel="icon" href="./favicon.ico" sizes="32x32">

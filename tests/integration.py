@@ -1047,8 +1047,11 @@ def main() -> int:
         status_code, saved = parse_cgi(result)
         env_text = env_path.read_text()
         check(
-            status_code == "200 OK" and saved.get("signal_phone") == "+491701234567",
-            "accepts an E.164 phone number as Signal recipient",
+            status_code == "200 OK"
+            and saved.get("signal_phone") == "+49****4567"
+            and saved.get("signal_phone_set") is True
+            and "SIGNAL_PHONE='+491701234567'" in env_text,
+            "accepts an E.164 phone number as Signal recipient and masks it in API output",
             failures,
         )
         check(
@@ -1067,7 +1070,6 @@ def main() -> int:
             "reset_soc": 91,
             "signal_enabled": True,
             "signal_phone": UPDATED_UUID,
-            "sma_ip": "10.1.2.3",
             "sma_port": 8443,
         }
         result = run_cgi(addon2, "POST", body=json.dumps(payload))
@@ -2420,8 +2422,69 @@ eval(mockEnv);
             failures,
         )
         check(
-            'http-equiv="Content-Security-Policy"' in html_sec,
-            "index.html ships a Content Security Policy",
+            'http-equiv="Content-Security-Policy"' in html_sec
+            and "script-src 'self';" in html_sec
+            and (ROOT / "web" / "theme-init.js").is_file(),
+            "index.html ships strict script-src 'self' CSP with external theme-init.js",
+            failures,
+        )
+
+        # 24g. v1.2.1 security hardening: host redirection, SSRF, Tibber/Shelly stdin, atomic save
+        tibber_text = (ROOT / "plugins.d" / "35_tibber.sh").read_text()
+        shelly_text = (ROOT / "plugins.d" / "25_shelly_em.sh").read_text()
+        check(
+            "--config -" in tibber_text
+            and "-H \"Authorization: Bearer $TIBBER_TOKEN\"" not in tibber_text
+            and "curl -k" not in tibber_text,
+            "35_tibber.sh uses --config - for token and enforces TLS verification",
+            failures,
+        )
+        check(
+            "--config -" in shelly_text and "-u \"$_auth_user:$SHELLY_PASS\"" not in shelly_text,
+            "25_shelly_em.sh streams credentials via --config - instead of curl argv",
+            failures,
+        )
+        for bad_ssrf in ("-bad", "127.0.0.1", "169.254.169.254", "localhost", "0.0.0.0", "999.1.1.1"):
+            r_ssrf = cgi_sec(
+                "POST", "config", json.dumps({"sma_ip": bad_ssrf}),
+                {"HTTP_HOST": "ccu.local", "HTTP_ORIGIN": "http://ccu.local"},
+            )
+            st_ssrf, _ = parse_cgi(r_ssrf)
+            check(
+                st_ssrf == "400 Bad Request",
+                f"is_safe_host rejects SSRF/flag host {bad_ssrf!r} (got {st_ssrf})",
+                failures,
+            )
+        # Host redirection clears stored SMA_PASS when password is not re-supplied
+        r_redir = cgi_sec(
+            "POST", "config", json.dumps({"sma_ip": "10.1.2.99"}),
+            {"HTTP_HOST": "ccu.local", "HTTP_ORIGIN": "http://ccu.local"},
+        )
+        st_redir, d_redir = parse_cgi(r_redir)
+        check(
+            st_redir == "200 OK"
+            and d_redir.get("sma_password_set") is False
+            and "SMA_PASS=''" in sec_env_path.read_text(),
+            "changing sma_ip without sma_password clears stored SMA_PASS",
+            failures,
+        )
+        # Atomic validation: invalid shelly_ip leaves .env untouched
+        env_before_atomic = sec_env_path.read_text()
+        r_atomic = cgi_sec(
+            "POST", "config", json.dumps({"trigger_soc": 88, "shelly_ip": "127.0.0.1"}),
+            {"HTTP_HOST": "ccu.local", "HTTP_ORIGIN": "http://ccu.local"},
+        )
+        st_atomic, _ = parse_cgi(r_atomic)
+        check(
+            st_atomic == "400 Bad Request" and sec_env_path.read_text() == env_before_atomic,
+            "invalid shelly_ip aborts before modifying .env",
+            failures,
+        )
+        # plugins.cgi 405 includes Referrer-Policy & Pragma
+        check(
+            "Referrer-Policy: same-origin" in r_plugin_post.stdout
+            and "Pragma: no-cache" in r_plugin_post.stdout,
+            "plugins.cgi 405 includes Referrer-Policy and Pragma headers",
             failures,
         )
 
@@ -3337,7 +3400,7 @@ if (!cardDe.innerHTML.includes("PV-PROGNOSE") || !cardDe.innerHTML.includes("SON
               f"IP city is used when weather.env is missing (got {auto_card.get('city')!r})", failures)
         check(auto_cache_path.is_file(), "auto-detected location is cached in weather.env", failures)
         cached_env = auto_cache_path.read_text()
-        for expected in ('WEATHER_CITY="Musterstadt"', 'WEATHER_LAT="48.12"', 'WEATHER_LON="11.55"'):
+        for expected in ("WEATHER_CITY='Musterstadt'", "WEATHER_LAT='48.12'", "WEATHER_LON='11.55'"):
             check(expected in cached_env, f"weather.env caches {expected} (got {cached_env!r})", failures)
         check((auto_cache_path.stat().st_mode & 0o777) == 0o600, "weather.env mode is 600", failures)
 

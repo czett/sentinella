@@ -32,8 +32,8 @@ RUNS=${BENCHMARK_RUNS:-5}
 
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/sentinella-bench.XXXXXX" 2>/dev/null)
 if [ -z "$WORK_DIR" ] || [ ! -d "$WORK_DIR" ]; then
-    WORK_DIR="/tmp/sentinella-bench.$$"
-    mkdir -p "$WORK_DIR" || exit 1
+    printf 'ERROR: mktemp -d failed\n' >&2
+    exit 1
 fi
 
 cleanup() {

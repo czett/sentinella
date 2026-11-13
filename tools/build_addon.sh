@@ -51,9 +51,8 @@ OUT_TAR="$DIST_DIR/sentinella-$VERSION.tar.gz"
 
 STAGE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/sentinella-build.XXXXXX" 2>/dev/null)
 if [ -z "$STAGE_DIR" ] || [ ! -d "$STAGE_DIR" ]; then
-    STAGE_DIR="/tmp/sentinella-build.$$"
-    rm -rf "$STAGE_DIR"
-    mkdir -p "$STAGE_DIR"
+    printf 'ERROR: mktemp -d failed\n' >&2
+    exit 1
 fi
 
 cleanup() {
@@ -96,7 +95,6 @@ mkdir -p \
     "$ADDON_DIR/plugins.d" \
     "$ADDON_DIR/config/plugins" \
     "$ADDON_DIR/state/plugins" \
-    "$ADDON_DIR/web/api" \
     "$WEB_DIR/api" \
     "$RCD_DIR"
 
@@ -105,7 +103,7 @@ cp -f "$SRC_DIR/bin/check_soc.sh" "$ADDON_DIR/bin/check_soc.sh"
 for _lib in "$SRC_DIR/lib"/*.sh; do
     [ -f "$_lib" ] || continue
     cp -f "$_lib" "$ADDON_DIR/lib/$(basename "$_lib")"
-    chmod 755 "$ADDON_DIR/lib/$(basename "$_lib")"
+    chmod 700 "$ADDON_DIR/lib/$(basename "$_lib")"
 done
 cp -f "$SRC_DIR/setup_variables.sh" "$ADDON_DIR/setup_variables.sh"
 cp -f "$SRC_DIR/.env.example" "$ADDON_DIR/.env.example"
@@ -113,7 +111,7 @@ cp -f "$SRC_DIR/.env.example" "$ADDON_DIR/.env.example"
 for _p in "$SRC_DIR/plugins.d"/*.sh; do
     [ -f "$_p" ] || continue
     cp -f "$_p" "$ADDON_DIR/plugins.d/$(basename "$_p")"
-    chmod 755 "$ADDON_DIR/plugins.d/$(basename "$_p")"
+    chmod 700 "$ADDON_DIR/plugins.d/$(basename "$_p")"
 done
 
 for _ex in "$SRC_DIR/config/plugins"/*.example; do
@@ -127,19 +125,17 @@ if [ ! -f "$ADDON_DIR/.env" ]; then
 fi
 chmod 600 "$ADDON_DIR/.env" 2>/dev/null || true
 
-for _w in index.html style.css app.js favicon.svg favicon.ico status.example.json; do
+for _w in index.html style.css app.js theme-init.js favicon.svg favicon.ico status.example.json; do
     [ -f "$SRC_DIR/web/$_w" ] || continue
-    cp -f "$SRC_DIR/web/$_w" "$ADDON_DIR/web/$_w"
     cp -f "$SRC_DIR/web/$_w" "$WEB_DIR/$_w"
-    chmod 644 "$ADDON_DIR/web/$_w" "$WEB_DIR/$_w"
+    chmod 644 "$WEB_DIR/$_w"
 done
 
 for _cgi in "$SRC_DIR/web/api"/*.cgi; do
     [ -f "$_cgi" ] || continue
     _base=$(basename "$_cgi")
-    cp -f "$_cgi" "$ADDON_DIR/web/api/$_base"
     cp -f "$_cgi" "$WEB_DIR/api/$_base"
-    chmod 755 "$ADDON_DIR/web/api/$_base" "$WEB_DIR/api/$_base"
+    chmod 755 "$WEB_DIR/api/$_base"
 done
 
 printf '%s\n' "$ADDON_DIR" > "$WEB_DIR/api/addon_dir"
@@ -152,14 +148,14 @@ fi
 
 if [ -f "$SRC_DIR/uninstall.sh" ]; then
     cp -f "$SRC_DIR/uninstall.sh" "$ADDON_DIR/uninstall.sh"
-    chmod 755 "$ADDON_DIR/uninstall.sh"
+    chmod 700 "$ADDON_DIR/uninstall.sh"
 fi
 
 chmod 700 "$ADDON_DIR" "$ADDON_DIR/bin" "$ADDON_DIR/lib" "$ADDON_DIR/state" \
     "$ADDON_DIR/plugins.d" "$ADDON_DIR/config" "$ADDON_DIR/config/plugins" \
-    "$ADDON_DIR/state/plugins" 2>/dev/null || true
-chmod 755 "$ADDON_DIR/bin/check_soc.sh" "$ADDON_DIR/lib/notify_signal.sh" \
-    "$ADDON_DIR/setup_variables.sh" "$WEB_DIR" "$WEB_DIR/api" 2>/dev/null || true
+    "$ADDON_DIR/state/plugins" "$ADDON_DIR/bin/check_soc.sh" \
+    "$ADDON_DIR/lib/notify_signal.sh" "$ADDON_DIR/setup_variables.sh" 2>/dev/null || true
+chmod 755 "$WEB_DIR" "$WEB_DIR/api" 2>/dev/null || true
 
 if [ -d /www/addons ]; then
     ln -sfn "$WEB_DIR" /www/addons/sentinella 2>/dev/null || true
@@ -245,7 +241,7 @@ for _cfg in "$ROOT_DIR/config/plugins"/*.example; do
     cp -f "$_cfg" "$PKG_DIR/config/plugins/$(basename "$_cfg")"
 done
 
-for _web in index.html style.css app.js favicon.svg favicon.ico status.example.json; do
+for _web in index.html style.css app.js theme-init.js favicon.svg favicon.ico status.example.json; do
     [ -f "$ROOT_DIR/web/$_web" ] || continue
     cp -f "$ROOT_DIR/web/$_web" "$PKG_DIR/web/$_web"
 done

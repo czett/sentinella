@@ -192,7 +192,7 @@ for file in VERSION .env package/uninstall.sh bin/check_soc.sh lib/notify_signal
             config/plugins/renault.env.example \
             config/plugins/forecast_solar.env.example \
             config/plugins/ccu_health.env.example \
-            web/index.html web/style.css web/app.js \
+            web/index.html web/style.css web/app.js web/theme-init.js \
             web/favicon.svg web/favicon.ico \
             web/api/config.cgi web/api/settings.cgi \
             web/api/test_signal.cgi web/api/test_renault.cgi \
@@ -267,6 +267,7 @@ install -m 600 "$ROOT/.env"                  "$STAGE/.env.new"
 install -m 644 "$ROOT/web/index.html"        "$STAGE/web/index.html"
 install -m 644 "$ROOT/web/style.css"         "$STAGE/web/style.css"
 install -m 644 "$ROOT/web/app.js"            "$STAGE/web/app.js"
+install -m 644 "$ROOT/web/theme-init.js"     "$STAGE/web/theme-init.js"
 install -m 644 "$ROOT/web/favicon.svg"       "$STAGE/web/favicon.svg"
 install -m 644 "$ROOT/web/favicon.ico"       "$STAGE/web/favicon.ico"
 install -m 755 "$ROOT/web/api/config.cgi"       "$STAGE/web/api/config.cgi"
@@ -349,13 +350,13 @@ mkdir -p "$ADDON_DIR/state" "$ADDON_DIR/plugins.d" "$ADDON_DIR/config/plugins" \
 chmod 700 "$ADDON_DIR" "$ADDON_DIR/bin" "$ADDON_DIR/lib" "$ADDON_DIR/state" \
     "$ADDON_DIR/plugins.d" "$ADDON_DIR/config" "$ADDON_DIR/config/plugins" \
     "$ADDON_DIR/state/plugins" "$ADDON_DIR/state/notifications"
-chmod 755 "$ADDON_DIR/bin/check_soc.sh" "$ADDON_DIR/lib/notify_signal.sh" "$ADDON_DIR/lib/plugin_notify.sh" "$ADDON_DIR/lib/notify.sh" "$ADDON_DIR/setup_variables.sh"
+chmod 700 "$ADDON_DIR/bin/check_soc.sh" "$ADDON_DIR/lib/notify_signal.sh" "$ADDON_DIR/lib/plugin_notify.sh" "$ADDON_DIR/lib/notify.sh" "$ADDON_DIR/setup_variables.sh"
 
-# Plugins are independently executable. Glob so future plugins inherit 755
+# Plugins are independently executable. Glob so future plugins inherit 700
 # without another deploy.sh edit.
 for _plugin in "$ADDON_DIR/plugins.d"/*.sh; do
     [ -f "$_plugin" ] || continue
-    chmod 755 "$_plugin"
+    chmod 700 "$_plugin"
 done
 
 # Ship the plugin defaults as an example only. An operator's
@@ -583,7 +584,7 @@ if [ "$SKIP_WEB" != "1" ]; then
     mkdir -p "$WEB_DIR/api"
     chown -R root:root "$WEB_DIR"
     chmod 755 "$WEB_DIR" "$WEB_DIR/api"
-    for file in index.html style.css app.js favicon.svg favicon.ico; do
+    for file in index.html style.css app.js theme-init.js favicon.svg favicon.ico; do
         cp -f "$ADDON_DIR/web/$file" "$WEB_DIR/$file"
         chmod 644 "$WEB_DIR/$file"
     done
@@ -599,22 +600,6 @@ if [ "$SKIP_WEB" != "1" ]; then
     chown -R root:root "$WEB_DIR"
     printf 'Dashboard installed in %s\n' "$WEB_DIR"
 
-    # Also mirror the web files and addon_dir into $ADDON_DIR so a direct
-    # symlink (/www/addons/sentinella -> $ADDON_DIR) or the lighttpd add-on
-    # root (/usr/local/etc/config/addons/www/sentinella -> $WEB_DIR) both serve
-    # the dashboard, status.json and CGI endpoints without 404s.
-    mkdir -p "$ADDON_DIR/api"
-    chmod 755 "$ADDON_DIR/api"
-    for file in index.html style.css app.js favicon.svg favicon.ico; do
-        cp -f "$ADDON_DIR/web/$file" "$ADDON_DIR/$file"
-        chmod 644 "$ADDON_DIR/$file"
-    done
-    for file in config.cgi settings.cgi test_signal.cgi test_renault.cgi action_zoe.cgi update_check.cgi plugin_manager.cgi plugins.cgi; do
-        cp -f "$ADDON_DIR/web/api/$file" "$ADDON_DIR/api/$file"
-        chmod 755 "$ADDON_DIR/api/$file"
-    done
-    printf '%s\n' "$ADDON_DIR" > "$ADDON_DIR/api/addon_dir"
-    chmod 644 "$ADDON_DIR/api/addon_dir"
     ln -sfn "$WEB_DIR/status.json" "$ADDON_DIR/status.json" 2>/dev/null || true
     chown -h root:root "$ADDON_DIR/status.json" 2>/dev/null || true
 

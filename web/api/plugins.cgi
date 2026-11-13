@@ -56,7 +56,9 @@ case "$REQUEST_METHOD" in
         printf 'Status: 405 Method Not Allowed\r\n'
         printf 'Content-Type: application/json; charset=utf-8\r\n'
         printf 'Cache-Control: no-store, max-age=0\r\n'
+        printf 'Pragma: no-cache\r\n'
         printf 'X-Content-Type-Options: nosniff\r\n'
+        printf 'Referrer-Policy: same-origin\r\n'
         printf 'Allow: GET, HEAD\r\n\r\n'
         printf '{"ok":false,"error":"Use GET or HEAD for this endpoint."}\n'
         exit 0

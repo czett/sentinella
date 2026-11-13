@@ -158,7 +158,7 @@ is_safe_name() {
 
 is_safe_host() {
     case "$1" in
-        ''|*[!A-Za-z0-9._-]*) return 1 ;;
+        ''|*[!A-Za-z0-9._-]*|-*|*-|*..*|.*|*.) return 1 ;;
     esac
     return 0
 }
