@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1280, initial-scale=1">
+<title>Sentinella Banner</title>
+<style>
+  *, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html, body {
+    width: 1280px;
+    height: 420px;
+    overflow: hidden;
+    background: #F6F5F0;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .canvas {
+    display: flex;
+    width: 1280px;
+    height: 420px;
+  }
+
+  /* Left Swiss Paper Panel */
+  .left {
+    flex: 1;
+    background: #F6F5F0;
+    color: #111111;
+    padding: 42px 52px 38px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  .micro-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #5C5B56;
+  }
+
+  .hero-block {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .signal-square {
+    width: 18px;
+    height: 18px;
+    background: #E11D2A;
+    margin-bottom: 12px;
+  }
+
+  .wordmark {
+    font-size: 72px;
+    font-weight: 800;
+    letter-spacing: -0.035em;
+    line-height: 0.92;
+    color: #111111;
+  }
+
+  .subtitle {
+    margin-top: 16px;
+    font-size: 19px;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+    color: #3A3A36;
+  }
+
+  .meta-strip {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    border-top: 1px solid #D6D4CC;
+    padding-top: 16px;
+  }
+
+  .meta-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .meta-key {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #6B6A64;
+  }
+
+  .meta-val {
+    font-size: 13px;
+    font-weight: 600;
+    color: #111111;
+    letter-spacing: -0.005em;
+  }
+
+  /* Right Ultramarine Panel */
+  .right {
+    width: 456px;
+    background: #1D4ED8;
+    color: #FFFFFF;
+    padding: 42px 44px 38px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  .right-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.72);
+  }
+
+  .readout {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .soc-value {
+    font-size: 104px;
+    font-weight: 800;
+    letter-spacing: -0.045em;
+    line-height: 0.9;
+    font-variant-numeric: tabular-nums;
+    color: #FFFFFF;
+  }
+
+  .soc-label {
+    margin-top: 12px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.86);
+  }
+
+  .hysteresis {
+    margin-top: 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .hyst-track {
+    position: relative;
+    width: 100%;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.24);
+  }
+
+  .hyst-fill {
+    position: absolute;
+    left: 35%;
+    width: 55%;
+    height: 3px;
+    background: #FFFFFF;
+  }
+
+  .hyst-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    font-variant-numeric: tabular-nums;
+    color: rgba(255, 255, 255, 0.78);
+  }
+
+  .right-footer {
+    border-top: 1px solid rgba(255, 255, 255, 0.24);
+    padding-top: 16px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.78);
+  }
+</style>
+</head>
+<body>
+  <div class="canvas">
+    <section class="left">
+      <div class="micro-label">OPEN-SOURCE TELEMETRY · CCU3 &amp; RASPBERRYMATIC</div>
+
+      <div class="hero-block">
+        <div class="signal-square" aria-hidden="true"></div>
+        <h1 class="wordmark">SENTINELLA</h1>
+        <p class="subtitle">Modular Energy &amp; System Telemetry for HomeMatic CCU3</p>
+      </div>
+
+      <div class="meta-strip">
+        <div class="meta-item">
+          <span class="meta-key">RUNTIME</span>
+          <span class="meta-val">POSIX sh · BusyBox</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-key">MODULES</span>
+          <span class="meta-val">SMA · Shelly · Tariffs · EV</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-key">ARCHITECTURE</span>
+          <span class="meta-val">Zero-Daemon · Local-First</span>
+        </div>
+      </div>
+    </section>
+
+    <aside class="right">
+      <div class="right-top">
+        <span>TELEMETRY</span>
+        <span>HYSTERESIS</span>
+      </div>
+
+      <div class="readout">
+        <div class="soc-value">87%</div>
+        <div class="soc-label">STATE OF CHARGE</div>
+
+        <div class="hysteresis">
+          <div class="hyst-track">
+            <div class="hyst-fill"></div>
+          </div>
+          <div class="hyst-labels">
+            <span>35% MIN</span>
+            <span>90% MAX</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="right-footer">REGAHSS · WEBUI · PUSH ALERTS</div>
+    </aside>
+  </div>
+</body>
+</html>

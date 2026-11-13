@@ -2,11 +2,13 @@
 
 ![Sentinella: modular CCU3 energy and system monitor](docs/assets/readme-hero-banner.png)
 
-<!-- Uncomment once live captures are saved in docs/screenshots/ (see docs/screenshots/README.md):
-![Sentinella Desktop Light](docs/screenshots/desktop-light.png)
-![Sentinella Settings Drawer](docs/screenshots/settings-drawer.png)
-![Sentinella Mobile View](docs/screenshots/mobile-view.png)
--->
+| Desktop (Light) | Desktop (Dark) |
+| --- | --- |
+| ![Sentinella Desktop Light](docs/screenshots/desktop-light.png) | ![Sentinella Desktop Dark](docs/screenshots/desktop-dark.png) |
+
+| Settings Drawer | Mobile View |
+| --- | --- |
+| ![Sentinella Settings Drawer](docs/screenshots/settings-drawer.png) | ![Sentinella Mobile View](docs/screenshots/mobile-view.png) |
 
 **Sentinella: a low-footprint energy and system monitor for the HomeMatic CCU3.**
 
