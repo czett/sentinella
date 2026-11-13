@@ -2,13 +2,7 @@
 
 ![Sentinella: modular CCU3 energy and system monitor](docs/assets/readme-hero-banner.png)
 
-| Desktop (Light) | Desktop (Dark) |
-| --- | --- |
-| ![Sentinella Desktop Light](docs/screenshots/desktop-light.png) | ![Sentinella Desktop Dark](docs/screenshots/desktop-dark.png) |
-
-| Settings Drawer | Mobile View |
-| --- | --- |
-| ![Sentinella Settings Drawer](docs/screenshots/settings-drawer.png) | ![Sentinella Mobile View](docs/screenshots/mobile-view.png) |
+**English** · [Deutsch](README.de.md)
 
 **Sentinella: a low-footprint energy and system monitor for the HomeMatic CCU3.**
 
@@ -195,6 +189,24 @@ Switch a Homematic socket (`HmIP-PSM`), immersion heater relay, or wallbox relea
 5. **Dann…** (`Then…`): **Geräteauswahl** → `HmIP-PSM` → `sofort` → `Schaltzustand: Aus`.
 
 Using **`bei Änderung auslösen`** (*trigger on change*) ensures the CCU3 only sends an RF command when the hysteresis state flips, keeping your RF Duty Cycle near 0%.
+
+## Screenshots
+
+**Dashboard (Light Mode — Hero, Hysteresis Rail & SoC History):**
+
+![Sentinella Desktop Light](docs/screenshots/desktop-light.png)
+
+**Extensions Grid (Dark Mode — CCU3 Health, Renault E-Tech, Dynamic Tariff & Weather):**
+
+![Sentinella Desktop Dark](docs/screenshots/desktop-dark.png)
+
+**Browser Settings Drawer:**
+
+![Sentinella Settings Drawer](docs/screenshots/settings-drawer.png)
+
+**Mobile Layout:**
+
+<img src="docs/screenshots/mobile-view.png" alt="Sentinella Mobile View" width="360">
 
 ## Dashboard and settings
 

@@ -2,13 +2,7 @@
 
 ![Sentinella: modularer Energie- und Systemmonitor für die CCU3](docs/assets/readme-hero-banner.png)
 
-| Desktop (Hell) | Desktop (Dunkel) |
-| --- | --- |
-| ![Sentinella Desktop Hell](docs/screenshots/desktop-light.png) | ![Sentinella Desktop Dunkel](docs/screenshots/desktop-dark.png) |
-
-| Einstellungs-Drawer | Mobile Ansicht |
-| --- | --- |
-| ![Sentinella Einstellungs-Drawer](docs/screenshots/settings-drawer.png) | ![Sentinella Mobile Ansicht](docs/screenshots/mobile-view.png) |
+[English](README.md) · **Deutsch**
 
 **Sentinella: ein schlanker Energie- und Systemmonitor für die HomeMatic CCU3.**
 
@@ -181,6 +175,24 @@ So schaltet die CCU3 bei Batterie-Überschuss automatisch eine Schaltsteckdose (
 5. **Aktivität: Dann…**: **Geräteauswahl** → `HmIP-PSM` → `sofort` → `Schaltzustand: Aus`.
 
 Durch **`bei Änderung auslösen`** sendet die CCU3 nur dann einen Funkbefehl, wenn das Hysteresesignal tatsächlich umschaltet; der Funk-Duty-Cycle bleibt dadurch minimal.
+
+## Screenshots
+
+**Dashboard (Hell-Modus — Hero, Hysterese-Leiste & SoC-Verlauf):**
+
+![Sentinella Desktop Hell](docs/screenshots/desktop-light.png)
+
+**Erweiterungs-Grid (Dunkel-Modus — CCU3 Health, Renault E-Tech, Dynamischer Tarif & Wetter):**
+
+![Sentinella Desktop Dunkel](docs/screenshots/desktop-dark.png)
+
+**Browser-Einstellungs-Drawer:**
+
+![Sentinella Einstellungs-Drawer](docs/screenshots/settings-drawer.png)
+
+**Mobile Ansicht:**
+
+<img src="docs/screenshots/mobile-view.png" alt="Sentinella Mobile Ansicht" width="360">
 
 ## Dashboard und Einstellungen
 
